@@ -1,0 +1,72 @@
+#!/bin/bash
+# The heavy tools, fetched on first online boot so the flashed image stays
+# small. Metasploit alone is about a gigabyte with its Ruby stack, so it is
+# not baked in; this pulls it over Wi-Fi when you ask.
+#
+#   rk-tools status         whether online, and what heavy tool is installed
+#   rk-tools install-heavy   install Metasploit and exploitdb (needs network)
+#
+# For testing machines that are yours, or that you have been asked to test.
+set -u
+say() { echo "rk-tools: $*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+online() { ip route 2>/dev/null | grep -q '^default'; }
+
+HEAVY_DIR=/data/opt
+
+status() {
+    online && echo "online yes" || echo "online no"
+    have msfconsole && echo "metasploit installed" || echo "metasploit absent"
+    { have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; } &&
+        echo "exploitdb installed" || echo "exploitdb absent"
+}
+
+install_msf() {
+    have msfconsole && { say "Metasploit is already installed"; return 0; }
+    say "Fetching Metasploit (large; this takes a while)..."
+    install -d -m 0755 /etc/apt/keyrings
+    if ! curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key |
+            gpg --dearmor -o /etc/apt/keyrings/metasploit.gpg 2>/dev/null; then
+        say "could not fetch the Metasploit signing key - are you online?"; return 1
+    fi
+    local arch; arch=$(dpkg --print-architecture)
+    echo "deb [signed-by=/etc/apt/keyrings/metasploit.gpg] https://apt.metasploit.com/ lucid main" \
+        > /etc/apt/sources.list.d/metasploit.list
+    apt-get update -q || { say "could not reach the Metasploit repo"; return 1; }
+    if ! apt-get install -y -q metasploit-framework; then
+        say "the Metasploit repo has no build for $arch."
+        say "On $arch, install it from the Kali repo by hand (see docs/arsenal.md)."
+        say "Nothing was left half-installed."
+        rm -f /etc/apt/sources.list.d/metasploit.list
+        apt-get update -q >/dev/null 2>&1 || true
+        return 1
+    fi
+    say "Metasploit installed."
+}
+
+install_exploitdb() {
+    if have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; then
+        say "exploitdb is already installed"; return 0
+    fi
+    say "Fetching exploitdb..."
+    install -d -m 0755 "$HEAVY_DIR"
+    if git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git "$HEAVY_DIR/exploitdb"; then
+        ln -sf "$HEAVY_DIR/exploitdb/searchsploit" /usr/local/bin/searchsploit
+        say "exploitdb installed in $HEAVY_DIR/exploitdb."
+    else
+        say "could not fetch exploitdb (needs network)."; return 1
+    fi
+}
+
+case "${1:-}" in
+    status) status ;;
+    install-heavy)
+        online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
+        rc=0
+        install_msf || rc=1
+        install_exploitdb || rc=1
+        apt-get clean >/dev/null 2>&1 || true
+        [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
+        exit "$rc" ;;
+    *) echo "usage: rk-tools status | install-heavy" >&2; exit 2 ;;
+esac

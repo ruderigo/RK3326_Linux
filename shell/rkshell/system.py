@@ -155,6 +155,27 @@ class Scan:
             pass
 
 
+class Install:
+    """rk-tools install-heavy, running. `lines` is its output so far; `done`
+    is set when it ends, with `ok` saying whether everything installed."""
+
+    def __init__(self, cmd=("sudo", "-n", "/usr/local/sbin/rk-tools", "install-heavy")):
+        self.lines, self.done, self.ok = ["Starting..."], False, False
+        try:
+            self.proc = subprocess.Popen(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        except OSError as e:
+            self.lines, self.done, self.proc = [str(e)], True, None
+            return
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        for line in self.proc.stdout:
+            self.lines.append(line.rstrip())
+            del self.lines[:-400]
+        self.ok = self.proc.wait() == 0
+        self.done = True
+
+
 class System:
     demo = False
 
@@ -285,6 +306,19 @@ class System:
     def start_scan(self, spec):
         """Run the scan this loadout describes (see nmapspec); returns a Scan."""
         return Scan(spec)
+
+    def online(self):
+        ok, out = run(["ip", "route"])
+        return ok and any(ln.startswith("default") for ln in out.splitlines())
+
+    def tools_status(self):
+        """For each tool in the catalogue, whether its command is on PATH."""
+        from . import arsenal
+        return {cmd: bool(shutil.which(cmd)) for cmd, _, _, _ in arsenal.COMMANDS}
+
+    def install_heavy(self):
+        """Fetch the heavy tools (Metasploit, exploitdb); returns an Install."""
+        return Install()
 
     def save_report(self, name, text):
         """Write a report where the Files window shows it; returns its path or None."""
@@ -488,6 +522,22 @@ class DemoSystem(System):
                 {"active": False, "ssid": "Printer-Setup", "bssid": "00:1B:A9:3E:5F:02", "channel": 3, "freq": 2422, "signal": 22, "security": "open"}]
 
     def own_networks(self): return [("wlan0", "192.168.0.0/24", "192.168.0.167")]
+
+    def online(self): return True
+
+    def tools_status(self):
+        from . import arsenal
+        absent = {"ffuf", "wfuzz", "hcxdumptool", "msfconsole", "searchsploit", "termshark"}
+        return {cmd: cmd not in absent for cmd, _, _, _ in arsenal.COMMANDS}
+
+    def install_heavy(self):
+        inst = Install.__new__(Install)
+        inst.proc, inst.ok, inst.done = None, False, False
+        inst.lines = ["rk-tools: Fetching Metasploit (large; this takes a while)...",
+                      "Get:1 https://apt.metasploit.com lucid/main arm64 metasploit-framework",
+                      "Unpacking metasploit-framework ...",
+                      "Setting up metasploit-framework ..."]
+        return inst
 
     def start_scan(self, spec):
         sweep = spec.get("mode") == "sweep"

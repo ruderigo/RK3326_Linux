@@ -1,7 +1,7 @@
 # What the desktop may do as root without asking for a password, and nothing
-# else: power, joining Wi-Fi, running a scan (rk-scan builds the nmap command itself), remote
+# else: power, joining Wi-Fi, running a scan (rk-scan builds the nmap command itself), installing the heavy tools, remote
 # access, and the choice of kernel.
 ark ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/local/sbin/rk-wifi, \
-    /usr/local/sbin/rk-scan run, \
+    /usr/local/sbin/rk-scan run, /usr/local/sbin/rk-tools install-heavy, \
     /usr/bin/systemctl enable --now ssh, /usr/bin/systemctl disable --now ssh, \
     /usr/local/sbin/rk-boot-select

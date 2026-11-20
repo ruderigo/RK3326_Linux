@@ -12,7 +12,8 @@
 #   KERNEL    5.10 or 4.4                  (default 5.10)
 #   HOSTNAME_ the system's host name       (default from the console: r36max, r36s)
 #   VERSION   shown in /etc/os-release     (default "dev")
-#   ROOT_MB   size of the system partition (default 3072)
+#   ROOT_MB   size of the system partition (default 6144; empty space
+#             compresses away, so the download stays small)
 #   ROOTFS_DIR  a ready-made system folder: skips the Debian install, to test
 #               the image assembly on any machine
 #
@@ -39,7 +40,7 @@ OUT=${2:?usage: build-image.sh <upstream dir> <out dir>}
 CONSOLE=${CONSOLE:-r36max type1}
 KERNEL=${KERNEL:-5.10}
 VERSION=${VERSION:-dev}
-ROOT_MB=${ROOT_MB:-3072}
+ROOT_MB=${ROOT_MB:-6144}
 BOOT_MB=256
 case $CONSOLE in
     r36max*) DEF_HOST=r36max ;;
@@ -107,6 +108,15 @@ for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-optional.txt"); do
     in_root apt-get install -y -q --no-install-recommends "$p" || MISSING="$MISSING $p"
 done
 [ -z "$MISSING" ] || echo "WARNING: optional packages not installed:$MISSING"
+
+# the security toolset (packages-tools.txt): like the optional list, a name
+# the archive does not carry is skipped, so the build does not depend on
+# every tool being present on trixie arm64. What landed is listed at the end.
+TOOLS_MISSING=
+for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-tools.txt"); do
+    in_root apt-get install -y -q --no-install-recommends "$p" || TOOLS_MISSING="$TOOLS_MISSING $p"
+done
+[ -z "$TOOLS_MISSING" ] || echo "WARNING: security tools not installed:$TOOLS_MISSING"
 in_root apt-get clean
 rm -rf "$ROOTFS"/var/lib/apt/lists/*
 
