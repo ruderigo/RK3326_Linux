@@ -44,6 +44,18 @@ while read -r f; do
     esac
     rm -f "$T/loaded"
 done < <(sed -n 's/^load mmc 1:1 \${[a-z_]*} \(.*\)$/\1/p' "$T/boot.ini" | tr -d '\r')
+# our device tree changes are in the tree the card starts
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mcopy -i "$T/boot.img" ::rk-device.txt "$T/rk-device.txt"
+CONSOLE=$(sed -n 's/^console=//p' "$T/rk-device.txt" | tr -d '\r')
+DTB=$(sed -n 's/^load mmc 1:1 \${dtb_loadaddr} \(.*\)$/\1/p' "$T/boot.ini" | tr -d '\r' | head -n 1)
+mcopy -i "$T/boot.img" "::$DTB" "$T/started.dtb"
+while IFS='|' read -r console action node prop; do
+    console=$(echo "$console" | xargs); node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs)
+    [ "$console" = "$CONSOLE" ] || continue
+    fdtget "$T/started.dtb" "$node" "$prop" >/dev/null 2>&1 && fail "$DTB still has $prop in $node"
+    ok "$DTB: $prop is not in $node"
+done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt fallback-4.4/boot.ini fallback-4.4/Image; do
     mdir -i "$T/boot.img" "::$f" >/dev/null 2>&1 || fail "missing on the boot partition: $f"
 done
