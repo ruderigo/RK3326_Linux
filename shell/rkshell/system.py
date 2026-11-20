@@ -14,6 +14,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -70,37 +71,88 @@ def _xml(out):
         return None
 
 
-def parse_hosts(out):
-    """nmap -sn -oX: dicts with address, name, mac, vendor, for the hosts that are up."""
+def parse_scan(out):
+    """nmap -oX: one dict for each host that is up, with address, name, mac,
+    vendor, os (best guess, "" when none), ports and notes (host scripts).
+    A port is a dict with port, proto, state, service, product and notes."""
     root, hosts = _xml(out), []
     for h in root.findall("host") if root is not None else []:
         if h.find("status") is None or h.find("status").get("state") != "up":
             continue
-        d = {"address": "", "name": "", "mac": "", "vendor": ""}
+        d = {"address": "", "name": "", "mac": "", "vendor": "", "os": "", "ports": [], "notes": []}
         for a in h.findall("address"):
-            if a.get("addrtype") == "ipv4":
+            if a.get("addrtype") in ("ipv4", "ipv6"):
                 d["address"] = a.get("addr", "")
             elif a.get("addrtype") == "mac":
                 d["mac"], d["vendor"] = a.get("addr", ""), a.get("vendor", "")
         name = h.find("hostnames/hostname")
         d["name"] = name.get("name", "") if name is not None else ""
+        best = h.find("os/osmatch")
+        if best is not None:
+            d["os"] = f"{best.get('name', '')} ({best.get('accuracy', '?')}%)"
+        for p in h.findall("ports/port"):
+            st, sv = p.find("state"), p.find("service")
+            if st is None or not st.get("state", "").startswith("open"):
+                continue
+            product = " ".join(sv.get(k, "") for k in ("product", "version", "extrainfo") if sv.get(k)) if sv is not None else ""
+            d["ports"].append({"port": int(p.get("portid", 0)), "proto": p.get("protocol", ""), "state": st.get("state"),
+                               "service": sv.get("name", "") if sv is not None else "", "product": product,
+                               "notes": [(x.get("id", ""), x.get("output", "").strip()) for x in p.findall("script")]})
+        d["ports"].sort(key=lambda q: (q["proto"], q["port"]))
+        d["notes"] = [(x.get("id", ""), x.get("output", "").strip()) for x in h.findall("hostscript/script")]
         if d["address"]:
             hosts.append(d)
-    return sorted(hosts, key=lambda d: tuple(int(x) for x in d["address"].split(".")))
+
+    def order(d):
+        try:
+            return (0, tuple(int(x) for x in d["address"].split(".")))
+        except ValueError:
+            return (1, (0,))
+    return sorted(hosts, key=lambda d: (order(d), d["address"]))
 
 
-def parse_ports(out):
-    """nmap -oX: dicts with port, proto, service, product, for the open ports."""
-    root, ports = _xml(out), []
-    for p in root.iter("port") if root is not None else []:
-        st = p.find("state")
-        if st is None or st.get("state") != "open":
-            continue
-        sv = p.find("service")
-        ports.append({"port": int(p.get("portid", 0)), "proto": p.get("protocol", ""),
-                      "service": sv.get("name", "") if sv is not None else "",
-                      "product": sv.get("product", "") if sv is not None else ""})
-    return sorted(ports, key=lambda d: d["port"])
+class Scan:
+    """A scan that is running, or has run. `result` is None while it runs, then
+    (True, hosts) or (False, why). Closing rk-scan's standard input is how it
+    is cancelled: it runs as root, so this user cannot signal it."""
+
+    def __init__(self, spec):
+        self.spec, self.started, self.ended, self.result, self.cancelled = spec, time.time(), None, None, False
+        try:
+            self.proc = subprocess.Popen(["sudo", "-n", "/usr/local/sbin/rk-scan", "run"], stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.proc.stdin.write(json.dumps(spec) + "\n")
+            self.proc.stdin.flush()
+        except OSError as e:
+            self.proc, self.result, self.ended = None, (False, str(e)), time.time()
+            return
+        threading.Thread(target=self._wait, daemon=True).start()
+
+    def _wait(self):
+        errs = []
+        t = threading.Thread(target=lambda: errs.append(self.proc.stderr.read()), daemon=True)
+        t.start()
+        out = self.proc.stdout.read()
+        code = self.proc.wait()
+        t.join(2)
+        self.ended = time.time()
+        if self.cancelled:
+            self.result = (False, "Scan stopped")
+        elif code == 0:
+            self.result = (True, parse_scan(out))
+        else:
+            self.result = (False, last_line("".join(errs)) or "The scan did not run")
+
+    @property
+    def seconds(self):
+        return int((self.ended or time.time()) - self.started)
+
+    def cancel(self):
+        self.cancelled = True
+        try:
+            self.proc.stdin.close()
+        except (OSError, AttributeError):
+            pass
 
 
 class System:
@@ -230,14 +282,9 @@ class System:
         ok, out = run(["/usr/local/sbin/rk-scan", "networks"])
         return [tuple(ln.split()) for ln in out.splitlines() if len(ln.split()) == 3] if ok else []
 
-    def scan_hosts(self, network):
-        """Which addresses on the handheld's network answer: (ok, list or message)."""
-        ok, out = run(["/usr/local/sbin/rk-scan", "hosts", network], timeout=180, root=True)
-        return (True, parse_hosts(out)) if ok else (False, last_line(out) or "The scan did not run")
-
-    def scan_ports(self, address):
-        ok, out = run(["/usr/local/sbin/rk-scan", "ports", address], timeout=180, root=True)
-        return (True, parse_ports(out)) if ok else (False, last_line(out) or "The scan did not run")
+    def start_scan(self, spec):
+        """Run the scan this loadout describes (see nmapspec); returns a Scan."""
+        return Scan(spec)
 
     def save_report(self, name, text):
         """Write a report where the Files window shows it; returns its path or None."""
@@ -442,15 +489,26 @@ class DemoSystem(System):
 
     def own_networks(self): return [("wlan0", "192.168.0.0/24", "192.168.0.167")]
 
-    def scan_hosts(self, network):
-        return True, [{"address": "192.168.0.1", "name": "router.lan", "mac": "38:AD:2B:91:52:48", "vendor": "Sagemcom"},
-                      {"address": "192.168.0.42", "name": "labuche3.lan", "mac": "24:6F:28:AA:10:04", "vendor": "Espressif"},
-                      {"address": "192.168.0.110", "name": "", "mac": "F0:18:98:2C:11:9A", "vendor": "Apple"},
-                      {"address": "192.168.0.167", "name": "r36max.lan", "mac": "", "vendor": ""}]
-
-    def scan_ports(self, address):
-        return True, [{"port": 22, "proto": "tcp", "service": "ssh", "product": ""},
-                      {"port": 80, "proto": "tcp", "service": "http", "product": ""}]
+    def start_scan(self, spec):
+        sweep = spec.get("mode") == "sweep"
+        tcp = lambda n, svc, prod="", notes=(): {"port": n, "proto": "tcp", "state": "open", "service": svc,
+                                                 "product": prod if spec.get("versions") else "", "notes": list(notes)}
+        os_ = lambda name: name if spec.get("os") and not sweep else ""
+        hosts = [{"address": "192.168.0.1", "name": "router.lan", "mac": "38:AD:2B:91:52:48", "vendor": "Sagemcom", "os": os_("Linux 4.15 - 5.19 (96%)"),
+                  "ports": [tcp(53, "domain", "dnsmasq 2.89"), tcp(80, "http", "nginx"), tcp(443, "https", "nginx")], "notes": []},
+                 {"address": "192.168.0.42", "name": "labuche3.lan", "mac": "24:6F:28:AA:10:04", "vendor": "Espressif", "os": os_("lwIP 2.1 (91%)"),
+                  "ports": [tcp(80, "http", "", [("http-title", "LaBuche Stump")])], "notes": []},
+                 {"address": "192.168.0.110", "name": "", "mac": "F0:18:98:2C:11:9A", "vendor": "Apple", "os": os_("Apple macOS 14 - 15 (93%)"),
+                  "ports": [tcp(22, "ssh", "OpenSSH 9.7"), tcp(5000, "rtsp", "AirTunes 775.3"), tcp(7000, "rtsp", "AirTunes 775.3")], "notes": []},
+                 {"address": "192.168.0.167", "name": "r36max.lan", "mac": "", "vendor": "", "os": os_("Linux 5.10 (100%)"),
+                  "ports": [tcp(22, "ssh", "OpenSSH 10.0p2 Debian")], "notes": []}]
+        if sweep:
+            for h in hosts:
+                h["ports"] = []
+        scan = Scan.__new__(Scan)
+        scan.spec, scan.started, scan.ended, scan.cancelled, scan.proc = spec, time.time() - 41, time.time(), False, None
+        scan.result = (True, hosts)
+        return scan
 
     def save_report(self, name, text): return f"/data/ark/scans/{name}-20261120-160000.txt"
     def boot_selection(self): return {"console": "r36max type1", "kernel": "5.10"}

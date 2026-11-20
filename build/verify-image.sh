@@ -110,6 +110,8 @@ filecat /etc/systemd/system/rkshell.service | grep -q '^PAMName' &&
     fail "rkshell.service logs in through PAM: it cannot start before the first password change"
 filecat /etc/sudoers.d/rkshell | grep -q '/usr/bin/nmcli' &&
     fail "the desktop may run nmcli as root: a Wi-Fi password would be written to the log"
+filecat /etc/sudoers.d/rkshell | grep -Eq '/usr/bin/nmap|rk-scan (hosts|ports) \*' &&
+    fail "the desktop may pass its own arguments to a scan run as root"
 ok "the desktop is installed and starts in place of the text login on the first console"
 # the user: a password is set, it must be changed at the first login, root has none
 ARK=$(filecat /etc/shadow | grep '^ark:') || fail "no user ark"

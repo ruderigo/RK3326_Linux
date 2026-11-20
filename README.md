@@ -26,8 +26,9 @@ parts, for teaching and authorised testing on your own equipment.
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
   Survey, Network, Devices and Settings. A USB keyboard works too.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
-- **Scan**: the devices on the network the handheld is connected to, and
-  the open ports of one of them.
+- **Scan**: nmap as a loadout. Pick a target, equip the scan (mission,
+  ports, technique, versions, OS guess, script packs, speed), see what it
+  costs in time and noise, launch.
 - **Survey**: every Wi-Fi access point in range, with its channel, signal
   and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
@@ -52,11 +53,33 @@ START is Tab, L1/R1 scroll back and X opens the keyboard (then: A types,
 B deletes, X space, Y shift, L1 more keys, L2 Tab, R2 Ctrl+C, START Enter,
 SELECT hides it). The shell keeps running while the window is closed.
 
-**Scan** looks only at the network the handheld is on. The program that
-does it as root (`rk-scan`) refuses any other target, so the desktop's
-permission to scan is not a permission to scan anything anywhere. Use it on
-networks that are yours, or that you have been asked to test. Scans and
-surveys are saved in `/data/ark/scans`, where Files shows them.
+**Scan** is nmap, set up like a loadout before a match:
+
+![The Scan window](docs/scan.png)
+
+| Row | nmap |
+|---|---|
+| Target | an address, a name, a range (`192.168.0.1-50`) or a network (`192.168.0.0/24`); A lists your own, or lets you type one |
+| Loadout | ready-made sets: Quick look, Sweep, Identify, Quiet, Everything |
+| Mission | Sweep `-sn` (who is there) or Probe (what they offer) |
+| Ports | top 100 `-F`, top 1000, all `-p-`, or a list you type `-p 22,80` |
+| Technique | SYN `-sS`, Connect `-sT`, UDP `-sU` |
+| Versions / OS guess | `-sV` / `-O` |
+| Scripts | the `default`, `safe` or `discovery` packs (`--script=`) |
+| Speed | `-T2` to `-T5` |
+| Skip the ping | `-Pn` |
+
+D-pad left/right changes a row, X launches, B stops a scan that is running.
+The two gauges are rough guides to how long the loadout takes and how
+visible it is on the network, and the line under them is the exact command.
+In the results, A opens a host, X aims the next scan at it, Y saves the
+report to `/data/ark/scans`, where Files shows it.
+
+The scan runs as root (SYN, UDP and OS detection need it) through `rk-scan`,
+which builds the command from the loadout and refuses a target that is
+really an nmap option, so the desktop cannot make root write files or run
+scripts. It does **not** limit where you aim: any address can be typed.
+Scan only networks that are yours, or that you have been asked to test.
 
 Apps add themselves to the dock with one small file: see
 [`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).
