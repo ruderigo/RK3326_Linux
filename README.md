@@ -23,13 +23,18 @@ parts, for teaching and authorised testing on your own equipment.
 - Starts kernel **5.10** (arkos4clone calls it experimental); kernel **4.4**
   is on the card as a fallback.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
-  whose icons grow under the cursor, and windows for Files, Network,
-  Devices and Settings. A USB keyboard works too.
+  whose icons grow under the cursor, and windows for Files, Terminal, Scan,
+  Survey, Network, Devices and Settings. A USB keyboard works too.
+- **Terminal**: a real shell in a window, with an on-screen keyboard.
+- **Scan**: the devices on the network the handheld is connected to, and
+  the open ports of one of them.
+- **Survey**: every Wi-Fi access point in range, with its channel, signal
+  and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
   Network window, and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
 
-Not in it yet: a terminal window, FireFly, the Stump, the security tools.
+Not in it yet: FireFly, the Stump, and tools that need monitor mode.
 
 ### The desktop
 
@@ -41,6 +46,17 @@ Not in it yet: a terminal window, FireFly, the Stump, the security tools.
 | X | more actions (in Files) |
 | START | confirm what you typed on the on-screen keyboard |
 | Volume keys | volume |
+
+In the **Terminal**, the D-pad is the arrow keys, A is Enter, Y is Ctrl+C,
+START is Tab, L1/R1 scroll back and X opens the keyboard (then: A types,
+B deletes, X space, Y shift, L1 more keys, L2 Tab, R2 Ctrl+C, START Enter,
+SELECT hides it). The shell keeps running while the window is closed.
+
+**Scan** looks only at the network the handheld is on. The program that
+does it as root (`rk-scan`) refuses any other target, so the desktop's
+permission to scan is not a permission to scan anything anywhere. Use it on
+networks that are yours, or that you have been asked to test. Scans and
+surveys are saved in `/data/ark/scans`, where Files shows them.
 
 Apps add themselves to the dock with one small file: see
 [`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).

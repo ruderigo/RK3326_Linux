@@ -142,7 +142,19 @@ def _chip(s, c):
             pygame.draw.rect(s, c, (x, y, w, h))
 
 
-GLYPHS = {"files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal,
+def _radar(s, c):
+    for r in (58, 38, 18):
+        pygame.draw.circle(s, c, (96, 100), r, 6)
+    pygame.draw.line(s, c, (96, 100), (140, 60), 8)
+    pygame.draw.circle(s, T.EMBER_BRIGHT if c != T.DIM else c, (124, 122), 9)
+
+
+def _survey(s, c):
+    for i, h in enumerate((24, 44, 64, 84)):                        # signal bars
+        pygame.draw.rect(s, c, (46 + i * 28, 140 - h, 18, h), border_radius=4)
+
+
+GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 
@@ -216,7 +228,10 @@ class Dock:
         frac = self.pos - int(self.pos)
         if int(self.pos) < len(sizes):
             centre += sizes[int(self.pos)] / 2 + (sizes[int(self.pos)] / 2 + gap + (sizes[min(int(self.pos) + 1, len(sizes) - 1)] / 2)) * frac
-        x0 = (W - total) // 2 if total <= W - 40 else int(W / 2 - centre)
+        if total <= W - 40:
+            x0 = (W - total) // 2
+        else:                       # more icons than fit: slide, but never past either end of the row
+            x0 = int(max(W - 20 - total, min(20, W / 2 - centre)))
         floor = H - W // 28
         shelf = pygame.Rect(max(10, x0 - 14), floor - base - 10, min(W - 20, total + 28), base + 20)
         shelf.w -= shelf.w % 8                              # a few widths only: each is drawn once and kept

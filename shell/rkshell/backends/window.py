@@ -1,13 +1,13 @@
 """A desktop window, for working on the shell without a handheld.
 
 Arrows move, Z or Enter is A, X or Escape is B, S is X, A is Y, Q/W are L1/R1,
-1/2 are L2/R2, Space is START, Tab is SELECT. Text typed while the on-screen
-keyboard is open goes into it.
+1/2 are L2/R2, Space is START, Tab is SELECT. In a screen that takes typing
+(the on-screen keyboard, the terminal) the keyboard types, and Alt with one
+of those keys is the gamepad button.
 """
 import pygame
 
 from ..app import App
-from ..widgets import Keyboard
 
 KEYS = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left", pygame.K_RIGHT: "right",
         pygame.K_z: "a", pygame.K_RETURN: "a", pygame.K_x: "b", pygame.K_ESCAPE: "b", pygame.K_s: "x", pygame.K_a: "y",
@@ -21,19 +21,24 @@ def run(system, size):
     pygame.display.set_caption("rkshell")
     app = App(system, screen)
     clock = pygame.time.Clock()
+    special = {pygame.K_RETURN: "\r", pygame.K_BACKSPACE: "\x7f", pygame.K_TAB: "\t", pygame.K_ESCAPE: "\x1b",
+               pygame.K_UP: "\x1b[A", pygame.K_DOWN: "\x1b[B", pygame.K_RIGHT: "\x1b[C", pygame.K_LEFT: "\x1b[D"}
     while app.running:
         for e in pygame.event.get():
+            typing = bool(app.current and app.current.wants_keys)
             if e.type == pygame.QUIT:
                 app.running = False
-            elif e.type == pygame.TEXTINPUT and isinstance(app.current, Keyboard):
+            elif e.type == pygame.TEXTINPUT and typing:
                 app.text_input(e.text)
-            elif e.type == pygame.KEYDOWN:
-                if isinstance(app.current, Keyboard) and e.key in (pygame.K_RETURN, pygame.K_BACKSPACE):
-                    app.text_input("\n" if e.key == pygame.K_RETURN else "\x08")
-                elif not isinstance(app.current, Keyboard) or e.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT,
-                                                                        pygame.K_RIGHT, pygame.K_ESCAPE, pygame.K_TAB):
-                    if e.key in KEYS:
-                        app.handle(KEYS[e.key])
+            elif e.type == pygame.KEYDOWN and typing:
+                if e.mod & pygame.KMOD_ALT and e.key in KEYS:          # Alt + key: the gamepad button
+                    app.handle(KEYS[e.key])
+                elif e.mod & pygame.KMOD_CTRL and pygame.K_a <= e.key <= pygame.K_z:
+                    app.text_input(chr(e.key & 0x1f))
+                elif e.key in special:
+                    app.text_input(special[e.key])
+            elif e.type == pygame.KEYDOWN and e.key in KEYS:
+                app.handle(KEYS[e.key])
         app.tick()
         if app.launch:
             app.toast("Starting an app needs the handheld")
@@ -41,5 +46,5 @@ def run(system, size):
         if app.dirty or app.animating:
             app.draw()
             pygame.display.flip()
-        clock.tick(30 if app.dock.moving else 12)      # smooth while the dock moves, slow for the fireflies
+        clock.tick(30 if app.dock.moving or app.live else 12)      # smooth while the dock moves, slow for the fireflies
     return 0

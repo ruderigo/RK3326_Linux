@@ -10,10 +10,12 @@ file that allows exactly those commands for the user the shell runs as.
 import glob
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
 APPS_DIRS = ["/usr/share/rk/apps", "/data/ark/apps"]
 SERIAL_DRIVERS = {"cp210x", "ch341", "cdc_acm", "ftdi_sio", "ch343"}
@@ -38,6 +40,67 @@ def read(path, default=""):
             return f.read().strip()
     except OSError:
         return default
+
+
+def last_line(out):
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    return lines[-1].replace("rk-scan: ", "") if lines else ""
+
+
+def parse_survey(out):
+    """nmcli's terse list: fields separated by ":", with ":" inside a field written "\\:"."""
+    nets = []
+    for line in out.splitlines():
+        p = [x.replace("\\:", ":") for x in re.split(r"(?<!\\):", line)]
+        if len(p) < 7 or not p[2]:
+            continue
+        try:
+            nets.append({"active": p[0] == "yes", "ssid": p[1] or "(hidden)", "bssid": p[2], "channel": int(p[3] or 0),
+                         "freq": int((p[4] or "0").split()[0]), "signal": int(p[5] or 0),
+                         "security": p[6] if p[6] and p[6] != "--" else "open"})
+        except ValueError:
+            continue
+    return sorted(nets, key=lambda n: -n["signal"])
+
+
+def _xml(out):
+    try:
+        return ET.fromstring(out[out.index("<?xml"):] if "<?xml" in out else out)
+    except (ET.ParseError, ValueError):
+        return None
+
+
+def parse_hosts(out):
+    """nmap -sn -oX: dicts with address, name, mac, vendor, for the hosts that are up."""
+    root, hosts = _xml(out), []
+    for h in root.findall("host") if root is not None else []:
+        if h.find("status") is None or h.find("status").get("state") != "up":
+            continue
+        d = {"address": "", "name": "", "mac": "", "vendor": ""}
+        for a in h.findall("address"):
+            if a.get("addrtype") == "ipv4":
+                d["address"] = a.get("addr", "")
+            elif a.get("addrtype") == "mac":
+                d["mac"], d["vendor"] = a.get("addr", ""), a.get("vendor", "")
+        name = h.find("hostnames/hostname")
+        d["name"] = name.get("name", "") if name is not None else ""
+        if d["address"]:
+            hosts.append(d)
+    return sorted(hosts, key=lambda d: tuple(int(x) for x in d["address"].split(".")))
+
+
+def parse_ports(out):
+    """nmap -oX: dicts with port, proto, service, product, for the open ports."""
+    root, ports = _xml(out), []
+    for p in root.iter("port") if root is not None else []:
+        st = p.find("state")
+        if st is None or st.get("state") != "open":
+            continue
+        sv = p.find("service")
+        ports.append({"port": int(p.get("portid", 0)), "proto": p.get("protocol", ""),
+                      "service": sv.get("name", "") if sv is not None else "",
+                      "product": sv.get("product", "") if sv is not None else ""})
+    return sorted(ports, key=lambda d: d["port"])
 
 
 class System:
@@ -152,6 +215,41 @@ class System:
 
     def set_ssh(self, on):
         return run(["systemctl", "enable" if on else "disable", "--now", "ssh"], root=True, timeout=20)
+
+    # --------------------------------------------------------------- tools
+    def survey(self, rescan=True):
+        """Every Wi-Fi access point in range, strongest first: dicts with ssid,
+        bssid, channel, freq (MHz), signal (0-100), security, active."""
+        if rescan:
+            run(["/usr/local/sbin/rk-wifi", "scan"], root=True, timeout=10)
+        ok, out = run(["nmcli", "-t", "-f", "ACTIVE,SSID,BSSID,CHAN,FREQ,SIGNAL,SECURITY", "dev", "wifi", "list"], timeout=15)
+        return parse_survey(out) if ok else []
+
+    def own_networks(self):
+        """The networks the handheld is on: (interface, network, own address)."""
+        ok, out = run(["/usr/local/sbin/rk-scan", "networks"])
+        return [tuple(ln.split()) for ln in out.splitlines() if len(ln.split()) == 3] if ok else []
+
+    def scan_hosts(self, network):
+        """Which addresses on the handheld's network answer: (ok, list or message)."""
+        ok, out = run(["/usr/local/sbin/rk-scan", "hosts", network], timeout=180, root=True)
+        return (True, parse_hosts(out)) if ok else (False, last_line(out) or "The scan did not run")
+
+    def scan_ports(self, address):
+        ok, out = run(["/usr/local/sbin/rk-scan", "ports", address], timeout=180, root=True)
+        return (True, parse_ports(out)) if ok else (False, last_line(out) or "The scan did not run")
+
+    def save_report(self, name, text):
+        """Write a report where the Files window shows it; returns its path or None."""
+        folder = "/data/ark/scans" if os.path.isdir("/data/ark") else os.path.expanduser("~/scans")
+        try:
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.txt")
+            with open(path, "w") as f:
+                f.write(text)
+            return path
+        except OSError:
+            return None
 
     # ------------------------------------------------- sound and backlight
     def volume(self):
@@ -334,6 +432,27 @@ class DemoSystem(System):
                 {"name": "Stump", "icon": "stump", "group": "Comms", "about": "Run and watch a Stump node", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
+    def survey(self, rescan=True):
+        return [{"active": True, "ssid": "Workshop", "bssid": "38:AD:2B:91:52:48", "channel": 6, "freq": 2437, "signal": 82, "security": "WPA2"},
+                {"active": False, "ssid": "LaBuche3-192.168.4.1", "bssid": "24:6F:28:AA:10:04", "channel": 1, "freq": 2412, "signal": 64, "security": "open"},
+                {"active": False, "ssid": "Guest", "bssid": "38:AD:2B:91:52:49", "channel": 6, "freq": 2437, "signal": 58, "security": "WPA2"},
+                {"active": False, "ssid": "Neighbour 2.4", "bssid": "A4:91:B1:0C:77:20", "channel": 11, "freq": 2462, "signal": 41, "security": "WPA2 WPA3"},
+                {"active": False, "ssid": "(hidden)", "bssid": "A4:91:B1:0C:77:21", "channel": 11, "freq": 2462, "signal": 37, "security": "WPA2"},
+                {"active": False, "ssid": "Printer-Setup", "bssid": "00:1B:A9:3E:5F:02", "channel": 3, "freq": 2422, "signal": 22, "security": "open"}]
+
+    def own_networks(self): return [("wlan0", "192.168.0.0/24", "192.168.0.167")]
+
+    def scan_hosts(self, network):
+        return True, [{"address": "192.168.0.1", "name": "router.lan", "mac": "38:AD:2B:91:52:48", "vendor": "Sagemcom"},
+                      {"address": "192.168.0.42", "name": "labuche3.lan", "mac": "24:6F:28:AA:10:04", "vendor": "Espressif"},
+                      {"address": "192.168.0.110", "name": "", "mac": "F0:18:98:2C:11:9A", "vendor": "Apple"},
+                      {"address": "192.168.0.167", "name": "r36max.lan", "mac": "", "vendor": ""}]
+
+    def scan_ports(self, address):
+        return True, [{"port": 22, "proto": "tcp", "service": "ssh", "product": ""},
+                      {"port": 80, "proto": "tcp", "service": "http", "product": ""}]
+
+    def save_report(self, name, text): return f"/data/ark/scans/{name}-20261120-160000.txt"
     def boot_selection(self): return {"console": "r36max type1", "kernel": "5.10"}
     def power_off(self): return True, ""
     def restart(self): return True, ""

@@ -141,6 +141,9 @@ chown -R 0:0 "$PYDIR/rkshell"
 in_root python3 -m compileall -q /usr/lib/python3/dist-packages/rkshell || die "the desktop does not compile"
 in_root env SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots /tmp/rkshell-check >/dev/null ||
     die "the desktop does not draw inside the image"
+# the scan helper must refuse a target outside the handheld's own network
+in_root /usr/local/sbin/rk-scan hosts 8.8.8.0/24 >/dev/null 2>&1 && die "rk-scan accepted a network that is not its own"
+in_root /usr/local/sbin/rk-scan ports 1.1.1.1 >/dev/null 2>&1 && die "rk-scan accepted an address that is not on its network"
 rm -rf "$ROOTFS/tmp/rkshell-check"
 echo "$HOSTNAME_" > "$ROOTFS/etc/hostname"
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_" > "$ROOTFS/etc/hosts"

@@ -46,6 +46,34 @@ def write_all(system, size, out_dir):
             app.push(Keyboard(app, "Password for Guest", lambda pw: None, secret=True, initial="hunter2"))
             shot("keyboard")
             app.stack.clear()
+        if item["name"] == "Terminal":
+            from .pages.terminal import TerminalPage
+            sess = TerminalPage.session
+            for line in ("export PS1='ark@r36max:~$ '; clear", "echo a real shell, on the handheld", "echo scans are saved in /data/ark/scans"):
+                app.text_input(line + "\r")
+                end = time.time() + 0.5
+                while time.time() < end:
+                    app.tick()
+                    time.sleep(0.02)
+            shot("terminal")
+            app.handle("x")
+            shot("terminal-keyboard")
+            app.handle("select")
+            if sess:
+                sess.close()
+            TerminalPage.session = None
+        if item["name"] == "Scan":
+            app.handle("a")
+            time.sleep(0.3)
+            shot("scan-devices")
+            app.handle("down")
+            app.handle("a")
+            time.sleep(0.3)
+            shot("scan-ports")
+            app.stack.clear()
+        if item["name"] == "Survey":
+            time.sleep(0.3)
+            shot("survey-list")
         if item["name"] == "Settings":
             app.window.about()
             shot("settings-about")
