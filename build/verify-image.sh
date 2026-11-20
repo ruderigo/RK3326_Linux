@@ -50,11 +50,18 @@ mcopy -i "$T/boot.img" ::rk-device.txt "$T/rk-device.txt"
 CONSOLE=$(sed -n 's/^console=//p' "$T/rk-device.txt" | tr -d '\r')
 DTB=$(sed -n 's/^load mmc 1:1 \${dtb_loadaddr} \(.*\)$/\1/p' "$T/boot.ini" | tr -d '\r' | head -n 1)
 mcopy -i "$T/boot.img" "::$DTB" "$T/started.dtb"
-while IFS='|' read -r console action node prop; do
-    console=$(echo "$console" | xargs); node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs)
+while IFS='|' read -r console action node prop value; do
+    console=$(echo "$console" | xargs); action=$(echo "$action" | xargs)
+    node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs); value=$(echo "${value:-}" | xargs)
     [ "$console" = "$CONSOLE" ] || continue
-    fdtget "$T/started.dtb" "$node" "$prop" >/dev/null 2>&1 && fail "$DTB still has $prop in $node"
-    ok "$DTB: $prop is not in $node"
+    if [ "$action" = set-u32 ]; then
+        got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
+        [ "$got" = "$value" ] || fail "$DTB: $prop is $got, not $value"
+        ok "$DTB: $prop is $value"
+    else
+        fdtget "$T/started.dtb" "$node" "$prop" >/dev/null 2>&1 && fail "$DTB still has $prop in $node"
+        ok "$DTB: $prop is not in $node"
+    fi
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt fallback-4.4/boot.ini fallback-4.4/Image; do
     mdir -i "$T/boot.img" "::$f" >/dev/null 2>&1 || fail "missing on the boot partition: $f"

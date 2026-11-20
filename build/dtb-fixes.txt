@@ -1,5 +1,6 @@
 # Changes made to arkos4clone's device trees when the image is built.
 # One per line:   console | delete-prop | node path | property
+#                 console | set-u32     | node path | property | value (decimal)
 # Each is applied to the console's 4.4 and 5.10 device trees. The build fails
 # if the node or the property is not there, so an upstream change is noticed.
 
@@ -9,3 +10,11 @@
 # lines, and stays silent on a board whose left headphone line is dead.
 # Found on an R36MAX on 2026-11-20: silent with the entry, loud without it.
 r36max type1 | delete-prop | /i2c@ff180000/pmic@20/codec | use-ext-amplifier
+
+# R36MAX type 1: charge as the factory device tree does. It limits both the
+# current taken from the charger and the current into the battery to 800 mA;
+# arkos4clone sets 1500 mA and 2000 mA. The battery is 2832 mAh in both, so
+# 800 mA is 0.28 C. Slower (about 3.5 to 4 hours from empty, switched off),
+# with about a fifth of the heat in the cell.
+r36max type1 | set-u32 | /i2c@ff180000/pmic@20/charger | max_input_current | 800
+r36max type1 | set-u32 | /i2c@ff180000/pmic@20/charger | max_chrg_current | 800

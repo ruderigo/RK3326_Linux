@@ -187,18 +187,27 @@ grep -q "^$CONSOLE|" "$BOOT/consoles/logos.txt" || echo "WARNING: no boot logo l
 # our changes to the device trees (build/dtb-fixes.txt), in the consoles folder
 # itself so that rk-boot-select hands out the changed files too
 : > "$BOOT/rk-dtb-fixes.txt"
-while IFS='|' read -r console action node prop; do
+while IFS='|' read -r console action node prop value; do
     console=$(echo "$console" | xargs); action=$(echo "$action" | xargs)
-    node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs)
+    node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs); value=$(echo "${value:-}" | xargs)
     [ -n "$console" ] || continue
-    [ "$action" = delete-prop ] || die "dtb-fixes.txt: unknown action: $action"
     for dtb in "$BOOT/consoles/$console"/*.dtb "$BOOT/consoles/$console"/5.10/*.dtb; do
         [ -f "$dtb" ] || continue
-        fdtget "$dtb" "$node" "$prop" >/dev/null 2>&1 ||
-            die "dtb-fixes.txt: $node has no $prop in ${dtb#$BOOT/}: check the upstream change"
-        fdtput -d "$dtb" "$node" "$prop"
-        fdtget "$dtb" "$node" "$prop" >/dev/null 2>&1 && die "could not remove $prop from ${dtb#$BOOT/}"
-        echo "removed $prop from $node in ${dtb#$BOOT/}" | tee -a "$BOOT/rk-dtb-fixes.txt"
+        rel=${dtb#$BOOT/}
+        old=$(fdtget -t u "$dtb" "$node" "$prop" 2>/dev/null) ||
+            die "dtb-fixes.txt: $node has no $prop in $rel: check the upstream change"
+        case $action in
+            delete-prop)
+                fdtput -d "$dtb" "$node" "$prop"
+                fdtget "$dtb" "$node" "$prop" >/dev/null 2>&1 && die "could not remove $prop from $rel"
+                echo "removed $prop from $node in $rel" ;;
+            set-u32)
+                [[ $value =~ ^[0-9]+$ ]] || die "dtb-fixes.txt: set-u32 needs a decimal value for $prop"
+                fdtput -t u "$dtb" "$node" "$prop" "$value"
+                [ "$(fdtget -t u "$dtb" "$node" "$prop")" = "$value" ] || die "could not set $prop in $rel"
+                echo "set $prop to $value (was $old) in $node in $rel" ;;
+            *) die "dtb-fixes.txt: unknown action: $action" ;;
+        esac | tee -a "$BOOT/rk-dtb-fixes.txt"
     done
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 
