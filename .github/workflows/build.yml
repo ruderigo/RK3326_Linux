@@ -32,7 +32,7 @@ jobs:
       - name: Draw the desktop and its windows with made-up data
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends python3-pygame fonts-dejavu-core >/dev/null
+          sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core >/dev/null
           cd shell
           python3 -m compileall -q rkshell
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens

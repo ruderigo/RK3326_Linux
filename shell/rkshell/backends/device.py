@@ -26,7 +26,6 @@ import time
 import pygame
 
 from ..app import App
-from ..widgets import Keyboard
 
 # ---------------------------------------------------------------- key codes
 # The pad's letters follow where they are printed on the handheld (A right, B
@@ -38,7 +37,10 @@ KEYS = {103: "up", 108: "down", 105: "left", 106: "right", 28: "a", 96: "a", 1: 
 VOLUME = {114: -5, 115: 5}
 REPEATING = {"up", "down", "left", "right"}
 REPEAT_DELAY, REPEAT_RATE = 0.35, 0.09
-SHIFT = {42, 54}
+SHIFT, CTRL = {42, 54}, {29, 97}
+# what a real keyboard's other keys send to a screen that takes typing (a terminal's own codes)
+SPECIAL = {28: "\r", 96: "\r", 14: "\x7f", 15: "\t", 1: "\x1b", 103: "\x1b[A", 108: "\x1b[B", 106: "\x1b[C",
+           105: "\x1b[D", 102: "\x1b[H", 107: "\x1b[F", 111: "\x1b[3~", 104: "\x1b[5~", 109: "\x1b[6~"}
 PLAIN = {2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0", 12: "-", 13: "=",
          16: "q", 17: "w", 18: "e", 19: "r", 20: "t", 21: "y", 22: "u", 23: "i", 24: "o", 25: "p", 26: "[", 27: "]",
          30: "a", 31: "s", 32: "d", 33: "f", 34: "g", 35: "h", 36: "j", 37: "k", 38: "l", 39: ";", 40: "'", 41: "`",
@@ -133,7 +135,7 @@ class Console:
 # -------------------------------------------------------------------- input
 class Inputs:
     def __init__(self):
-        self.fds, self.next_scan, self.shift = {}, 0, False
+        self.fds, self.next_scan, self.shift, self.ctrl = {}, 0, False, False
 
     def scan(self):
         """Open input devices that appeared; called every couple of seconds."""
@@ -165,7 +167,7 @@ class Inputs:
                 continue
             for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
                 _, _, etype, code, value = EVENT.unpack_from(data, off)
-                if etype == EV_KEY and value in (0, 1):
+                if etype == EV_KEY and value in (0, 1, 2):
                     out.append((code, value))
         return out
 
@@ -188,24 +190,31 @@ def run(system, fps=10):
     print(f"rkshell: screen {fb.w}x{fb.h}, {fb.bpp} bits, line {fb.stride} bytes; console {console.name}", file=sys.stderr)
     try:
         while app.running and not stop:
-            wait = 0.005 if app.dock.moving or held else (1 / fps if app.animating else 0.25)
+            wait = 0.005 if app.dock.moving or held else (0.03 if app.live else (1 / fps if app.animating else 0.25))
             for code, value in inputs.read(wait):
-                typing = isinstance(app.current, Keyboard)
+                typing = bool(app.current and app.current.wants_keys)
                 if code in SHIFT:
                     inputs.shift = bool(value)
+                elif code in CTRL:
+                    inputs.ctrl = bool(value)
                 elif code in VOLUME and value:
                     v = system.volume()
                     if v is not None:
                         app.toast(f"Volume {system.set_volume(v + VOLUME[code])}%", 1.5)
-                elif typing and code == 14 and value:
-                    app.text_input("\x08")
-                elif typing and code in (28, 96) and value:
-                    app.text_input("\n")
-                elif typing and code in PLAIN and value:
-                    ch = PLAIN[code]
-                    app.text_input((SHIFTED.get(ch, ch.upper()) if inputs.shift else ch))
+                elif typing and code in SPECIAL:            # value 2 is the keyboard's own repeat
+                    if value:
+                        app.text_input(SPECIAL[code])
+                elif typing and code in PLAIN:
+                    if value:
+                        ch = PLAIN[code]
+                        if inputs.ctrl and ch.isalpha():
+                            app.text_input(chr(ord(ch) & 0x1f))
+                        else:
+                            app.text_input(SHIFTED.get(ch, ch.upper()) if inputs.shift else ch)
                 else:
                     action = PAD.get(code) or KEYS.get(code)
+                    if value == 2:                          # the shell does its own repeating for these
+                        continue
                     if action and value:
                         app.handle(action)
                         if action in REPEATING:

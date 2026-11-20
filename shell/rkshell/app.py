@@ -20,9 +20,12 @@ from .desktop import Dock, Wallpaper
 from .pages.devices import DevicesPage
 from .pages.files import FilesPage
 from .pages.network import NetworkPage
+from .pages.scan import ScanPage
+from .pages.survey import SurveyPage
 from .pages.system import SystemPage
+from .pages.terminal import TerminalPage
 
-WINDOWS = [FilesPage, NetworkPage, DevicesPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, SurveyPage, NetworkPage, DevicesPage, SystemPage]
 
 
 class App:
@@ -102,8 +105,15 @@ class App:
             self.dirty = True
             self.current.text_input(s)
 
+    @property
+    def live(self):
+        """True while what is shown changes without input (a terminal, a scan)."""
+        return bool(self.current and self.current.live)
+
     def tick(self):
         now = time.time()
+        if self.current:
+            self.current.poll()
         if now - self.last_tick >= 1:
             self.last_tick = now
             if self.current:

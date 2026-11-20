@@ -34,3 +34,9 @@ python3
 # the desktop (shell/rkshell): drawn with pygame, DejaVu fonts
 python3-pygame
 fonts-dejavu-core
+
+# the Terminal window (pyte keeps the picture of the shell's screen)
+python3-pyte
+
+# the first tools: Scan uses nmap through rk-scan
+nmap

@@ -15,6 +15,8 @@ from . import theme as T
 class Screen:
     title = ""
     hints = []
+    wants_keys = False      # True: text typed on a real keyboard goes to text_input()
+    live = False            # True: poll() is called many times a second
 
     def __init__(self, app):
         self.app = app
@@ -28,6 +30,9 @@ class Screen:
 
     def tick(self):
         """Called about once a second while the screen is shown."""
+
+    def poll(self):
+        """Called on every turn of the main loop while the screen is shown."""
 
     def draw(self, surf, f, area):
         pass
@@ -121,6 +126,7 @@ class Keyboard(Screen):
     X space, Y shift, L1/R1 change the page of keys, START confirms. A real
     keyboard types straight in."""
     hints = [("A", "type"), ("B", "delete"), ("X", "space"), ("Y", "shift"), ("L1/R1", "keys"), ("START", "done")]
+    wants_keys = True
     PAGES = [["1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm_.@"],
              ["!\"#$%&'()*", "+,-./:;<=>", "?@[\\]^_`{|", "}~€£¥•°§¶ "]]
 
@@ -159,6 +165,10 @@ class Keyboard(Screen):
             self.on_done(self.value)
 
     def text_input(self, s):
+        if s == "\x1b":                 # Escape on a real keyboard
+            return self.app.pop()
+        if s.startswith("\x1b"):        # arrow keys and the like mean nothing here
+            return
         for ch in s:
             if ch in ("\r", "\n"):
                 self.app.pop()
