@@ -1,8 +1,9 @@
 # Changes made to arkos4clone's device trees when the image is built.
 # One per line:   console | delete-prop | node path | property
 #                 console | set-u32     | node path | property | value (decimal)
-# Each is applied to the console's 4.4 and 5.10 device trees. The build fails
-# if the node or the property is not there, so an upstream change is noticed.
+# Each is applied to the console's 4.4 and 5.10 device trees; "console@5.10"
+# or "console@4.4" limits a line to that kernel's tree. The build fails if the
+# node or the property is not there, so an upstream change is noticed.
 
 # R36MAX type 1: play the speaker through the sound chip's own speaker output
 # and keep the amplifier pin (spk-ctl-gpios) switched on, as the factory device
@@ -18,3 +19,8 @@ r36max type1 | delete-prop | /i2c@ff180000/pmic@20/codec | use-ext-amplifier
 # with about a fifth of the heat in the cell.
 r36max type1 | set-u32 | /i2c@ff180000/pmic@20/charger | max_input_current | 800
 r36max type1 | set-u32 | /i2c@ff180000/pmic@20/charger | max_chrg_current | 800
+
+# R36MAX type 1, kernel 5.10: speaker gain as in the factory device tree (11;
+# arkos4clone has 3). With 3 the speaker was quiet on 5.10 (2026-11-20). The
+# 4.4 kernel is left at 3: there the same value was loud.
+r36max type1@5.10 | set-u32 | /i2c@ff180000/pmic@20/codec | spk-volume | 11

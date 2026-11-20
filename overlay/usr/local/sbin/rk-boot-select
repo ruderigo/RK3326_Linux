@@ -48,12 +48,14 @@ select_boot() {
     cp "$src" "$new/$name" && cp "$image" "$new/Image" || quit "copying the boot files failed"
     # arkos4clone's boot.ini starts a ramdisk (uInitrd) that this system does
     # not have or need: both kernels have the SD card and ext4 drivers built
-    # in. Boot messages go to the screen instead of a splash picture.
+    # in. The start is shown on the screen instead of a splash picture;
+    # loglevel=4 keeps the kernel's routine messages (USB, Wi-Fi) off it,
+    # where they used to print over the login prompt. Errors still show.
     tr -d '\r' < "$dir/boot.ini" | sed -E \
         -e '/^load .* uInitrd[[:space:]]*$/d' \
         -e 's/^booti \$\{loadaddr\} \$\{initrd_loadaddr\} \$\{dtb_loadaddr\}/booti ${loadaddr} - ${dtb_loadaddr}/' \
         -e '/^setenv bootargs /s/ (quiet|splash|plymouth\.ignore-serial-consoles)//g' \
-        -e '/^setenv bootargs /s/"[[:space:]]*$/ console=tty1"/' \
+        -e '/^setenv bootargs /s/"[[:space:]]*$/ loglevel=4 console=tty1"/' \
         > "$new/boot.ini"
     grep -q '^booti \${loadaddr} - \${dtb_loadaddr}' "$new/boot.ini" || quit "unexpected boot.ini in $dir"
     grep -q "^load .* $name\$" "$new/boot.ini" || quit "boot.ini in $dir does not load $name"

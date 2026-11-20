@@ -118,8 +118,8 @@ ls "$ROOTFS/usr/lib/modules"
 
 say "System files"
 cp -a "$REPO/overlay/." "$ROOTFS/"
-chown -R 0:0 "$ROOTFS/usr/local/sbin" "$ROOTFS/etc/systemd/system" "$ROOTFS/etc/NetworkManager/conf.d" \
-             "$ROOTFS/etc/systemd/zram-generator.conf.d"
+# everything we add belongs to root, whoever owns the checkout
+( cd "$REPO/overlay" && find . -mindepth 1 ) | while read -r f; do chown -h 0:0 "$ROOTFS/$f"; done
 chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
 echo "$HOSTNAME_" > "$ROOTFS/etc/hostname"
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_" > "$ROOTFS/etc/hosts"
@@ -191,8 +191,11 @@ while IFS='|' read -r console action node prop value; do
     console=$(echo "$console" | xargs); action=$(echo "$action" | xargs)
     node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs); value=$(echo "${value:-}" | xargs)
     [ -n "$console" ] || continue
+    scope=; case $console in *@*) scope=${console##*@}; console=${console%@*} ;; esac
     for dtb in "$BOOT/consoles/$console"/*.dtb "$BOOT/consoles/$console"/5.10/*.dtb; do
         [ -f "$dtb" ] || continue
+        case $dtb in */5.10/*) k=5.10 ;; *) k=4.4 ;; esac
+        [ -z "$scope" ] || [ "$scope" = "$k" ] || continue
         rel=${dtb#$BOOT/}
         old=$(fdtget -t u "$dtb" "$node" "$prop" 2>/dev/null) ||
             die "dtb-fixes.txt: $node has no $prop in $rel: check the upstream change"
