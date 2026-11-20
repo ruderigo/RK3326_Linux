@@ -1,0 +1,92 @@
+name: Build image
+
+# Builds the SD card image on every push and pull request, and on demand.
+# A tag like v0.1.0 also publishes the image as a release.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      console:
+        description: 'arkos4clone console folder (e.g. "r36max type1", "r36max type3")'
+        default: 'r36max type1'
+      kernel:
+        description: 'Kernel the image starts: 5.10 or 4.4'
+        default: '5.10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
+    runs-on: ubuntu-24.04-arm        # arm64, like the handhelds: Debian installs natively
+    timeout-minutes: 60
+    env:
+      CONSOLE: ${{ inputs.console || 'r36max type1' }}
+      KERNEL: ${{ inputs.kernel || '5.10' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="dev-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      # arkos4clone is large; only the boot chain, the boot files, the list of
+      # consoles and the kernel modules are fetched, at the pinned commit.
+      - name: Fetch the pinned arkos4clone files
+        run: |
+          . build/upstream.env
+          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
+          cd upstream
+          git sparse-checkout init --no-cone
+          git sparse-checkout set /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/
+          git checkout --quiet "$UPSTREAM_COMMIT"
+          du -sh uboot boot/dArkOS/consoles rootfs/dArkOS/usr/lib/modules
+
+      # Debian trixie builds Debian trixie: the same debootstrap, keys and
+      # filesystem tools as the system that ends up on the card.
+      - name: Build and verify the image
+        run: |
+          docker run --rm --privileged -v "$PWD:/src" -w /src \
+            -e CONSOLE -e KERNEL -e VERSION debian:trixie bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates >/dev/null
+              build/build-image.sh upstream out
+            '
+          sudo chown -R "$(id -u):$(id -g)" out
+          ls -la out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rk3326-linux-${{ env.VERSION }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0        # the image is already xz-compressed
+
+  release:
+    name: Publish the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: out
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" \
+            --title "RK3326 Linux ${GITHUB_REF_NAME#v}" --generate-notes

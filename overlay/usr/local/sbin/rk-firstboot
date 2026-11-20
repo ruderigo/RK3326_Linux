@@ -1,0 +1,46 @@
+#!/bin/bash
+# First start of a freshly flashed card: make this card's own SSH host keys
+# and set up the data partition. Runs once (rk-firstboot.service).
+#
+# The data partition (label RKDATA, mounted on /data) fills the rest of the
+# card after the system. Flashing a new image rewrites the partition table
+# without it, but leaves its contents alone: when a card is flashed again the
+# partition is put back at the same place and, if a RKDATA filesystem is
+# already there, it is kept as it is.
+set -u
+log() { echo "rk-firstboot: $*"; }
+
+[ -f /etc/ssh/ssh_host_ed25519_key ] || { ssh-keygen -A && log "SSH host keys made"; }
+
+# The card is the disk the kernel was told to start from (root=/dev/mmcblk0p2).
+# Without a ramdisk, findmnt can show "/dev/root" there, so read the command line.
+root=$(sed -n 's/.*\broot=\([^ ]*\).*/\1/p' /proc/cmdline)
+case $root in /dev/*) ;; *) root=$(findmnt -n -o SOURCE /) ;; esac
+disk=/dev/$(lsblk -n -o PKNAME "$root" 2>/dev/null | head -n 1)
+part="${disk}p3"
+if [ -b "$disk" ] && [ "$disk" != /dev/ ]; then
+    if [ ! -b "$part" ]; then
+        echo ',,L' | sfdisk --force --no-reread --append "$disk" && log "added partition 3"
+        partx -a -n 3 "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null
+        udevadm settle --timeout=10
+    fi
+    if [ -b "$part" ]; then
+        if [ "$(blkid -s TYPE -o value "$part" 2>/dev/null)" = ext4 ] &&
+           [ "$(blkid -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
+            log "kept the existing data partition"
+        else
+            mkfs.ext4 -q -F -L RKDATA -O ^orphan_file,^metadata_csum_seed "$part" && log "made the data partition"
+        fi
+        udevadm settle --timeout=10
+        mkdir -p /data
+        mountpoint -q /data || mount /data || log "could not mount /data"
+        mountpoint -q /data && { mkdir -p /data/ark; chown ark:ark /data/ark; }
+    else
+        log "no partition 3; /data stays on the system partition"
+    fi
+else
+    log "could not find the card's device from $root"
+fi
+
+mkdir -p /var/lib/rk && date -u +%FT%TZ > /var/lib/rk/firstboot-done
+exit 0

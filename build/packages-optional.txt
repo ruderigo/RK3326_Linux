@@ -1,0 +1,11 @@
+# Installed one at a time; a package that is missing is skipped with a warning.
+
+# compressed swap in memory, and a clock that survives power-off without a battery
+systemd-zram-generator
+fake-hwclock
+
+# firmware files for USB Wi-Fi and Bluetooth dongles (Debian non-free-firmware)
+firmware-misc-nonfree
+firmware-mediatek
+firmware-realtek
+firmware-atheros

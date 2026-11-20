@@ -1,0 +1,94 @@
+#!/bin/bash
+# Choose the handheld (console) and the kernel the SD card boots.
+#
+#   rk-boot-select status
+#   rk-boot-select list
+#   rk-boot-select set "<console>" <5.10|4.4>     e.g.  set "r36max type1" 5.10
+#   rk-boot-select kernel <5.10|4.4>              keep the console, change the kernel
+#
+# It works on the boot partition (/boot, or the folder given with -b), which
+# holds arkos4clone's "consoles" folder: one folder per handheld with its
+# boot.ini and device tree (the 5.10 one in a 5.10 subfolder), the kernels in
+# consoles/kernel and the boot logos in consoles/logo.
+#
+# The new files are written next to the old ones and moved into place last,
+# so a failure part-way leaves the card booting as before.
+set -u
+B=/boot
+[ "${1:-}" = "-b" ] && { B=$2; shift 2; }
+C="$B/consoles"
+STATE="$B/rk-device.txt"
+
+quit() { echo "rk-boot-select: $*" >&2; exit 1; }
+[ -d "$C" ] || quit "no $C folder"
+
+state() { [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" | tr -d '\r' | head -n 1; }
+
+logo_for() {    # console name -> logo folder, from consoles/logos.txt (console|folder)
+    [ -f "$C/logos.txt" ] && awk -F'|' -v c="$1" '$1==c {print $2; exit}' "$C/logos.txt"
+}
+
+select_boot() {
+    local console=$1 kernel=$2 dir="$C/$1" dtb name src image logo new
+    [ -d "$dir" ] || quit "unknown console: $console (see: rk-boot-select list)"
+    dtb=$(find "$dir" -maxdepth 1 -name '*.dtb' | head -n 1)
+    [ -n "$dtb" ] || quit "no device tree in $dir"
+    name=$(basename "$dtb")
+    case $kernel in
+        5.10) src="$dir/5.10/$name"; image="$C/kernel/5.10/Image" ;;
+        4.4)  src="$dtb";            image="$C/kernel/original/Image" ;;
+        *)    quit "kernel must be 5.10 or 4.4" ;;
+    esac
+    [ -f "$src" ] || quit "no $kernel device tree for $console: $src"
+    [ -f "$image" ] || quit "no $kernel kernel: $image"
+    [ -f "$dir/boot.ini" ] || quit "no boot.ini in $dir"
+
+    new="$B/.rk-boot-new"
+    rm -rf "$new"; mkdir "$new" || quit "cannot write to $B"
+    cp "$src" "$new/$name" && cp "$image" "$new/Image" || quit "copying the boot files failed"
+    # arkos4clone's boot.ini starts a ramdisk (uInitrd) that this system does
+    # not have or need: both kernels have the SD card and ext4 drivers built
+    # in. Boot messages go to the screen instead of a splash picture.
+    tr -d '\r' < "$dir/boot.ini" | sed -E \
+        -e '/^load .* uInitrd[[:space:]]*$/d' \
+        -e 's/^booti \$\{loadaddr\} \$\{initrd_loadaddr\} \$\{dtb_loadaddr\}/booti ${loadaddr} - ${dtb_loadaddr}/' \
+        -e '/^setenv bootargs /s/ (quiet|splash|plymouth\.ignore-serial-consoles)//g' \
+        -e '/^setenv bootargs /s/"[[:space:]]*$/ console=tty1"/' \
+        > "$new/boot.ini"
+    grep -q '^booti \${loadaddr} - \${dtb_loadaddr}' "$new/boot.ini" || quit "unexpected boot.ini in $dir"
+    grep -q "^load .* $name\$" "$new/boot.ini" || quit "boot.ini in $dir does not load $name"
+    cmp -s "$image" "$new/Image" || quit "copying the kernel failed"
+
+    # the old device tree goes only once the new files are complete
+    for f in "$B"/*.dtb; do [ -e "$f" ] && [ "$(basename "$f")" != "$name" ] && rm -f "$f"; done
+    mv -f "$new/$name" "$B/$name" && mv -f "$new/Image" "$B/Image" && mv -f "$new/boot.ini" "$B/boot.ini" ||
+        quit "replacing the boot files failed"
+    rmdir "$new" 2>/dev/null
+    logo=$(logo_for "$console")
+    [ -n "$logo" ] && [ -f "$C/$logo/logo.bmp" ] && cp -f "$C/$logo/logo.bmp" "$B/logo.bmp"
+    printf 'console=%s\nkernel=%s\n' "$console" "$kernel" > "$STATE"
+    sync
+    echo "Boot files set: $console, kernel $kernel. Power off and on to start it."
+}
+
+case ${1:-} in
+    status)
+        echo "console: $(state console)"
+        echo "kernel:  $(state kernel)"
+        [ -r /proc/version ] && echo "running: $(uname -r)" ;;
+    list)
+        for d in "$C"/*/; do
+            n=$(basename "$d")
+            [ -f "$d/boot.ini" ] || continue
+            [ -d "$d/5.10" ] && echo "$n    (5.10, 4.4)" || echo "$n    (4.4)"
+        done ;;
+    set)
+        [ $# -eq 3 ] || quit 'usage: rk-boot-select set "<console>" <5.10|4.4>'
+        select_boot "$2" "$3" ;;
+    kernel)
+        [ $# -eq 2 ] || quit "usage: rk-boot-select kernel <5.10|4.4>"
+        cur=$(state console); [ -n "$cur" ] || quit "no console recorded in $STATE; use: set"
+        select_boot "$cur" "$2" ;;
+    *)
+        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

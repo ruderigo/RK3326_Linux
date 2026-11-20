@@ -1,0 +1,49 @@
+#!/bin/bash
+# Settings left on the boot partition (the FAT partition a Mac or PC can
+# open), applied at every start before the network comes up:
+#
+#   /boot/wifi.txt          SSID=, PASSWORD=, COUNTRY=  -> a saved Wi-Fi network.
+#                           Once applied, the password is removed from the file.
+#   /boot/authorized_keys   SSH public keys for the user "ark" (added, not replaced)
+set -u
+log() { echo "rk-bootcfg: $*"; }
+val() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$2" | tr -d '\r' | head -n 1; }
+
+W=/boot/wifi.txt
+if [ -f "$W" ]; then
+    ssid=$(val SSID "$W"); pass=$(val PASSWORD "$W"); country=$(val COUNTRY "$W")
+    if [ -n "$ssid" ]; then
+        f=/etc/NetworkManager/system-connections/rk-wifi.nmconnection
+        umask 077
+        {
+            printf '[connection]\nid=rk-wifi\ntype=wifi\nautoconnect=true\n\n'
+            printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$ssid"
+            [ -n "$pass" ] && printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$pass"
+            printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+        } > "$f"
+        chmod 600 "$f"
+        log "saved Wi-Fi network: $ssid"
+        # keep the name as a record, drop the password from the FAT partition
+        sed -i -e 's/^\([[:space:]]*PASSWORD[[:space:]]*=\).*/\1/' \
+               -e "s/^\([[:space:]]*SSID[[:space:]]*=\).*/\1/" "$W"
+        printf '# applied: %s (saved on the system; fill in again to change it)\r\n' "$ssid" >> "$W"
+    fi
+    if [ -n "$country" ]; then
+        mkdir -p /etc/default
+        printf 'REGDOMAIN=%s\n' "$country" > /etc/default/crda
+        iw reg set "$country" 2>/dev/null
+    fi
+fi
+
+K=/boot/authorized_keys
+if [ -s "$K" ] && id ark >/dev/null 2>&1; then
+    d=/home/ark/.ssh
+    mkdir -p "$d"; touch "$d/authorized_keys"
+    tr -d '\r' < "$K" | grep -E '^(ssh-|ecdsa-|sk-)' | while read -r line; do
+        grep -qxF "$line" "$d/authorized_keys" || { echo "$line" >> "$d/authorized_keys"; log "added an SSH key for ark"; }
+    done
+    chown -R ark:ark "$d"; chmod 700 "$d"; chmod 600 "$d/authorized_keys"
+fi
+
+rfkill unblock all 2>/dev/null
+exit 0

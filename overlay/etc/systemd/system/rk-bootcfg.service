@@ -1,0 +1,14 @@
+[Unit]
+Description=Apply settings from the boot partition (Wi-Fi, SSH keys)
+RequiresMountsFor=/boot
+Before=NetworkManager.service ssh.service
+After=rk-firstboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rk-bootcfg
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

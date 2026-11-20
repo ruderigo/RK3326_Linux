@@ -1,0 +1,7 @@
+# Wi-Fi for the handheld. Fill in the two lines, save, eject the card, boot.
+# The handheld then joins this network at every start.
+# The password is removed from this file once the handheld has saved it.
+# COUNTRY is your two-letter country code (CA, US, FR, ...).
+SSID=
+PASSWORD=
+COUNTRY=CA

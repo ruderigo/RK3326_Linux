@@ -1,0 +1,32 @@
+# Installed on top of the debootstrap base. One package per line.
+
+# remote access and network
+openssh-server
+network-manager
+wpasupplicant
+iw
+wireless-regdb
+rfkill
+avahi-daemon
+libnss-mdns
+iputils-ping
+curl
+wget
+
+# the card and its partitions
+parted
+
+# devices
+usbutils
+alsa-utils
+evtest
+kbd
+
+# working on the handheld
+nano
+less
+bash-completion
+htop
+tmux
+git
+python3
