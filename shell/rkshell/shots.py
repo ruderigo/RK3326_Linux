@@ -63,14 +63,23 @@ def write_all(system, size, out_dir):
                 sess.close()
             TerminalPage.session = None
         if item["name"] == "Scan":
-            app.handle("a")
-            time.sleep(0.3)
-            shot("scan-devices")
+            from .pages.scan import ScanPage
+            shot("scan-loadout")
+            app.handle("down")
+            app.handle("right")
+            app.handle("right")                 # the Identify loadout
+            shot("scan-identify")
+            app.handle("x")
+            app.window.view = "running"
+            shot("scan-running")
+            app.tick()
+            shot("scan-results")
             app.handle("down")
             app.handle("a")
-            time.sleep(0.3)
-            shot("scan-ports")
+            shot("scan-host")
             app.stack.clear()
+            app.window.view = "loadout"
+            ScanPage.scan, ScanPage.hosts = None, []
         if item["name"] == "Survey":
             time.sleep(0.3)
             shot("survey-list")

@@ -1,65 +1,64 @@
 #!/usr/bin/python3
-"""Network scans for the desktop, as root, and only of the handheld's own network.
+"""Run a scan for the desktop, as root.
 
-  rk-scan networks          the networks this handheld is on, one per line
-  rk-scan hosts <network>   which addresses answer (nmap -sn), as nmap XML
-  rk-scan ports <address>   the common open ports of one address (nmap -F), as nmap XML
+  rk-scan networks      the networks this handheld is on, one per line (no root needed)
+  rk-scan run           run the scan described on the first line of standard input
+                        (a JSON loadout, see rkshell/nmapspec.py); nmap's XML, with
+                        its progress, comes out on standard output
 
-Root is needed for the quick, reliable kind of scan (ARP on the local
-network). So that the desktop's permission to run this is not a permission to
-scan anything anywhere, the target has to lie inside a network one of the
-handheld's own interfaces is on, and a network larger than 1024 addresses is
-refused. Scanning other targets is a deliberate act, with nmap in a terminal.
+SYN and UDP scans and the OS guess need root, so the desktop is allowed to
+run this through sudo. The nmap command is built here from the loadout by
+rkshell.nmapspec, the same code that shows the command on screen: a target
+cannot carry an option of nmap's own, so this is not a way to make root
+write a file or run a script.
+
+To stop a scan, close this program's standard input: a root process cannot
+be signalled by the user who started it, so that is how the desktop cancels.
 """
 import ipaddress
 import json
 import subprocess
 import sys
+import threading
+
+from rkshell import nmapspec
 
 
-def own_networks():
+def networks():
     out = subprocess.run(["ip", "-j", "-4", "addr", "show", "scope", "global"], capture_output=True, text=True).stdout
-    nets = []
     for dev in json.loads(out or "[]"):
         for a in dev.get("addr_info", []):
             if a.get("family") == "inet":
                 iface = ipaddress.ip_interface(f"{a['local']}/{a['prefixlen']}")
-                nets.append((dev["ifname"], iface))
-    return nets
+                print(f"{dev['ifname']} {iface.network} {iface.ip}")
+    return 0
 
 
-def die(msg):
-    print("rk-scan: " + msg, file=sys.stderr)
-    sys.exit(2)
-
-
-def main():
-    if len(sys.argv) == 2 and sys.argv[1] == "networks":
-        for ifname, iface in own_networks():
-            print(f"{ifname} {iface.network} {iface.ip}")
-        return 0
-    if len(sys.argv) != 3 or sys.argv[1] not in ("hosts", "ports"):
-        die("usage: rk-scan networks | hosts <network> | ports <address>")
-    mine = [iface.network for _, iface in own_networks()]
+def run():
     try:
-        if sys.argv[1] == "hosts":
-            target = ipaddress.ip_network(sys.argv[2], strict=True)
-            if target.num_addresses > 1024:
-                die(f"{target} is larger than 1024 addresses")
-            inside = any(target.subnet_of(n) for n in mine)
-        else:
-            target = ipaddress.ip_address(sys.argv[2])
-            inside = any(target in n for n in mine)
-    except ValueError as e:
-        die(str(e))
-    if not inside:
-        die(f"{target} is not on a network this handheld is connected to")
-    if sys.argv[1] == "hosts":
-        cmd = ["nmap", "-sn", "-T4", "-oX", "-", str(target)]
-    else:
-        cmd = ["nmap", "-F", "-T4", "--open", "-oX", "-", str(target)]
-    return subprocess.run(cmd).returncode
+        spec = json.loads(sys.stdin.readline())
+    except ValueError:
+        print("rk-scan: the loadout is not valid JSON", file=sys.stderr)
+        return 2
+    if not isinstance(spec, dict) or nmapspec.problem(spec):
+        print("rk-scan: " + (nmapspec.problem(spec) if isinstance(spec, dict) else "the loadout is not a table"), file=sys.stderr)
+        return 2
+    cmd = nmapspec.command(spec)
+    cmd[1:1] = ["-oX", "-", "--stats-every", "2s"]
+    nmap = subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
+
+    def watch():                        # standard input closed: the desktop cancelled
+        sys.stdin.read()
+        if nmap.poll() is None:
+            nmap.terminate()
+    threading.Thread(target=watch, daemon=True).start()
+    return nmap.wait()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if sys.argv[1:] == ["networks"]:
+        sys.exit(networks())
+    if sys.argv[1:] == ["run"]:
+        sys.exit(run())
+    print("usage: rk-scan networks | run", file=sys.stderr)
+    sys.exit(2)
