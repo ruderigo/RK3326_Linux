@@ -24,11 +24,14 @@ parts, for teaching and authorised testing on your own equipment.
   is on the card as a fallback.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
-  Survey, Network, Devices and Settings. A USB keyboard works too.
+  Arsenal, Survey, Network, Devices and Settings. A USB keyboard works too.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
 - **Scan**: nmap as a loadout. Pick a target, equip the scan (mission,
   ports, technique, versions, OS guess, script packs, speed), see what it
   costs in time and noise, launch.
+- **Arsenal**: the security toolset, grouped, showing what is installed. The
+  light tools are in the image; the heavy ones (Metasploit, exploitdb) are
+  fetched on first online boot.
 - **Survey**: every Wi-Fi access point in range, with its channel, signal
   and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
@@ -80,6 +83,29 @@ which builds the command from the loadout and refuses a target that is
 really an nmap option, so the desktop cannot make root write files or run
 scripts. It does **not** limit where you aim: any address can be typed.
 Scan only networks that are yours, or that you have been asked to test.
+
+### The toolset
+
+**Arsenal** lists the security tools by group, with a dot for what is
+installed and a line on what each one is for:
+
+![The Arsenal window](docs/arsenal.png)
+
+The light tools ship in the image. The heavy ones — Metasploit and a local
+copy of Exploit-DB — are large, so they are **not** flashed; press **X** in
+Arsenal while on Wi-Fi and `rk-tools` fetches them (Metasploit into the
+system, Exploit-DB into `/data/opt`). The root partition is sized to leave
+room; because empty space compresses away, the image you download stays
+small.
+
+Every tool runs from the **Terminal**. Plug in a USB keyboard for the big
+keyboard-driven ones (Metasploit's console especially). Adding a tool the
+image does not carry is a normal `sudo apt install` away.
+
+See [`docs/arsenal.md`](docs/arsenal.md) for the full list, the Wi-Fi
+monitor-mode note, and how to install Metasploit by hand if the automatic
+fetch has no build for this CPU. Use these on networks and machines that are
+yours, or that you have been asked to test.
 
 Apps add themselves to the dock with one small file: see
 [`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).

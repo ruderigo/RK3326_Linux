@@ -1,0 +1,64 @@
+# The security toolset, baked into the image. Each is installed on its own,
+# and a package the Debian arm64 archive does not carry is skipped with a
+# warning rather than stopping the build (the names here are the Debian
+# names, which sometimes differ from Kali's). These are the light tools; the
+# heavy ones (Metasploit, exploitdb) are installed on first online boot by
+# rk-tools, to keep the flashed image small.
+#
+# They are for testing networks and machines that are yours, or that you
+# have been asked to test.
+
+# --- seeing the traffic ---
+tcpdump
+tshark
+termshark
+ngrep
+iftop
+iptraf-ng
+tcpflow
+
+# --- the network around you ---
+arp-scan
+netdiscover
+masscan
+nbtscan
+fping
+hping3
+netcat-openbsd
+socat
+sslscan
+whois
+dnsutils
+dnsrecon
+dnsenum
+fierce
+snmp
+smbclient
+
+# --- web servers and apps (command line) ---
+# nikto is pulled from source in build-image.sh (not in the Debian archive);
+# perl and the SSL module are what it needs
+perl
+libnet-ssleay-perl
+whatweb
+wafw00f
+dirb
+gobuster
+ffuf
+wfuzz
+sqlmap
+httpie
+
+# --- wi-fi (needs a dongle with monitor mode) ---
+aircrack-ng
+reaver
+bully
+mdk4
+wifite
+hcxtools
+hcxdumptool
+macchanger
+
+# --- in the middle, and handy ---
+ettercap-text-only
+proxychains4

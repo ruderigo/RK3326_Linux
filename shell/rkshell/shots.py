@@ -15,6 +15,9 @@ def write_all(system, size, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     surf = pygame.Surface(size)
     app = App(system, surf)
+    from .pages.arsenal import ArsenalPage
+    def ArsenalPage_reset():
+        ArsenalPage.install = None
     n = 0
 
     def shot(name):
@@ -80,6 +83,16 @@ def write_all(system, size, out_dir):
             app.stack.clear()
             app.window.view = "loadout"
             ScanPage.scan, ScanPage.hosts = None, []
+        if item["name"] == "Arsenal":
+            app.handle("down"); app.handle("down"); app.handle("down")
+            app.handle("a")
+            shot("arsenal-about")
+            app.handle("b")
+            app.handle("x")                     # fetch the heavy tools
+            shot("arsenal-install")
+            app.stack.clear()
+            app.window.view = "list"
+            ArsenalPage_reset()
         if item["name"] == "Survey":
             time.sleep(0.3)
             shot("survey-list")
