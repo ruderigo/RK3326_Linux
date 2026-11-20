@@ -29,7 +29,8 @@ class App:
     def __init__(self, system, surf):
         self.system, self.surf = system, surf
         self.fonts = T.Fonts(surf.get_height())
-        self.wallpaper = Wallpaper(surf.get_size())
+        self.wallpaper = Wallpaper(surf)
+        self.bar = None
         self.dock = Dock()
         self.window, self.stack = None, []
         self.running, self.dirty = True, True
@@ -118,9 +119,10 @@ class App:
     def menu_bar(self, surf, f):
         W = surf.get_width()
         h = f.small_line + 12
-        bar = pygame.Surface((W, h), pygame.SRCALPHA)
-        bar.fill((*T.BAR, 215))
-        surf.blit(bar, (0, 0))
+        if self.bar is None:
+            self.bar = pygame.Surface((W, h), pygame.SRCALPHA)
+            self.bar.fill((*T.BAR, 215))
+        surf.blit(self.bar, (0, 0))
         rel = self.system.release()
         x = 14 + G.text(surf, f.small, rel["RK_NAME"], (14, 6), T.EMBER_BRIGHT)
         if self.window:

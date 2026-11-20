@@ -3,8 +3,18 @@ import pygame
 from . import theme as T
 
 
+_rendered = {}
+
+
 def text(surf, font, s, pos, color=T.TEXT, right=False, center=False):
-    img = font.render(s, True, color)
+    # Drawing a string is the slow part on the handheld and most strings are
+    # the same from one frame to the next, so rendered strings are kept.
+    key = (id(font), s, color)
+    img = _rendered.get(key)
+    if img is None:
+        if len(_rendered) > 400:
+            _rendered.clear()
+        img = _rendered[key] = font.render(s, True, color)
     x, y = pos
     if right:
         x -= img.get_width()

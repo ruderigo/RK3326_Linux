@@ -82,11 +82,12 @@ class Framebuffer:
         if self.out is not None:
             self.out.blit(self.surf, (0, 0))
             src = self.out
-        raw = src.get_buffer().raw
         row = self.w * self.bpp // 8
-        if src.get_pitch() == self.stride:
-            self.mm[:self.stride * self.h] = raw[:self.stride * self.h]
+        if src.get_pitch() == self.stride:      # the usual case: one copy, straight from the surface
+            self.mm.seek(0)
+            self.mm.write(src.get_buffer())
         else:                                   # the driver pads each line: copy line by line
+            raw = src.get_buffer().raw
             pitch = src.get_pitch()
             for y in range(self.h):
                 self.mm[y * self.stride:y * self.stride + row] = raw[y * pitch:y * pitch + row]
@@ -187,7 +188,7 @@ def run(system, fps=10):
     print(f"rkshell: screen {fb.w}x{fb.h}, {fb.bpp} bits, line {fb.stride} bytes; console {console.name}", file=sys.stderr)
     try:
         while app.running and not stop:
-            wait = 1 / 30 if app.dock.moving or held else (1 / fps if app.animating else 0.25)
+            wait = 0.005 if app.dock.moving or held else (1 / fps if app.animating else 0.25)
             for code, value in inputs.read(wait):
                 typing = isinstance(app.current, Keyboard)
                 if code in SHIFT:
