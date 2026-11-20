@@ -12,7 +12,7 @@ TEXT_LIMIT = 200 * 1024
 
 
 class FilesPage(Page):
-    title = "FILES"
+    title, icon = "Files", "files"
 
     def __init__(self, app):
         super().__init__(app)
@@ -22,7 +22,10 @@ class FilesPage(Page):
 
     @property
     def hints(self):
-        return [("A", "open")] + ([("B", "up"), ("X", "more")] if self.path else [])
+        return [("A", "open")] + ([("B", "up"), ("X", "more")] if self.path else [("B", "close")])
+
+    def wants_back(self):
+        return self.path is not None            # B goes up a folder before it closes the window
 
     def enter(self):
         s = self.app.system

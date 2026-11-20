@@ -1,5 +1,6 @@
-"""Draw every page, and a few of the screens they open, into PNG files."""
+"""Draw the desktop and every window into PNG files."""
 import os
+import time
 
 import pygame
 
@@ -19,29 +20,39 @@ def write_all(system, size, out_dir):
     def shot(name):
         nonlocal n
         n += 1
-        app.draw()
+        for _ in range(30):                     # let the dock settle on its icon
+            app.draw()
         pygame.image.save(surf, os.path.join(out_dir, f"{n:02d}-{name}.png"))
 
-    for i, page in enumerate(app.pages):
-        app.page = i
-        page.enter()
-        shot(page.title.lower())
-    app.page = 1                                    # FILES: inside the home folder
-    app.pages[1].handle("a")
-    shot("files-folder")
-    app.page = 2                                    # NETWORK: the list of networks, then a password
-    app.pages[2].handle("a")
-    import time
-    time.sleep(0.2)
-    shot("network-join")
-    app.push(Keyboard(app, "Password for Guest", lambda pw: None, secret=True, initial="hunter2"))
-    shot("keyboard")
-    app.stack.clear()
-    app.page = 4                                    # SYSTEM: about, then the power-off question
-    app.pages[4].about()
-    shot("system-about")
-    app.stack.clear()
-    app.confirm("Power off?", "Press the power button to start it again.", "Power off", lambda: None)
-    shot("confirm")
+    shot("desktop")
+    for _ in range(4):
+        app.handle("right")
+    shot("desktop-app")
+    app.dock.sel = 0
+    for i, item in enumerate(app.dock.items):
+        if "window" not in item:
+            continue
+        app.dock.sel = i
+        app.handle("a")
+        shot(item["name"].lower())
+        if item["name"] == "Files":
+            app.handle("a")
+            shot("files-folder")
+            app.handle("b")
+        if item["name"] == "Network":
+            app.handle("a")
+            time.sleep(0.2)
+            shot("network-join")
+            app.push(Keyboard(app, "Password for Guest", lambda pw: None, secret=True, initial="hunter2"))
+            shot("keyboard")
+            app.stack.clear()
+        if item["name"] == "Settings":
+            app.window.about()
+            shot("settings-about")
+            app.stack.clear()
+            app.confirm("Power off?", "Press the power button to start it again.", "Power off", lambda: None)
+            shot("confirm")
+            app.stack.clear()
+        app.handle("b")
     print(f"{n} pictures in {out_dir}")
     return 0

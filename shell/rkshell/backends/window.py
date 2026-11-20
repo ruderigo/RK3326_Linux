@@ -38,8 +38,8 @@ def run(system, size):
         if app.launch:
             app.toast("Starting an app needs the handheld")
             app.launch = None
-        if app.dirty:
+        if app.dirty or app.animating:
             app.draw()
             pygame.display.flip()
-        clock.tick(30)
+        clock.tick(30 if app.dock.moving else 12)      # smooth while the dock moves, slow for the fireflies
     return 0

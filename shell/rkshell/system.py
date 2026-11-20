@@ -232,9 +232,10 @@ class System:
 
     # ---------------------------------------------------------------- apps
     def apps(self):
-        """Entries of the HOME page: every *.json in the apps folders.
+        """Apps on the dock: every *.json in the apps folders.
 
-        {"name": "...", "group": "...", "about": "one line", "exec": ["cmd", "arg"]}
+        {"name": "...", "icon": "firefly", "group": "...", "about": "one line", "exec": ["cmd", "arg"]}
+        "icon" names a drawing in desktop.py; without one the dock shows the first letter.
         An entry whose "exec" program is missing shows as "not installed".
         """
         found = []
@@ -322,9 +323,9 @@ class DemoSystem(System):
                 {"label": "Boot files", "mount": "/boot", "used": int(0.11 * g), "total": int(0.25 * g)}]
 
     def apps(self):
-        return [{"name": "FireFly", "group": "Comms", "about": "Messages over LoRa and Wi-Fi", "ready": True},
-                {"name": "Stump", "group": "Comms", "about": "Run and watch a Stump node", "ready": True},
-                {"name": "Provisioner", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
+        return [{"name": "FireFly", "icon": "firefly", "group": "Comms", "about": "Messages over LoRa and Wi-Fi", "ready": True},
+                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "Run and watch a Stump node", "ready": True},
+                {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
     def boot_selection(self): return {"console": "r36max type1", "kernel": "5.10"}
     def power_off(self): return True, ""

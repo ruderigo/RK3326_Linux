@@ -8,8 +8,8 @@ from .base import Page
 
 
 class SystemPage(Page):
-    title = "SYSTEM"
-    hints = [("←→", "adjust"), ("A", "choose")]
+    title, icon = "Settings", "settings"
+    hints = [("←→", "adjust"), ("A", "choose"), ("B", "close")]
 
     def __init__(self, app):
         super().__init__(app)

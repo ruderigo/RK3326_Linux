@@ -40,6 +40,7 @@ class Fonts:
         self.small = pygame.font.Font(mono, max(11, base * 3 // 4))
         self.big = pygame.font.Font(bold or mono, base * 5 // 4)
         self.title = pygame.font.Font(bold or mono, base * 7 // 4)
+        self.clock = pygame.font.Font(bold or mono, base * 4)
         self.body = pygame.font.Font(sans or mono, base)
         self.line = self.mono.get_linesize()
         self.small_line = self.small.get_linesize()

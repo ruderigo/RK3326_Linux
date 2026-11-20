@@ -1,0 +1,219 @@
+"""The desktop: a wallpaper, a clock, and a dock whose icons grow under the cursor.
+
+Everything is drawn by code, so there are no picture files to ship: the
+wallpaper is a dusk sky with drifting fireflies, the icons are simple shapes
+in the Amber palette.
+"""
+import math
+import random
+import time
+
+import pygame
+
+from . import gfx as G
+from . import theme as T
+
+ICON_PX = 192                      # icons are drawn once at this size, then scaled
+
+
+# ------------------------------------------------------------------ wallpaper
+class Wallpaper:
+    def __init__(self, size, seed=7):
+        self.size = size
+        w, h = size
+        self.base = pygame.Surface(size)
+        top, mid, low = (0x0c, 0x0a, 0x10), (0x2a, 0x18, 0x14), (0x8a, 0x40, 0x1c)
+        for y in range(h):                                    # dusk: dark above, embers at the horizon
+            t = y / (h - 1)
+            a, b, u = (top, mid, t / 0.6) if t < 0.6 else (mid, low, (t - 0.6) / 0.4)
+            pygame.draw.line(self.base, tuple(int(a[i] + (b[i] - a[i]) * u) for i in range(3)), (0, y), (w, y))
+        rnd = random.Random(seed)
+        hill = [(0, h)]                                       # a line of trees against the glow
+        x = 0
+        while x <= w:
+            hill.append((x, h - int(h * 0.20) - rnd.randint(0, h // 14) - int(math.sin(x / w * math.pi) * h * 0.05)))
+            x += rnd.randint(w // 60, w // 24)
+        hill += [(w, hill[-1][1]), (w, h)]
+        pygame.draw.polygon(self.base, (0x12, 0x0d, 0x0b), hill)
+        self.flies = [{"x": rnd.uniform(0, w), "y": rnd.uniform(h * 0.22, h * 0.78), "r": rnd.uniform(2.0, 4.5),
+                       "phase": rnd.uniform(0, 6.28), "speed": rnd.uniform(0.4, 1.1), "drift": rnd.uniform(-6, 6)}
+                      for _ in range(26)]
+        self.glow = {}
+
+    def _glow(self, radius):
+        key = int(radius * 2)
+        if key not in self.glow:
+            d = key * 8
+            s = pygame.Surface((d, d), pygame.SRCALPHA)
+            for i in range(d // 2, 0, -1):
+                a = int(110 * (1 - i / (d / 2)) ** 2)
+                pygame.draw.circle(s, (0xf0, 0xb0, 0x50, a), (d // 2, d // 2), i)
+            pygame.draw.circle(s, (0xff, 0xe0, 0x90, 255), (d // 2, d // 2), max(1, key // 2))
+            self.glow[key] = s
+        return self.glow[key]
+
+    def draw(self, surf, t):
+        surf.blit(self.base, (0, 0))
+        w, h = self.size
+        for f in self.flies:
+            pulse = 0.5 + 0.5 * math.sin(t * f["speed"] + f["phase"])
+            if pulse < 0.15:
+                continue
+            x = (f["x"] + f["drift"] * t) % w
+            y = f["y"] + math.sin(t * 0.3 + f["phase"]) * 10
+            g = self._glow(f["r"])
+            g.set_alpha(int(255 * pulse))
+            surf.blit(g, (x - g.get_width() // 2, y - g.get_height() // 2))
+
+
+# ---------------------------------------------------------------------- icons
+def _tile():
+    s = pygame.Surface((ICON_PX, ICON_PX), pygame.SRCALPHA)
+    r = pygame.Rect(6, 6, ICON_PX - 12, ICON_PX - 12)
+    pygame.draw.rect(s, (*T.PANEL, 235), r, border_radius=40)
+    pygame.draw.rect(s, T.BORDER, r, width=3, border_radius=40)
+    return s
+
+
+def _files(s, c):
+    pygame.draw.rect(s, c, (44, 62, 46, 22), border_radius=8)
+    pygame.draw.rect(s, c, (44, 74, 104, 62), border_radius=10)
+    pygame.draw.rect(s, T.PANEL, (52, 92, 88, 6))
+
+
+def _network(s, c):
+    for r, wd in ((62, 10), (42, 10), (22, 10)):
+        pygame.draw.arc(s, c, (96 - r, 118 - r, 2 * r, 2 * r), math.radians(40), math.radians(140), wd)
+    pygame.draw.circle(s, c, (96, 122), 9)
+
+
+def _devices(s, c):
+    pygame.draw.rect(s, c, (70, 52, 52, 60), border_radius=8)       # a USB plug
+    pygame.draw.rect(s, T.PANEL, (82, 62, 10, 14))
+    pygame.draw.rect(s, T.PANEL, (100, 62, 10, 14))
+    pygame.draw.rect(s, c, (80, 112, 32, 16))
+    pygame.draw.rect(s, c, (91, 128, 10, 22))
+
+
+def _settings(s, c):
+    for y, knob in ((66, 118), (96, 74), (126, 104)):               # three sliders
+        pygame.draw.rect(s, c, (48, y - 4, 96, 8), border_radius=4)
+        pygame.draw.circle(s, T.PANEL, (knob, y), 14)
+        pygame.draw.circle(s, c, (knob, y), 11)
+
+
+def _terminal(s, c):
+    pygame.draw.lines(s, c, False, [(54, 70), (86, 96), (54, 122)], 12)
+    pygame.draw.rect(s, c, (98, 116, 44, 11), border_radius=4)
+
+
+def _firefly(s, c):
+    for r, a in ((46, 40), (34, 70), (22, 120)):
+        g = pygame.Surface((ICON_PX, ICON_PX), pygame.SRCALPHA)
+        pygame.draw.circle(g, (0xf0, 0xb0, 0x50, a), (96, 108), r)
+        s.blit(g, (0, 0))
+    pygame.draw.circle(s, (0xff, 0xe8, 0xa0), (96, 108), 14)
+    pygame.draw.ellipse(s, c, (58, 58, 34, 22))
+    pygame.draw.ellipse(s, c, (100, 58, 34, 22))
+
+
+def _stump(s, c):
+    pygame.draw.rect(s, c, (56, 88, 80, 48), border_radius=6)        # a cut tree, seen from the side
+    pygame.draw.ellipse(s, T.EMBER_BRIGHT, (50, 62, 92, 44))
+    for r in (30, 18, 7):
+        pygame.draw.ellipse(s, T.PANEL, (96 - r, 84 - r * 0.45, 2 * r, r * 0.9), 3)
+
+
+def _chip(s, c):
+    pygame.draw.rect(s, c, (62, 62, 68, 68), border_radius=8)
+    pygame.draw.rect(s, T.PANEL, (80, 80, 32, 32), border_radius=4)
+    for i in range(4):
+        o = 68 + i * 18
+        for x, y, w, h in ((o, 46, 6, 14), (o, 132, 6, 14), (46, o, 14, 6), (132, o, 14, 6)):
+            pygame.draw.rect(s, c, (x, y, w, h))
+
+
+GLYPHS = {"files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal,
+          "firefly": _firefly, "stump": _stump, "chip": _chip}
+_icons = {}
+
+
+def icon(name, label, size, dim=False):
+    """The icon `name` at `size` pixels; an unknown name gives the label's first letter."""
+    key = (name if name in GLYPHS else "letter:" + label[:1].upper(), dim)
+    if key not in _icons:
+        s = _tile()
+        color = T.DIM if dim else T.EMBER_BRIGHT
+        if name in GLYPHS:
+            GLYPHS[name](s, color)
+        else:
+            font = pygame.font.Font(T._find("DejaVuSansMono-Bold.ttf") or T._find("DejaVuSansMono.ttf"), 96)
+            img = font.render(label[:1].upper(), True, color)
+            s.blit(img, img.get_rect(center=(96, 98)))
+        _icons[key] = s
+    return pygame.transform.smoothscale(_icons[key], (size, size))
+
+
+# ----------------------------------------------------------------------- dock
+class Dock:
+    """A row of icons at the bottom. The one under the cursor is the largest
+    and its neighbours grow with it, as in a desktop dock; the row slides so
+    the cursor stays in view when there are more icons than fit."""
+
+    def __init__(self):
+        self.items, self.sel, self.pos = [], 0, 0.0        # pos follows sel smoothly
+
+    def set(self, items):
+        self.items = items
+        self.sel = min(self.sel, max(0, len(items) - 1))
+
+    def move(self, step):
+        if self.items:
+            self.sel = (self.sel + step) % len(self.items)
+
+    @property
+    def current(self):
+        return self.items[self.sel] if self.items else None
+
+    @property
+    def moving(self):
+        return abs(self.pos - self.sel) > 0.01
+
+    def step(self):
+        """Advance the animation one frame."""
+        d = self.sel - self.pos
+        self.pos = self.sel if abs(d) < 0.01 else self.pos + d * 0.35
+
+    def draw(self, surf, f):
+        W, H = surf.get_size()
+        base, big = W // 10, int(W / 5.5)                   # 72 and 130 px on a 720 screen
+        sizes = []
+        for i in range(len(self.items)):
+            near = max(0.0, 1 - abs(i - self.pos) / 2.2)      # 1 under the cursor, 0 two icons away
+            sizes.append(int(base + (big - base) * near * near))
+        gap = W // 60
+        total = sum(sizes) + gap * (len(sizes) - 1)
+        centre = sum(sizes[:int(self.pos)]) + gap * int(self.pos)
+        frac = self.pos - int(self.pos)
+        if int(self.pos) < len(sizes):
+            centre += sizes[int(self.pos)] / 2 + (sizes[int(self.pos)] / 2 + gap + (sizes[min(int(self.pos) + 1, len(sizes) - 1)] / 2)) * frac
+        x0 = (W - total) // 2 if total <= W - 40 else int(W / 2 - centre)
+        floor = H - W // 28
+        shelf = pygame.Rect(max(10, x0 - 14), floor - base - 10, min(W - 20, total + 28), base + 20)
+        veil = pygame.Surface(shelf.size, pygame.SRCALPHA)
+        pygame.draw.rect(veil, (*T.BAR, 170), veil.get_rect(), border_radius=22)
+        pygame.draw.rect(veil, (*T.BORDER, 255), veil.get_rect(), width=1, border_radius=22)
+        surf.blit(veil, shelf.topleft)
+        x = x0
+        for i, (it, s) in enumerate(zip(self.items, sizes)):
+            surf.blit(icon(it.get("icon", ""), it["name"], s, dim=not it.get("ready", True)), (x, floor - s))
+            if i == self.sel:
+                label = it["name"] if it.get("ready", True) else f"{it['name']} (not installed)"
+                tw = f.mono.size(label)[0] + 28
+                r = pygame.Rect(0, 0, tw, f.line + 10)
+                r.centerx = max(tw // 2 + 8, min(W - tw // 2 - 8, x + s // 2))
+                r.bottom = floor - s - 12
+                G.box(surf, r, T.PANEL, 10, T.EMBER)
+                G.text(surf, f.mono, label, (r.centerx, r.y + 5), T.EMBER_BRIGHT, center=True)
+                pygame.draw.circle(surf, T.EMBER_BRIGHT, (x + s // 2, floor + W // 80), W // 180)
+            x += s + gap

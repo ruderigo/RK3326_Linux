@@ -78,8 +78,8 @@ class WifiList(Screen):
 
 
 class NetworkPage(Page):
-    title = "NETWORK"
-    hints = [("A", "change")]
+    title, icon = "Network", "network"
+    hints = [("A", "change"), ("B", "close")]
 
     def __init__(self, app):
         super().__init__(app)
