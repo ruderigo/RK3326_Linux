@@ -120,7 +120,7 @@ class System:
 
     def wifi_scan(self):
         """Networks in range, strongest first: dicts with ssid, signal, secure, active."""
-        run(["nmcli", "dev", "wifi", "rescan"], root=True, timeout=10)
+        run(["/usr/local/sbin/rk-wifi", "scan"], root=True, timeout=10)
         ok, out = run(["nmcli", "-t", "-f", "ACTIVE,SIGNAL,SECURITY,SSID", "dev", "wifi", "list"], timeout=15)
         nets, seen = [], set()
         for line in out.splitlines() if ok else []:
@@ -135,8 +135,15 @@ class System:
         return sorted(nets, key=lambda n: (-n["active"], -n["signal"]))
 
     def wifi_join(self, ssid, password):
-        cmd = ["nmcli", "dev", "wifi", "connect", ssid] + (["password", password] if password else [])
-        ok, out = run(cmd, timeout=45, root=True)
+        """Join a network. The name and the password go to the helper on its
+        standard input: a password on a command line would end up in the
+        system log and in the list of running programs."""
+        try:
+            p = subprocess.run(["sudo", "-n", "/usr/local/sbin/rk-wifi", "join"], input=f"{ssid}\n{password}\n",
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, text=True)
+            ok, out = p.returncode == 0, p.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired) as e:
+            ok, out = False, str(e)
         self.forget("wifi")
         return ok, out.splitlines()[-1] if out else ("Connected" if ok else "Could not connect")
 

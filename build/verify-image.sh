@@ -80,9 +80,10 @@ for bad in orphan_file metadata_csum_seed; do
 done
 ok "ext4 features: $FEAT"
 has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
+filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \
@@ -103,8 +104,12 @@ done
 ok "no SSH host keys in the image (each card makes its own)"
 [ "$(debugfs -R "stat /etc/sudoers.d/rkshell" "$T/root.img" 2>/dev/null | sed -n 's/.*Mode: *\([0-7]*\).*/\1/p')" = 0440 ] ||
     fail "/etc/sudoers.d/rkshell is not mode 0440: sudo would ignore it"
+# the desktop must start while ark's password is still the first one, due for a change
+filecat /etc/systemd/system/rkshell.service | grep -q '^PAMName' &&
+    fail "rkshell.service logs in through PAM: it cannot start before the first password change"
+filecat /etc/sudoers.d/rkshell | grep -q '/usr/bin/nmcli' &&
+    fail "the desktop may run nmcli as root: a Wi-Fi password would be written to the log"
 ok "the desktop is installed and starts in place of the text login on the first console"
-filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 # the user: a password is set, it must be changed at the first login, root has none
 ARK=$(filecat /etc/shadow | grep '^ark:') || fail "no user ark"
 [ "$(echo "$ARK" | cut -d: -f2 | cut -c1)" = '$' ] || fail "ark has no password set"
