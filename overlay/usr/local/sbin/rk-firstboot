@@ -19,24 +19,27 @@ case $root in /dev/*) ;; *) root=$(findmnt -n -o SOURCE /) ;; esac
 disk=/dev/$(lsblk -n -o PKNAME "$root" 2>/dev/null | head -n 1)
 part="${disk}p3"
 if [ -b "$disk" ] && [ "$disk" != /dev/ ]; then
-    if [ ! -b "$part" ]; then
-        echo ',,L' | sfdisk --force --no-reread --append "$disk" && log "added partition 3"
-        partx -a -n 3 "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null
+    # rk-data-partition places partition 3 after the system and refuses any
+    # other place: the space before partition 1 holds the boot chain.
+    if /usr/local/sbin/rk-data-partition "$disk"; then
+        [ -b "$part" ] || { partx -a -n 3 "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null; }
         udevadm settle --timeout=10
-    fi
-    if [ -b "$part" ]; then
-        if [ "$(blkid -s TYPE -o value "$part" 2>/dev/null)" = ext4 ] &&
-           [ "$(blkid -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
+        if [ ! -b "$part" ]; then
+            log "partition 3 did not appear; /data stays on the system partition"
+        elif [ "$(blkid -s TYPE -o value "$part" 2>/dev/null)" = ext4 ] &&
+             [ "$(blkid -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
             log "kept the existing data partition"
         else
             mkfs.ext4 -q -F -L RKDATA -O ^orphan_file,^metadata_csum_seed "$part" && log "made the data partition"
         fi
         udevadm settle --timeout=10
         mkdir -p /data
-        mountpoint -q /data || mount /data || log "could not mount /data"
-        mountpoint -q /data && { mkdir -p /data/ark; chown ark:ark /data/ark; }
+        if [ -b "$part" ]; then
+            mountpoint -q /data || mount /data || log "could not mount /data"
+            mountpoint -q /data && { mkdir -p /data/ark; chown ark:ark /data/ark; }
+        fi
     else
-        log "no partition 3; /data stays on the system partition"
+        log "no data partition made; /data stays on the system partition"
     fi
 else
     log "could not find the card's device from $root"

@@ -1,0 +1,42 @@
+#!/bin/bash
+# Add the data partition (number 3) to the card, right after the system
+# partition and nowhere else.
+#
+#   rk-data-partition <disk or image file>
+#
+# The space between the start of the card and partition 1 looks free in the
+# partition table, but it holds the boot chain (idbloader, u-boot, trust).
+# A partition placed there, once formatted, leaves a card that no longer
+# starts. So the start of partition 3 is given exactly: the first sector
+# after partition 2. If a partition 3 is already there, it is accepted only
+# when it starts at or after that sector.
+#
+# Exit status: 0 partition 3 is in place after the system, 3 a partition 3
+# exists somewhere else (left alone), 4 no room, 1 any other failure.
+set -u
+disk=${1:?usage: rk-data-partition <disk or image file>}
+say() { echo "rk-data-partition: $*"; }
+
+part() {    # start and size (sectors) of partition number $1, in table order
+    sfdisk -d "$disk" 2>/dev/null | grep ' : start=' | sed -n "${1}p" |
+        sed -n 's/.*start= *\([0-9]*\), *size= *\([0-9]*\).*/\1 \2/p'
+}
+read -r s2 n2 < <(part 2) || true
+[ -n "${s2:-}" ] && [ -n "${n2:-}" ] || { say "cannot read partition 2 of $disk"; exit 1; }
+end2=$(( s2 + n2 ))
+
+read -r s3 n3 < <(part 3) || true
+if [ -n "${s3:-}" ]; then
+    if [ "$s3" -ge "$end2" ]; then say "partition 3 is already after the system (sector $s3)"; exit 0; fi
+    say "partition 3 starts at sector $s3, before the end of the system ($end2): not touching it"
+    exit 3
+fi
+
+if [ -b "$disk" ]; then total=$(blockdev --getsz "$disk"); else total=$(( $(stat -c %s "$disk") / 512 )); fi
+[ $(( total - end2 )) -ge 131072 ] || { say "less than 64 MiB after the system: no data partition"; exit 4; }
+
+echo "start=$end2, type=83" | sfdisk --quiet --force --no-reread --append "$disk" >/dev/null 2>&1
+read -r s3 n3 < <(part 3) || true
+[ "${s3:-}" = "$end2" ] || { say "partition 3 was not created at sector $end2 (got: ${s3:-none})"; exit 1; }
+say "added partition 3 at sector $s3, $n3 sectors"
+exit 0

@@ -135,7 +135,7 @@ RK_VERSION="$VERSION"
 RK_CONSOLE="$CONSOLE"
 RK_UPSTREAM_COMMIT="$UPSTREAM_COMMIT"
 REL
-printf 'RK3326 Linux %s  (\\n, \\l)\nNetwork address: \\4\n\n' "$VERSION" > "$ROOTFS/etc/issue"
+printf 'RK3326 Linux %s  (\\n, \\l)\nWi-Fi address: \\4{wlan0}\n\n' "$VERSION" > "$ROOTFS/etc/issue"
 
 # the user: "ark", as on dArkOS, so the same paths and commands work.
 # The first password is "ark" and has to be changed at the first login.
