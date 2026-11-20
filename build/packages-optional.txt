@@ -9,3 +9,6 @@ firmware-misc-nonfree
 firmware-mediatek
 firmware-realtek
 firmware-atheros
+
+# language settings a computer sends along when logging in over SSH
+locales

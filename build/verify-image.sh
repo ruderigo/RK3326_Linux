@@ -88,14 +88,22 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \
          /etc/systemd/system/multi-user.target.wants/rk-bootcfg.service \
          /etc/systemd/system/multi-user.target.wants/ssh.service \
-         /etc/systemd/system/multi-user.target.wants/NetworkManager.service; do
+         /etc/systemd/system/multi-user.target.wants/NetworkManager.service \
+         /etc/systemd/system/multi-user.target.wants/rkshell.service \
+         /usr/lib/python3/dist-packages/rkshell/__main__.py /usr/lib/python3/dist-packages/rkshell/backends/device.py \
+         /usr/lib/python3/dist-packages/pygame /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
+         /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps; do
     has "$p" || fail "missing in the system: $p"
 done
 ok "system files, both kernels' modules and enabled services are present"
-for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/policy-rc.d; do
+for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/policy-rc.d \
+         /etc/systemd/system/getty.target.wants/getty@tty1.service; do
     has "$p" && fail "must not be in the image: $p"
 done
 ok "no SSH host keys in the image (each card makes its own)"
+[ "$(debugfs -R "stat /etc/sudoers.d/rkshell" "$T/root.img" 2>/dev/null | sed -n 's/.*Mode: *\([0-7]*\).*/\1/p')" = 0440 ] ||
+    fail "/etc/sudoers.d/rkshell is not mode 0440: sudo would ignore it"
+ok "the desktop is installed and starts in place of the text login on the first console"
 filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 # the user: a password is set, it must be changed at the first login, root has none
 ARK=$(filecat /etc/shadow | grep '^ark:') || fail "no user ark"

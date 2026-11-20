@@ -1,0 +1,31 @@
+[Unit]
+Description=The handheld's desktop
+Documentation=https://github.com/ruderigo/RK3326_Linux
+After=systemd-user-sessions.service rk-firstboot.service
+# The desktop takes the first console, where the text login would be. If it
+# cannot start three times in a minute, the text login comes back there.
+Conflicts=getty@tty1.service
+OnFailure=getty@tty1.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+User=ark
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+UtmpIdentifier=tty1
+UtmpMode=user
+WorkingDirectory=/home/ark
+Environment=SDL_VIDEODRIVER=dummy PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m rkshell --device
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

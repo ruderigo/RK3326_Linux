@@ -110,6 +110,13 @@ done
 in_root apt-get clean
 rm -rf "$ROOTFS"/var/lib/apt/lists/*
 
+# the languages most often sent along by a computer that logs in over SSH
+if [ -x "$ROOTFS/usr/sbin/locale-gen" ]; then
+    printf '%s UTF-8\n' en_US.UTF-8 en_CA.UTF-8 en_GB.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 > "$ROOTFS/etc/locale.gen"
+    in_root locale-gen
+    echo 'LANG=C.UTF-8' > "$ROOTFS/etc/default/locale"
+fi
+
 say "Kernel modules (4.4 and 5.10)"
 mkdir -p "$ROOTFS/usr/lib/modules"
 cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
@@ -121,6 +128,20 @@ cp -a "$REPO/overlay/." "$ROOTFS/"
 # everything we add belongs to root, whoever owns the checkout
 ( cd "$REPO/overlay" && find . -mindepth 1 ) | while read -r f; do chown -h 0:0 "$ROOTFS/$f"; done
 chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
+chmod 440 "$ROOTFS/etc/sudoers.d/rkshell"
+in_root visudo -c -q -f /etc/sudoers.d/rkshell || die "the sudoers file for the desktop is not valid"
+
+# the desktop: our Python package, where Debian keeps Python packages
+PYDIR="$ROOTFS/usr/lib/python3/dist-packages"
+[ -d "$PYDIR" ] || die "no $PYDIR in the system"
+rm -rf "$PYDIR/rkshell"
+cp -r "$REPO/shell/rkshell" "$PYDIR/rkshell"
+find "$PYDIR/rkshell" -name __pycache__ -prune -exec rm -rf {} +
+chown -R 0:0 "$PYDIR/rkshell"
+in_root python3 -m compileall -q /usr/lib/python3/dist-packages/rkshell || die "the desktop does not compile"
+in_root env SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots /tmp/rkshell-check >/dev/null ||
+    die "the desktop does not draw inside the image"
+rm -rf "$ROOTFS/tmp/rkshell-check"
 echo "$HOSTNAME_" > "$ROOTFS/etc/hostname"
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_" > "$ROOTFS/etc/hosts"
 cat > "$ROOTFS/etc/fstab" <<'FSTAB'
@@ -135,7 +156,7 @@ RK_VERSION="$VERSION"
 RK_CONSOLE="$CONSOLE"
 RK_UPSTREAM_COMMIT="$UPSTREAM_COMMIT"
 REL
-printf 'RK3326 Linux %s  (\\n, \\l)\nWi-Fi address: \\4{wlan0}\n\n' "$VERSION" > "$ROOTFS/etc/issue"
+printf 'RK3326 Linux %s  (\\n, \\l)\nWi-Fi address: \\4{wlan0}\nThe desktop is on the first console: Ctrl+Alt+F1\n\n' "$VERSION" > "$ROOTFS/etc/issue"
 
 # the user: "ark", as on dArkOS, so the same paths and commands work.
 # The first password is "ark" and has to be changed at the first login.
@@ -153,7 +174,10 @@ rm -f "$ROOTFS"/etc/ssh/ssh_host_*
 rm -f "$ROOTFS/var/lib/dbus/machine-id"
 
 in_root systemctl enable rk-firstboot.service rk-bootcfg.service ssh.service NetworkManager.service \
-    avahi-daemon.service systemd-timesyncd.service
+    avahi-daemon.service systemd-timesyncd.service rkshell.service
+# the desktop has the first console; a text login is on the others (Ctrl+Alt+F2)
+in_root systemctl disable getty@tty1.service 2>/dev/null || true
+rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 # starting does not wait for a network that may not be there
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
