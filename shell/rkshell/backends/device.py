@@ -29,7 +29,10 @@ from ..app import App
 from ..widgets import Keyboard
 
 # ---------------------------------------------------------------- key codes
-PAD = {304: "a", 305: "b", 307: "x", 308: "y", 310: "l1", 311: "r1", 312: "l2", 313: "r2",
+# The pad's letters follow where they are printed on the handheld (A right, B
+# bottom, X top, Y left), not the kernel's names: code 304 is the bottom
+# button, which the R36MAX labels B.
+PAD = {305: "a", 304: "b", 307: "x", 308: "y", 310: "l1", 311: "r1", 312: "l2", 313: "r2",
        704: "select", 705: "start", 544: "up", 545: "down", 546: "left", 547: "right"}
 KEYS = {103: "up", 108: "down", 105: "left", 106: "right", 28: "a", 96: "a", 1: "b", 15: "select"}
 VOLUME = {114: -5, 115: 5}
