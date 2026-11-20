@@ -74,9 +74,22 @@ for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/polic
     has "$p" && fail "must not be in the image: $p"
 done
 ok "no SSH host keys in the image (each card makes its own)"
+filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
+# the user: a password is set, it must be changed at the first login, root has none
+ARK=$(filecat /etc/shadow | grep '^ark:') || fail "no user ark"
+[ "$(echo "$ARK" | cut -d: -f2 | cut -c1)" = '$' ] || fail "ark has no password set"
+[ "$(echo "$ARK" | cut -d: -f3)" = 0 ] || fail "ark's password is not marked to be changed at the first login"
+filecat /etc/shadow | grep -qE '^root:[!*]' || fail "root is not locked"
+ok "user ark: password set and due for change at first login; root locked"
+filecat /etc/fstab | grep -q '^/dev/mmcblk0p2[[:space:]]*/[[:space:]]' || fail "fstab has no system partition line"
+[ -z "$(filecat /etc/machine-id)" ] || fail "machine-id is not empty"
+ok "fstab and an empty machine-id"
+# firmware of the Wi-Fi dongle the project uses (Ralink RT3070, driver rt2800usb)
+has /usr/lib/firmware/rt2870.bin && ok "firmware for the RT3070 dongle (rt2870.bin)" ||
+    echo "  WARNING: /usr/lib/firmware/rt2870.bin is missing: the RT3070 dongle will not start"
+DEP=$(filecat /usr/lib/modules/$KVER/modules.dep)
 for m in rt2800usb cp210x; do
-    debugfs -R "ls -l /usr/lib/modules/$KVER/kernel" "$T/root.img" >/dev/null 2>&1
-    grep -q "/$m\.ko" <(debugfs -R "cat /usr/lib/modules/$KVER/modules.dep" "$T/root.img" 2>/dev/null) ||
+    echo "$DEP" | grep -q "/$m\.ko" && ok "kernel $KVER has the $m module" ||
         echo "  note: $m is not a module of $KVER (it may be built in)"
 done
 echo "=== Verify passed (not a boot test)"
