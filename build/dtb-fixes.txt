@@ -1,0 +1,11 @@
+# Changes made to arkos4clone's device trees when the image is built.
+# One per line:   console | delete-prop | node path | property
+# Each is applied to the console's 4.4 and 5.10 device trees. The build fails
+# if the node or the property is not there, so an upstream change is noticed.
+
+# R36MAX type 1: play the speaker through the sound chip's own speaker output
+# and keep the amplifier pin (spk-ctl-gpios) switched on, as the factory device
+# tree does. With use-ext-amplifier the speaker is fed from the headphone
+# lines, and stays silent on a board whose left headphone line is dead.
+# Found on an R36MAX on 2026-11-20: silent with the entry, loud without it.
+r36max type1 | delete-prop | /i2c@ff180000/pmic@20/codec | use-ext-amplifier

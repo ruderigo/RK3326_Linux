@@ -54,7 +54,7 @@ die() { echo "build-image: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root"
 [ -n "${ROOTFS_DIR:-}" ] || [ "$(uname -m)" = aarch64 ] || die "run on an arm64 machine (the workflow uses an arm64 runner)"
 [ -n "${ROOTFS_DIR:-}" ] || command -v debootstrap >/dev/null || die "missing tool: debootstrap"
-for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3; do
+for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3 fdtput fdtget; do
     command -v $t >/dev/null || die "missing tool: $t"
 done
 CONS="$UP/boot/dArkOS/consoles"
@@ -183,6 +183,24 @@ for name, body in re.findall(r'RealName:\s*"([^"]+)"(.*?)(?=RealName:|\Z)', src,
         print(f"{name}|{m.group(1).strip('/')}")
 PY
 grep -q "^$CONSOLE|" "$BOOT/consoles/logos.txt" || echo "WARNING: no boot logo listed for $CONSOLE"
+
+# our changes to the device trees (build/dtb-fixes.txt), in the consoles folder
+# itself so that rk-boot-select hands out the changed files too
+: > "$BOOT/rk-dtb-fixes.txt"
+while IFS='|' read -r console action node prop; do
+    console=$(echo "$console" | xargs); action=$(echo "$action" | xargs)
+    node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs)
+    [ -n "$console" ] || continue
+    [ "$action" = delete-prop ] || die "dtb-fixes.txt: unknown action: $action"
+    for dtb in "$BOOT/consoles/$console"/*.dtb "$BOOT/consoles/$console"/5.10/*.dtb; do
+        [ -f "$dtb" ] || continue
+        fdtget "$dtb" "$node" "$prop" >/dev/null 2>&1 ||
+            die "dtb-fixes.txt: $node has no $prop in ${dtb#$BOOT/}: check the upstream change"
+        fdtput -d "$dtb" "$node" "$prop"
+        fdtget "$dtb" "$node" "$prop" >/dev/null 2>&1 && die "could not remove $prop from ${dtb#$BOOT/}"
+        echo "removed $prop from $node in ${dtb#$BOOT/}" | tee -a "$BOOT/rk-dtb-fixes.txt"
+    done
+done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 
 SELECT="$REPO/overlay/usr/local/sbin/rk-boot-select"
 # the two ready-made sets a Mac or PC can copy over when one kernel does not start

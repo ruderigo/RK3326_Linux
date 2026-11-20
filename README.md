@@ -75,6 +75,10 @@ The R36MAX exists in three board variants. The image is built for
 screen without the amplifier, `r36max type2` has no amplifier and
 different screen pins.
 
+The image changes arkos4clone's device trees in the places listed in
+[`build/dtb-fixes.txt`](build/dtb-fixes.txt), each with its reason. What
+was changed on a card is in `rk-dtb-fixes.txt` on its BOOT partition.
+
 ## The card
 
 | Where | What |
@@ -102,6 +106,7 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 build/build-image.sh upstream out
 | `build/upstream.env` | the arkos4clone commit and the Debian release the image is made from |
 | `build/build-image.sh` | installs Debian, adds the kernels' modules and our files, assembles the image |
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
+| `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
 | `build/packages.txt`, `packages-optional.txt` | what is installed |
 | `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg` and their services |
 | `boot-files/` | `wifi.txt` and the README that go on the BOOT partition |
