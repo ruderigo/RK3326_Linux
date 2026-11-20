@@ -79,7 +79,7 @@ ok "ext4 features: $FEAT"
 has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \
@@ -111,4 +111,26 @@ for m in rt2800usb cp210x; do
     echo "$DEP" | grep -q "/$m\.ko" && ok "kernel $KVER has the $m module" ||
         echo "  note: $m is not a module of $KVER (it may be built in)"
 done
+# The first start adds the data partition. Do the same to a larger copy of
+# the image, as on a real card, and make sure the boot chain is untouched and
+# the new partition starts right after the system. (A first version let the
+# partition land in the space before partition 1 and formatted over u-boot.)
+cp --sparse=always "$IMG" "$T/card.img"
+truncate -s +2G "$T/card.img"
+"$HERE/../overlay/usr/local/sbin/rk-data-partition" "$T/card.img" || fail "rk-data-partition failed on a copy of the image"
+read -r P3S P3N < <(sfdisk -d "$T/card.img" | grep ' : start=' | sed -n 3p | sed -n 's/.*start= *\([0-9]*\), *size= *\([0-9]*\).*/\1 \2/p')
+[ "$P3S" = $(( P2S + P2N )) ] || fail "the data partition starts at sector $P3S, not right after the system ($(( P2S + P2N )))"
+[ "$P3N" -gt 4000000 ] || fail "the data partition does not fill the space after the system ($P3N sectors)"
+[ "$(sfdisk -d "$T/card.img" | grep ' : start=' | sed -n 1,2p | sed 's/^[^:]*//')" = "$(sfdisk -d "$IMG" | grep ' : start=' | sed 's/^[^:]*//')" ] ||
+    fail "adding the data partition changed partitions 1 or 2"
+cmp -s <(head -c $(( 32768 * 512 )) "$IMG" | tail -c +513) <(head -c $(( 32768 * 512 )) "$T/card.img" | tail -c +513) ||
+    fail "adding the data partition changed the boot chain area"
+"$HERE/../overlay/usr/local/sbin/rk-data-partition" "$T/card.img" >/dev/null || fail "a second run of rk-data-partition failed"
+ok "first-start data partition: sector $P3S, after the system; boot chain untouched; a second run changes nothing"
+# a partition 3 in the wrong place must be refused, not formatted
+cp --sparse=always "$IMG" "$T/bad.img"; truncate -s +1G "$T/bad.img"
+echo 'start=2048, size=30720, type=83' | sfdisk --quiet --force --append "$T/bad.img" >/dev/null 2>&1
+"$HERE/../overlay/usr/local/sbin/rk-data-partition" "$T/bad.img" >/dev/null && fail "a partition 3 in the boot chain area was accepted"
+ok "a partition 3 in the boot chain area is refused"
+rm -f "$T/card.img" "$T/bad.img"
 echo "=== Verify passed (not a boot test)"
