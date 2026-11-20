@@ -1,6 +1,10 @@
 # Wi-Fi for the handheld. Fill in the two lines, save, eject the card, boot.
 # The handheld then joins this network at every start.
 # The password is removed from this file once the handheld has saved it.
+#
+# Type the name exactly as the network shows it, with nothing around it:
+# no quotes, and no space after the = sign. Spaces and apostrophes inside
+# the name are fine. Only 2.4 GHz networks work with most USB dongles.
 # COUNTRY is your two-letter country code (CA, US, FR, ...).
 SSID=
 PASSWORD=

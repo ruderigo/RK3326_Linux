@@ -2,6 +2,8 @@ RK3326 Linux - boot partition
 
 Before the first start
   1. Open wifi.txt, fill in SSID and PASSWORD, save.
+     Open it again to check that your two lines are there: a text editor
+     that saves in another format leaves the file as it was.
   2. Optional: put your SSH public key(s) in a file named authorized_keys here.
   3. Eject the card, put it in the handheld, switch on.
 
@@ -11,6 +13,12 @@ First start
 
 Log in over SSH
   ssh ark@HOSTNAME.local        (HOSTNAME is in hostname.txt on this partition)
+  If SSH says the host identification has changed (the same name was used
+  by another card), run:  ssh-keygen -R HOSTNAME.local
+  No answer at all: the login screen shows the Wi-Fi address; empty means
+  the handheld did not join. With a USB keyboard, log in on the handheld:
+    nmcli dev wifi list
+    sudo nmcli dev wifi connect "Network name" password "the password"
   The first password is: ark    You are asked to change it at the first login.
 
 If it does not start (black screen, or it stops)

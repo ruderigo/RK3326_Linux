@@ -9,16 +9,18 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first interface with the Stump, FireFly and the Provisioner as core
 parts, for teaching and authorised testing on your own equipment.
 
-> **Status: first test image, not yet started on a handheld.**
-> The build checks everything that can be checked without hardware (boot
-> chain in place, partitions, filesystems, every file `boot.ini` loads, the
-> services that start). Whether it boots on an R36MAX is the next test.
+> **Status: starts on an R36MAX (type 1 board), tested 2026-11-20.**
+> Kernel 5.10, the screen, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH,
+> the data partition, power-off and restart, the speaker and charging all
+> worked on that handheld. No other handheld has been tried. The build also
+> checks what can be checked without hardware, including a rehearsal of the
+> first start's partition step.
 
 ## What the first image does
 
 - Starts kernel **5.10** (arkos4clone calls it experimental); kernel **4.4**
   is on the card as a fallback.
-- Boots to a text login on the screen, with the handheld's network address
+- Boots to a text login on the screen, with the handheld's Wi-Fi address
   shown above it.
 - Joins the Wi-Fi network you put in `wifi.txt` and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
@@ -37,6 +39,13 @@ tools. Those come once this image starts.
 3. Take the card out and put it back in. A partition named **BOOT** shows up.
 4. Open `wifi.txt` on it, fill in `SSID` and `PASSWORD`, save, eject.
    Optional: add a file named `authorized_keys` with your SSH public key.
+   From a Mac's Terminal, the same in one line (double quotes, so that a
+   name like `Bob's Wi-Fi` works), then a look at the result:
+
+   ```sh
+   printf 'SSID=%s\r\nPASSWORD=%s\r\nCOUNTRY=CA\r\n' "Network name" "the password" > /Volumes/BOOT/wifi.txt
+   cat /Volumes/BOOT/wifi.txt
+   ```
 5. Put the card in the handheld, plug in the Wi-Fi dongle, switch on.
 
 ## Log in
@@ -49,6 +58,14 @@ The first password is `ark`. You are asked to change it at the first
 login, then to log in again. `sudo` asks for that password.
 
 The first start takes about a minute longer than later ones.
+
+If SSH warns that the host identification has changed, your computer
+remembers another card under the same name: `ssh-keygen -R r36max.local`,
+then connect again. If nothing answers, the login screen on the handheld
+shows its Wi-Fi address; when that is empty it did not join the network.
+With a USB keyboard, log in there and run `nmcli dev wifi list`, then
+`sudo nmcli dev wifi connect "Network name" password "the password"`.
+Most USB dongles only see 2.4 GHz networks.
 
 ## If it does not start
 

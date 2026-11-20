@@ -33,6 +33,7 @@ mcopy -i "$T/boot.img" ::boot.ini "$T/boot.ini"
 head -n 1 "$T/boot.ini" | grep -q '^odroidgoa-uboot-config' || fail "boot.ini does not start with the u-boot marker"
 grep -q '^booti \${loadaddr} - \${dtb_loadaddr}' "$T/boot.ini" || fail "boot.ini does not start the kernel without a ramdisk"
 grep -q 'root=/dev/mmcblk0p2' "$T/boot.ini" || fail "boot.ini does not name the system partition"
+grep -q 'loglevel=4 console=tty1"' "$T/boot.ini" || fail "boot.ini does not keep routine kernel messages off the screen"
 while read -r f; do
     mcopy -i "$T/boot.img" "::$f" "$T/loaded" 2>/dev/null || fail "boot.ini loads $f, which is not on the boot partition"
     [ -s "$T/loaded" ] || fail "$f is empty"
@@ -53,7 +54,9 @@ mcopy -i "$T/boot.img" "::$DTB" "$T/started.dtb"
 while IFS='|' read -r console action node prop value; do
     console=$(echo "$console" | xargs); action=$(echo "$action" | xargs)
     node=$(echo "$node" | xargs); prop=$(echo "$prop" | xargs); value=$(echo "${value:-}" | xargs)
+    scope=; case $console in *@*) scope=${console##*@}; console=${console%@*} ;; esac
     [ "$console" = "$CONSOLE" ] || continue
+    [ -z "$scope" ] || [ "$scope" = "$KERNEL" ] || continue
     if [ "$action" = set-u32 ]; then
         got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
         [ "$got" = "$value" ] || fail "$DTB: $prop is $got, not $value"
