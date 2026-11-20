@@ -16,7 +16,7 @@ skipped at build time; the build log lists any that were skipped.
   fierce, snmp, smbclient
 - **Web servers and apps**: nikto, whatweb, wafw00f, dirb, gobuster, ffuf,
   wfuzz, sqlmap, httpie
-- **Wi-Fi**: aircrack-ng, reaver, bully, mdk4, wifite, kismet, hcxdumptool,
+- **Wi-Fi**: aircrack-ng, reaver, bully, mdk4, wifite, hcxdumptool,
   macchanger
 - **In the middle**: ettercap, proxychains
 
@@ -41,6 +41,13 @@ Metasploit from the Kali repository by hand, in the Terminal:
     sudo rm /etc/apt/sources.list.d/kali.list && sudo apt-get update
 
 Removing the Kali list afterwards keeps the rest of the system on Debian.
+
+## kismet
+
+kismet is not in the Debian archive and needs its own repository, so it is
+not baked in. To add it, follow the instructions at
+[kismetwireless.net](https://www.kismetwireless.net/packages/), then it
+appears on the Terminal like the rest.
 
 ## Wi-Fi monitor mode
 

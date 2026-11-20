@@ -54,7 +54,6 @@ CATALOGUE = [
         ("bully", "bully", "Another WPS testing tool."),
         ("mdk4", "mdk4", "Stress-test and probe Wi-Fi networks."),
         ("wifite", "wifite", "Automate common Wi-Fi assessments."),
-        ("kismet", "kismet", "Detect and log wireless networks and devices."),
         ("hcxdumptool", "hcxdumptool", "Capture material from Wi-Fi for offline analysis."),
         ("macchanger", "macchanger", "Change a network interface's hardware address."),
     ]),

@@ -117,6 +117,16 @@ for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-tools.txt"); do
     in_root apt-get install -y -q --no-install-recommends "$p" || TOOLS_MISSING="$TOOLS_MISSING $p"
 done
 [ -z "$TOOLS_MISSING" ] || echo "WARNING: security tools not installed:$TOOLS_MISSING"
+
+# A staple the Debian arm64 archive does not carry: nikto, a Perl web
+# scanner, pulled from its source on the runner. Non-fatal.
+say "Extra tools (from source)"
+if git clone --depth 1 https://github.com/sullo/nikto "$ROOTFS/opt/nikto" 2>/dev/null; then
+    chmod +x "$ROOTFS/opt/nikto/program/nikto.pl" 2>/dev/null || true
+    in_root ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto
+else
+    echo "WARNING: nikto not fetched from source"
+fi
 in_root apt-get clean
 rm -rf "$ROOTFS"/var/lib/apt/lists/*
 

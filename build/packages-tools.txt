@@ -36,7 +36,10 @@ snmp
 smbclient
 
 # --- web servers and apps (command line) ---
-nikto
+# nikto is pulled from source in build-image.sh (not in the Debian archive);
+# perl and the SSL module are what it needs
+perl
+libnet-ssleay-perl
 whatweb
 wafw00f
 dirb
@@ -52,7 +55,6 @@ reaver
 bully
 mdk4
 wifite
-kismet
 hcxtools
 hcxdumptool
 macchanger
