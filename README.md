@@ -3,6 +3,8 @@
 A small Linux system for RK3326 handhelds (R36MAX first, R36S next), built
 as one SD card image: flash it, put it in the handheld, switch on.
 
+![The desktop: a dusk wallpaper with fireflies, the time, and a dock of icons](docs/desktop.png)
+
 It is our own system, not a desktop distribution squeezed onto a 4-inch
 screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 [arkos4clone](https://github.com/lcdyk0517/arkos4clone), meant to grow a
@@ -16,17 +18,40 @@ parts, for teaching and authorised testing on your own equipment.
 > checks what can be checked without hardware, including a rehearsal of the
 > first start's partition step.
 
-## What the first image does
+## What the image does
 
 - Starts kernel **5.10** (arkos4clone calls it experimental); kernel **4.4**
   is on the card as a fallback.
-- Boots to a text login on the screen, with the handheld's Wi-Fi address
-  shown above it.
-- Joins the Wi-Fi network you put in `wifi.txt` and answers **SSH**.
+- Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
+  whose icons grow under the cursor, and windows for Files, Network,
+  Devices and Settings. A USB keyboard works too.
+- Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
+  Network window, and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
 
-Not in it yet: the gamepad interface, FireFly, the Stump, the security
-tools. Those come once this image starts.
+Not in it yet: a terminal window, FireFly, the Stump, the security tools.
+
+### The desktop
+
+| Button | Does |
+|---|---|
+| D-pad left / right | move along the dock |
+| A | open what is under the cursor; choose |
+| B | close the window; go back |
+| X | more actions (in Files) |
+| START | confirm what you typed on the on-screen keyboard |
+| Volume keys | volume |
+
+Apps add themselves to the dock with one small file: see
+[`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).
+
+A text login is always one key press away on a USB keyboard:
+**Ctrl+Alt+F2** (and **Ctrl+Alt+F1** to come back). If the desktop cannot
+start, the text login takes its place on the screen.
+
+The desktop is the Python package in [`shell/rkshell`](shell/rkshell). It
+runs in a window on any computer (`python3 -m rkshell --window --demo`
+from `shell/`), and draws every screen to PNG files with `--shots DIR`.
 
 ## Flash it
 
@@ -55,7 +80,8 @@ ssh ark@r36max.local
 ```
 
 The first password is `ark`. You are asked to change it at the first
-login, then to log in again. `sudo` asks for that password.
+login, then to log in again. `sudo` asks for that password. The desktop
+itself needs no login: it runs as `ark`.
 
 The first start takes about a minute longer than later ones.
 
@@ -125,7 +151,8 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 build/build-image.sh upstream out
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
 | `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
 | `build/packages.txt`, `packages-optional.txt` | what is installed |
-| `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg` and their services |
+| `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg`, the desktop's service and its permissions |
+| `shell/rkshell/` | the desktop |
 | `boot-files/` | `wifi.txt` and the README that go on the BOOT partition |
 
 ## Where the parts come from

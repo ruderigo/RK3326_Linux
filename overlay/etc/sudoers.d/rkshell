@@ -1,0 +1,5 @@
+# What the desktop may do as root without asking for a password, and nothing
+# else: power, joining Wi-Fi, remote access, and the choice of kernel.
+ark ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/local/sbin/rk-wifi, \
+    /usr/bin/systemctl enable --now ssh, /usr/bin/systemctl disable --now ssh, \
+    /usr/local/sbin/rk-boot-select

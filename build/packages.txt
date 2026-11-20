@@ -30,3 +30,7 @@ htop
 tmux
 git
 python3
+
+# the desktop (shell/rkshell): drawn with pygame, DejaVu fonts
+python3-pygame
+fonts-dejavu-core

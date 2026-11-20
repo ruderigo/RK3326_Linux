@@ -1,0 +1,44 @@
+#!/bin/bash
+# Wi-Fi for the desktop, as root, without a password ever being part of a
+# command line (command lines end up in the system log and the process list).
+#
+#   rk-wifi scan          look for networks again
+#   rk-wifi join          join a network: its name on the first line of standard
+#                         input, its password on the second (empty for an open one)
+#
+# A joined network is saved, as with wifi.txt, and rejoined at every start.
+# A network that could not be joined is not saved.
+set -u
+esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/;/\\;/g'; }      # the keyfile's own escapes
+
+case ${1:-} in
+    scan)
+        nmcli dev wifi rescan 2>/dev/null
+        exit 0 ;;
+    join)
+        IFS= read -r ssid || true
+        IFS= read -r pass || true
+        [ -n "$ssid" ] || { echo "No network name given"; exit 2; }
+        f="/etc/NetworkManager/system-connections/wifi-$(printf '%s' "$ssid" | md5sum | cut -c1-12).nmconnection"
+        nmcli con delete id "$ssid" >/dev/null 2>&1
+        umask 077
+        {
+            printf '[connection]\nid=%s\ntype=wifi\nautoconnect=true\n\n' "$(esc "$ssid")"
+            printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$(esc "$ssid")"
+            [ -n "$pass" ] && printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$(esc "$pass")"
+            printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+        } > "$f"
+        nmcli con reload
+        if out=$(nmcli --wait 40 con up id "$ssid" 2>&1); then
+            echo "Connected to $ssid"
+            exit 0
+        fi
+        rm -f "$f"; nmcli con reload
+        case $out in
+            *Secrets*|*secrets*|*802-11-wireless-security*) echo "Wrong password?" ;;
+            *) echo "${out##*: }" | tail -n 1 ;;
+        esac
+        exit 1 ;;
+    *)
+        sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

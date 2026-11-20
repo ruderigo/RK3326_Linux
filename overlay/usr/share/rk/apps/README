@@ -1,0 +1,13 @@
+Apps on the desktop's dock.
+
+An app adds itself by putting one JSON file here (or in /data/ark/apps):
+
+  {"name": "FireFly", "icon": "firefly", "about": "Messages over LoRa and Wi-Fi",
+   "group": "Comms", "exec": ["/home/ark/firefly/FireFly.sh"]}
+
+name    shown on the dock
+icon    one of: files network devices settings terminal firefly stump chip
+        (anything else: the first letter of the name)
+exec    the program to start, with its arguments. While it runs, the desktop
+        steps aside; it comes back when the program ends.
+        If the program is not there, the icon is dimmed ("not installed").

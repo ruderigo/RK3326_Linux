@@ -1,0 +1,31 @@
+[Unit]
+Description=The handheld's desktop
+Documentation=https://github.com/ruderigo/RK3326_Linux
+After=systemd-user-sessions.service rk-firstboot.service
+# The desktop takes the first console, where the text login would be. If it
+# cannot start three times in a minute, the text login comes back there.
+Conflicts=getty@tty1.service
+OnFailure=getty@tty1.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+# No PAM login here: the desktop must come up at the very first start, when
+# ark's password is still the one that has to be changed. That rule is for
+# logging in (SSH, a text console), not for the handheld's own screen.
+User=ark
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+WorkingDirectory=/home/ark
+Environment=SDL_VIDEODRIVER=dummy PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m rkshell --device
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
