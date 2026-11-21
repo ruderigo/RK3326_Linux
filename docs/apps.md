@@ -79,6 +79,14 @@ asks for this handheld's password, for the installers' root steps.
 The same from a terminal: `rk-apps versions` and
 `rk-apps update firefly|stump|ember|all`.
 
+## Sound and volume
+
+The speaker is switched on at every start (`rk-audio`): this handheld's
+sound chip plays nowhere until its output path is set. The volume keys work
+on the desktop and while an app is open; the desktop answers them for the
+apps, which do not read them. They change the built-in sound chip: a USB
+sound device has its own volume.
+
 ## How they get the screen
 
 The panel only shows what goes through the Mali GPU driver, so the image

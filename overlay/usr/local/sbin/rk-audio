@@ -1,0 +1,18 @@
+#!/bin/sh
+# Sound from the first start. The RK817 sound chip sends audio nowhere until
+# its "Playback Path" is set, and nothing sets it on a fresh card: the
+# speaker stayed silent until it was switched on by hand (R36MAX, 2026-11-21).
+# Run at boot, after any saved mixer settings are restored:
+#   - a path left OFF becomes SPK (the speaker); a saved choice is kept
+#   - with no saved settings yet, the volume starts at full, which is a
+#     modest level on this speaker; the volume keys change it from there
+CARD=0
+path=$(amixer -c "$CARD" sget 'Playback Path' 2>/dev/null | sed -n "s/.*Item0: '\(.*\)'.*/\1/p")
+[ -n "$path" ] || exit 0                    # not this sound chip: nothing to do
+if [ "$path" = OFF ]; then
+    amixer -q -c "$CARD" sset 'Playback Path' SPK && echo "rk-audio: speaker switched on"
+fi
+if [ ! -s /var/lib/alsa/asound.state ]; then
+    amixer -q -c "$CARD" cset name='Playback Volume' 100% 2>/dev/null && echo "rk-audio: volume set for a first start"
+fi
+exit 0

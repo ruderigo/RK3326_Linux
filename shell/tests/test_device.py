@@ -34,4 +34,33 @@ env = device.app_env()
 assert not [k for k in env if k.startswith("SDL_") and k not in ("SDL_VIDEODRIVER", "SDL_GAMECONTROLLERCONFIG_FILE")]
 device.run_step(None)
 device.run_step(["/nonexistent"])
+
+
+# the volume keys while an app has the screen: answered by the desktop
+class Keys:
+    def __init__(self):
+        self.sent = False
+
+    def read(self, timeout):
+        if self.sent:
+            import time
+            time.sleep(timeout)
+            return []
+        self.sent = True
+        return [(115, 1), (115, 0), (305, 1), (114, 1), (115, 2)]     # up, (release), A, down, up held
+
+
+class Sound:
+    level, sets = 50, 0
+
+    def volume(self):
+        return self.level
+
+    def set_volume(self, pct):
+        self.level, self.sets = pct, self.sets + 1
+
+
+sound = Sound()
+assert device.run_app(["sleep", "0.6"], dict(os.environ), Keys(), sound) == 0
+assert (sound.level, sound.sets) == (55, 3), (sound.level, sound.sets)
 print("device back end: ok")
