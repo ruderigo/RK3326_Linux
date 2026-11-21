@@ -218,7 +218,11 @@ def stump_answers(form):
            "admin password": pw, "use the same password for the fserv bot": True,
            "fserv bot operator password": pw, "change any of those now": True, "admin password for /admin": "",
            "identity requirement": "open", "how should file sharing work": "Free", "theme": "Amber",
-           "fix it, then check again": False}
+           "fix it, then check again": False,
+           # a Stump folder already there (a setup that stopped part-way, or one
+           # being redone): the wizard asks "Change something?"; "a" is all the
+           # questions again, so this form's answers are the ones that count
+           "change something": "a"}
     if form.get("radio") == "usb":
         out["its usb port"] = "auto"
     secret = form.get("secret") or ""
