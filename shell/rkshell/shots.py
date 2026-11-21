@@ -36,8 +36,12 @@ def write_all(system, size, out_dir):
             from .pages.stumpsetup import StumpSetupPage
             app.dock.sel = i
             app.handle("a")
-            StumpSetupPage.form.update(pw="oak-and-moss", chain="member", parent="192.168.0.42", secret="b1rch")
-            app.handle("down"); app.handle("down")
+            StumpSetupPage.form.update(pw="oak-and-moss", chain="member", secret="b1rch")
+            app.handle("down"); app.handle("down"); app.handle("down")
+            app.handle("a")                      # look for Stumps on the network
+            app.tick()
+            shot("stump-setup-found")
+            app.handle("a")                      # the first one found
             shot("stump-setup")
             StumpSetupPage.form["sudo"] = "x"
             app.handle("start")

@@ -48,6 +48,12 @@ Wi-Fi, takes a few minutes, and asks for this handheld's password because the
 installer needs root for a few steps. The password goes to `sudo` and is not
 kept; the answers file is removed when the installer ends.
 
+For a Stump that joins another, the window looks for Stumps on the Wi-Fi the
+handheld is on and lists them, so no address is typed. On a card whose
+password has never been changed, the window asks for a new one and sets it
+first (the starting password is refused by `sudo`); that is the password for
+SSH too.
+
 The window covers a Stump on its own, the first Stump of a chain, or one
 that joins another Stump on the Wi-Fi the handheld is on. For anything else
 (Bluetooth radio, joining a Stump's own hotspot), run the installer in the

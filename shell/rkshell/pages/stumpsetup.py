@@ -10,8 +10,8 @@ import pygame
 
 from .. import gfx as G
 from .. import theme as T
-from ..system import stump_answers
-from ..widgets import Keyboard
+from ..system import START_PASSWORD, stump_answers
+from ..widgets import Keyboard, Menu
 from .base import Page
 
 CHAIN = [("none", "On its own"), ("first", "First Stump of a chain"), ("member", "Joins another Stump")]
@@ -19,10 +19,12 @@ RADIO = [("none", "None"), ("usb", "Heltec on USB")]
 ABOUT = {"name": "The name other people see for this Stump.",
          "pw": "Opens the Stump's /admin page and its bot. Note it down. 4 characters or more.",
          "chain": "A chain links Stumps over Wi-Fi. On its own is fine to start.",
-         "parent": "The address of the Stump this one joins, on the Wi-Fi you are on now.",
+         "parent": "The Stump this one joins. A looks for Stumps on the Wi-Fi you are on now.",
          "secret": "Every Stump in a chain has the same secret. Note it down.",
          "radio": "The LoRa radio. Choose USB only if a Heltec is plugged in.",
-         "sudo": "This handheld's own password. The installer needs it for a few steps; it is not kept.",
+         "sudo": "This handheld's own password, for the installer's root steps. SELECT on the keyboard shows it.",
+         "new": "This handheld still has its starting password. Choose your own, 8 characters or more: "
+                "the one for SSH too.",
          "go": "Runs the Stump's installer. It takes a few minutes and needs Wi-Fi."}
 
 
@@ -34,14 +36,16 @@ class StumpSetupPage(Page):
     def __init__(self, app):
         super().__init__(app)
         self.sel, self.view, self.told = 0, "form", False
+        self.expired, self.search, self.quiet = False, None, False
 
     def enter(self):
         cls = StumpSetupPage
         if cls.form is None:
-            cls.form = {"name": self.app.system.hostname(), "pw": "", "chain": "none", "parent": "", "secret": "",
+            cls.form = {"name": self.app.system.hostname(), "pw": "", "chain": "none", "parent": "", "parent_name": "", "secret": "",
                         "radio": "none", "sudo": ""}
         if cls.job is not None:
             self.view = "running"
+        self.expired = self.app.system.password_expired()
 
     # --------------------------------------------------------------- form
     def rows(self):
@@ -54,8 +58,9 @@ class StumpSetupPage(Page):
         return keys + ["radio", "sudo", "go"]
 
     def label(self, key):
-        return {"name": "Name", "pw": "Stump password", "chain": "Chain", "parent": "Joins (address)",
-                "secret": "Chain secret", "radio": "Radio", "sudo": "Your password", "go": ""}[key]
+        return {"name": "Name", "pw": "Stump password", "chain": "Chain", "parent": "Joins",
+                "secret": "Chain secret", "radio": "Radio", "go": "",
+                "sudo": "New password" if self.expired else "Your password"}[key]
 
     def value(self, key):
         v = self.form.get(key, "")
@@ -67,16 +72,47 @@ class StumpSetupPage(Page):
             return "•" * len(v) if v else "needed"
         if key == "go":
             return "Set up the Stump"
+        if key == "parent":
+            if self.search is not None:
+                return "looking for Stumps…"
+            name = self.form.get("parent_name")
+            return f"{v}  ({name})" if v and name else v or "needed"
         return v or ("needed" if key in ("pw", "parent") or (key == "secret" and self.form["chain"] == "member") else "none")
 
     def edit(self, key):
         def done(v):
             self.form[key] = v if key in ("pw", "sudo", "secret") else v.strip()
+            if key == "parent":
+                self.form["parent_name"] = ""
         self.app.push(Keyboard(self.app, self.label(key), done, secret=key == "sudo", initial=self.form[key]))
 
     def cycle(self, key, step):
         options = [k for k, _ in (CHAIN if key == "chain" else RADIO)]
         self.form[key] = options[(options.index(self.form[key]) + step) % len(options)]
+        if self.form["chain"] == "member" and not self.form["parent"] and self.search is None:
+            self.look(quiet=True)
+
+    # ------------------------------------------- the Stump it joins
+    def look(self, quiet=False):
+        """Search the network for Stumps; the list opens when it is done
+        (quiet: only fill the address in when exactly one takes links)."""
+        self.search, self.quiet = self.app.system.stump_search(), quiet
+
+    def pick(self, stump):
+        self.form["parent"], self.form["parent_name"] = stump["address"], stump["name"]
+
+    def found(self, stumps):
+        linking = [s for s in stumps if s["links"]]
+        if self.quiet:
+            if len(linking) == 1:
+                self.pick(linking[0])
+            return
+        items = [(f"{s['name']}  {s['address']}" + ("" if s["links"] else "  (not taking links)"),
+                  lambda s=s: self.pick(s)) for s in stumps]
+        items += [("Look again", self.look), ("Type an address…", lambda: self.edit("parent"))]
+        detail = ("Stumps on this Wi-Fi. One marked 'not taking links' is not the first Stump of a chain."
+                  if stumps else "No Stump answered on this Wi-Fi. Is it on the same network as this handheld?")
+        self.app.push(Menu(self.app, "The Stump it joins", items, detail))
 
     def start(self):
         answers = stump_answers(self.form)
@@ -84,19 +120,24 @@ class StumpSetupPage(Page):
             self.app.toast(answers["error"], 4, error=True)
             return
         if not self.form["sudo"]:
-            self.app.toast("Your password is needed for the install", 4, error=True)
+            self.app.toast("Choose a password for this handheld" if self.expired
+                           else "Your password is needed for the install", 4, error=True)
+            return
+        if self.expired and (len(self.form["sudo"]) < 8 or self.form["sudo"] == START_PASSWORD):
+            self.app.toast("The new password: 8 characters or more", 4, error=True)
             return
         if not self.app.system.online():
             self.app.toast("Join Wi-Fi first: the installer downloads the Stump", 4, error=True)
             return
-        StumpSetupPage.job = self.app.system.stump_setup(answers, self.form["sudo"])
+        StumpSetupPage.job = self.app.system.stump_setup(answers, self.form["sudo"],
+                                                         replaces=START_PASSWORD if self.expired else None)
         self.form["sudo"] = ""
         self.view, self.told = "running", False
 
     # -------------------------------------------------------------- state
     @property
     def live(self):
-        return self.view == "running"
+        return self.view == "running" or self.search is not None
 
     @property
     def hints(self):
@@ -112,6 +153,11 @@ class StumpSetupPage(Page):
         return self.view == "running" and bool(job and job.done and not job.ok)
 
     def poll(self):
+        if self.search is not None:
+            self.app.dirty = True
+            if self.search.done:
+                stumps, self.search = self.search.found, None
+                self.found(stumps)
         job = StumpSetupPage.job
         if self.view == "running" and job:
             self.app.dirty = True
@@ -120,6 +166,7 @@ class StumpSetupPage(Page):
                 self.app.toast("The Stump is set up" if job.ok else "The setup stopped", 5, error=not job.ok)
                 if job.ok:
                     self.app.fill_dock()
+                self.expired = self.app.system.password_expired()
 
     def handle(self, action):
         if self.view == "running":
@@ -139,6 +186,9 @@ class StumpSetupPage(Page):
                 self.start()
             elif key in ("chain", "radio"):
                 self.cycle(key, 1)
+            elif key == "parent":
+                if self.search is None:
+                    self.look()
             else:
                 self.edit(key)
         elif action == "start":
@@ -177,7 +227,8 @@ class StumpSetupPage(Page):
             y += row_h
         y = area.bottom - foot
         pygame.draw.line(surf, T.BORDER, (area.x + pad, y), (area.right - pad, y))
-        for k, ln in enumerate(G.wrap(f.small, ABOUT[keys[self.sel]], area.w - 2 * pad)[:2]):
+        about = ABOUT["new" if keys[self.sel] == "sudo" and self.expired else keys[self.sel]]
+        for k, ln in enumerate(G.wrap(f.small, about, area.w - 2 * pad)[:2]):
             G.text(surf, f.small, ln, (area.x + pad, y + 8 + k * f.small_line), T.DIM)
 
     def draw_run(self, surf, f, area):
@@ -187,7 +238,10 @@ class StumpSetupPage(Page):
         head = "The Stump is set up" if ok else "The setup stopped" if done else "Setting up the Stump"
         G.text(surf, f.big, head, (x, y), T.OK if ok else T.ERROR if done else T.EMBER_BRIGHT)
         y += f.line + 6
+        why = job.reason if job else ""
         sub = ("Close this and open Stump from the dock." if ok
+               else "That is not this handheld's password. B goes back; SELECT on the keyboard shows it." if why == "password"
+               else "The new password was not accepted: try a longer or less simple one. B goes back." if why == "newpassword"
                else "The reason is in the last lines. B goes back to the form." if done
                else (job.step if job else ""))
         G.text(surf, f.small, G.fit(f.small, sub, area.w - 32), (x, y), T.DIM if not done else T.TEXT)

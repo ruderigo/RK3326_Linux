@@ -10,13 +10,16 @@ file that allows exactly those commands for the user the shell runs as.
 import glob
 import json
 import os
+import pty
 import re
+import select
 import shutil
 import socket
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 
 APPS_DIRS = ["/usr/share/rk/apps", "/data/ark/apps"]
@@ -25,12 +28,12 @@ WIFI_DRIVERS = {"rt2800usb", "rtl8xxxu", "ath9k_htc", "mt7601u", "mt76x0u", "mt7
                 "8821cu", "rtw_8822bu", "rtw_8821cu", "rtw_8812au", "rtw_8821au", "rtw_8723du"}
 
 
-def run(cmd, timeout=8, root=False):
+def run(cmd, timeout=8, root=False, env=None):
     """Run a command; return (ok, output). Never raises."""
     if root:
         cmd = ["sudo", "-n"] + cmd
     try:
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, text=True)
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, text=True, env=env)
         return p.returncode == 0, p.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return False, str(e)
@@ -156,6 +159,7 @@ class Scan:
             pass
 
 
+START_PASSWORD = "ark"                  # what a fresh card has, expired until it is changed
 STUMP_INSTALLER = os.path.expanduser("~/R36MAX-Stump/handheld/install.sh")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 IPV4 = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
@@ -204,6 +208,107 @@ def stump_answers(form):
     return out
 
 
+def password_expired(user=None):
+    """True while the account still has its starting password, which must be
+    changed before anything else accepts it (sudo refuses it as it is)."""
+    ok, out = run(["chage", "-l", user or os.environ.get("USER") or "ark"], env=dict(os.environ, LC_ALL="C"))
+    return ok and "password must be changed" in out
+
+
+def change_password(old, new, timeout=20):
+    """Change this user's password with passwd, on a pseudo-terminal (it only
+    talks to a terminal). (True, "") or (False, passwd's reason)."""
+    try:
+        pid, fd = pty.fork()
+    except OSError as e:
+        return False, str(e)
+    if pid == 0:
+        os.environ["LC_ALL"] = "C"
+        try:
+            os.execvp("passwd", ["passwd"])
+        finally:
+            os._exit(127)
+    answers, out, pending, end = [old, new, new], "", "", time.time() + timeout
+    try:
+        while time.time() < end:
+            ready, _, _ = select.select([fd], [], [], 0.5)
+            if not ready:
+                continue
+            try:
+                data = os.read(fd, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+            text = data.decode("utf-8", "replace")
+            out += text
+            pending += text
+            if pending.rstrip().endswith(":") and answers:      # a prompt: Current / New / Retype
+                os.write(fd, (answers.pop(0) + "\n").encode())
+                pending = ""
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            _, status = os.waitpid(pid, 0)
+        except OSError:
+            status = 1
+    if status == 0 and not answers:
+        return True, ""
+    lines = [ln.strip() for ln in out.replace("\r", "").splitlines()
+             if ln.strip() and not ln.strip().endswith(":") and "Changing password" not in ln]
+    return False, (lines[-1] if lines else "The password was not changed")
+
+
+def find_stumps(networks, timeout=1.5, workers=64):
+    """Stumps answering on these networks (own_networks()): each address is
+    asked for /node.json at once, as the Stump's own installer does. A list
+    of {"address", "name", "links"}; "links" is True for one that takes
+    chain links here (those come first)."""
+    from concurrent.futures import ThreadPoolExecutor
+    import ipaddress
+
+    def ask(ip):
+        try:
+            with urllib.request.urlopen(f"http://{ip}/node.json", timeout=timeout) as r:
+                node = json.load(r)
+        except Exception:
+            return None
+        if not isinstance(node, dict):
+            return None
+        chain = node.get("chain") if isinstance(node.get("chain"), dict) else {}
+        links = bool(chain.get("enabled") and (chain.get("lan_ip") == ip or
+                                               (chain.get("role") == "root" and chain.get("ap_ip") == ip)))
+        return {"address": ip, "name": str(node.get("name") or "a Stump"), "links": links}
+    ips = []
+    for _, net, own in networks:
+        try:
+            hosts = list(ipaddress.ip_network(net, strict=False).hosts())
+        except ValueError:
+            continue
+        if len(hosts) <= 1024:
+            ips += [str(h) for h in hosts if str(h) != own]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        found = [x for x in pool.map(ask, ips) if x]
+    return sorted(found, key=lambda d: (not d["links"], d["address"]))
+
+
+class StumpSearch:
+    """find_stumps in the background: `found` once `done`."""
+
+    def __init__(self, networks):
+        self.done, self.found = False, []
+        threading.Thread(target=self._run, args=(networks,), daemon=True).start()
+
+    def _run(self, networks):
+        try:
+            self.found = find_stumps(networks)
+        finally:
+            self.done = True
+
+
 class StumpSetup:
     """The Stump's own installer, running with the form's answers. `lines` is
     what it printed, `step` its current stage; `done` and `ok` at the end.
@@ -213,11 +318,21 @@ class StumpSetup:
     installer runs. The password reaches sudo through its askpass helper, as
     the installer asks for it (never on a command line)."""
 
-    def __init__(self, answers, password, installer=STUMP_INSTALLER):
+    def __init__(self, answers, password, installer=STUMP_INSTALLER, replaces=None):
+        """replaces: the starting password, when `password` is a new one to set first."""
         self.lines, self.step, self.done, self.ok = [], "Starting", False, False
-        threading.Thread(target=self._run, args=(answers, password, installer), daemon=True).start()
+        self.reason = ""            # "password" when sudo refused it
+        threading.Thread(target=self._run, args=(answers, password, installer, replaces), daemon=True).start()
 
-    def _run(self, answers, password, installer):
+    def _run(self, answers, password, installer, replaces):
+        if replaces is not None:
+            self.step = "Setting this handheld's password"
+            ok, why = change_password(replaces, password)
+            if not ok:
+                self.lines += ["The password was not changed:", why]
+                self.reason, self.done = "newpassword", True
+                return
+            self.lines.append("✓ this handheld's password is set")
         d = tempfile.mkdtemp(prefix="rk-stump-")           # 0700
         try:
             paths = {n: os.path.join(d, n) for n in ("answers.json", "askpass", "pw")}
@@ -239,6 +354,8 @@ class StumpSetup:
                 self.lines.append(line)
                 del self.lines[:-400]
             self.ok = p.wait() == 0
+            if not self.ok and any("didn't take that password" in ln or "incorrect password" in ln for ln in self.lines[-6:]):
+                self.reason = "password"
         except OSError as e:
             self.lines.append(str(e))
         finally:
@@ -530,9 +647,15 @@ class System:
                     continue
         return found
 
-    def stump_setup(self, answers, password):
+    def stump_setup(self, answers, password, replaces=None):
         """Run the Stump's installer with these answers; returns a StumpSetup."""
-        return StumpSetup(answers, password)
+        return StumpSetup(answers, password, replaces=replaces)
+
+    def password_expired(self):
+        return password_expired()
+
+    def stump_search(self):
+        return StumpSearch(self.own_networks())
 
     # --------------------------------------------------------------- power
     def boot_selection(self):
@@ -613,8 +736,17 @@ class DemoSystem(System):
                 {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
-    def stump_setup(self, answers, password):
+    def password_expired(self): return True
+
+    def stump_search(self):
+        job = StumpSearch.__new__(StumpSearch)
+        job.done, job.found = True, [{"address": "192.168.0.42", "name": "LaBuche3", "links": True},
+                                     {"address": "192.168.0.57", "name": "Atelier", "links": False}]
+        return job
+
+    def stump_setup(self, answers, password, replaces=None):
         job = StumpSetup.__new__(StumpSetup)
+        job.reason = ""
         job.step, job.done, job.ok = "3/6 The cockpit's files", False, False
         job.lines = ["1/6 Packages", "✓ all present", "2/6 SandBox_Stump_On", "✓ up to date",
                      "3/6 The cockpit's files", "✓ FireFly's font (DejaVu Sans Mono) next to the engine"]
