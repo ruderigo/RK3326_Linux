@@ -63,6 +63,22 @@ that joins another Stump on the Wi-Fi the handheld is on. For anything else
 (Bluetooth radio, joining a Stump's own hotspot), run the installer in the
 Terminal: `bash ~/R36MAX-Stump/handheld/install.sh`.
 
+## Updating them
+
+The **Apps** window on the dock shows each app's version here and the newest
+one, and updates it with A:
+
+![The Apps window](apps-window.png)
+
+An update runs the app's own installer, so its data and settings are kept as
+that installer keeps them. FireFly and the Stump are taken from the `main`
+branch of their repositories (their GitHub releases lag behind); Ember from
+its latest release, since its binary is only built for releases. The window
+asks for this handheld's password, for the installers' root steps.
+
+The same from a terminal: `rk-apps versions` and
+`rk-apps update firefly|stump|ember|all`.
+
 ## How they get the screen
 
 The panel only shows what goes through the Mali GPU driver, so the image

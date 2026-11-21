@@ -161,7 +161,13 @@ def _ember(s, c):
     pygame.draw.polygon(s, bright, [(96, 72), (114, 110), (96, 140), (78, 110)])  # inner flame
 
 
-GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember,
+def _update(s, c):
+    """An arrow coming down into a tray: something new arriving."""
+    pygame.draw.polygon(s, c, [(84, 40), (108, 40), (108, 88), (132, 88), (96, 128), (60, 88), (84, 88)])
+    pygame.draw.lines(s, c, False, [(48, 118), (48, 150), (144, 150), (144, 118)], 10)
+
+
+GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 

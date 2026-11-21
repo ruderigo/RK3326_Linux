@@ -22,12 +22,13 @@ from .pages.files import FilesPage
 from .pages.network import NetworkPage
 from .pages.scan import ScanPage
 from .pages.stumpsetup import StumpSetupPage
+from .pages.apps import AppsPage
 from .pages.arsenal import ArsenalPage
 from .pages.survey import SurveyPage
 from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, AppsPage, SystemPage]
 
 
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists

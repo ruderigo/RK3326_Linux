@@ -1,16 +1,21 @@
 #!/bin/bash
-# Fetch the dock apps onto the handheld. They are not baked into the image
-# (each is large and wants its own setup), so this pulls them over Wi-Fi and
-# puts them where the dock's launchers expect:
+# The dock apps (Ember, FireFly, Stump): fetch them, see their versions,
+# update them. Over Wi-Fi, into /home/ark where the dock's launchers look.
 #
 #   rk-apps status                     what is installed
-#   rk-apps install ember|firefly|stump|all
+#   rk-apps versions                   installed and newest version of each
+#   rk-apps install ember|firefly|stump|all     (from each one's latest release)
+#   rk-apps update ember|firefly|stump|all
 #
-# Runs as the ark user, into /home/ark; the shared packages are already in the
-# image, so no root is needed. FireFly and Ember install fully here. Stump is
-# only cloned: its own installer stands up a background service and a captive
-# DNS, so you run that yourself once you have read docs/arsenal.md's companion
-# docs/apps.md and decided it suits this machine.
+# An update takes FireFly and the Stump from the main branch of their
+# repositories (their GitHub releases lag behind), and Ember from its latest
+# release (its binary is only built for releases). Each app's own installer
+# does the work, so its data and settings are kept as that installer keeps
+# them.
+#
+# Runs as the ark user. The installers need root for a few steps: over SSH
+# sudo asks in the terminal; from the desktop the password comes through
+# sudo's askpass helper (SUDO_ASKPASS), which all three installers accept.
 set -u
 say() { echo "rk-apps: $*"; }
 H="${HOME:-/home/ark}"
@@ -30,6 +35,7 @@ install_ember() {
     if curl -fsSL https://github.com/ruderigo/Ember/releases/latest/download/ember-arkos-arm64.tar.gz \
             | tar xz --no-same-owner -C "$H/ports"; then
         chmod +x "$H/ports/Ember.sh" 2>/dev/null
+        ember_latest > "$H/ports/ember/.rk-version" 2>/dev/null
         # Ember's launcher runs "sudo chmod 666 /dev/tty1"; on our desktop ark
         # owns tty1, so drop the sudo (it would prompt for a password with no
         # way to answer it).
@@ -70,6 +76,66 @@ clone_stump() {
     say "and a captive DNS, so run handheld/install.sh yourself when ready."
 }
 
+# ------------------------------------------------------------ versions
+RAW=https://raw.githubusercontent.com/ruderigo
+FIREFLY_REPO=FireFly_RK3326_R36MAX_R36S
+py_version() { sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' | head -1; }
+ember_latest() {    # the tag the "latest release" link leads to, without its v
+    curl -fsSLI -m 10 -o /dev/null -w '%{url_effective}' https://github.com/ruderigo/Ember/releases/latest 2>/dev/null |
+        sed -n 's#.*/tag/v\{0,1\}##p'
+}
+versions() {        # one line each: id|name|installed|newest   ("-" not installed, "?" not known)
+    local i a
+    i=$(py_version < "$H/firefly/firefly/__init__.py" 2>/dev/null)
+    a=$(curl -fsSL -m 10 "$RAW/$FIREFLY_REPO/main/firefly/firefly/__init__.py" 2>/dev/null | py_version)
+    [ -x "$H/firefly/deploy/FireFly.sh" ] || i=-
+    echo "firefly|FireFly|${i:-?}|${a:-?}"
+    i=$(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null)
+    a=$(curl -fsSL -m 10 "$RAW/R36MAX-Stump/main/handheld/VERSION" 2>/dev/null | head -1)
+    [ -f "$H/Stump/stump_pc.py" ] && [ -x "$H/stump_r36max/stump_r36max_engine" ] || i=-
+    echo "stump|Stump|${i:-?}|${a:-?}"
+    i=$(head -1 "$H/ports/ember/.rk-version" 2>/dev/null)
+    [ -x "$H/ports/Ember.sh" ] || i=-
+    echo "ember|Ember|${i:-?}|$(a=$(ember_latest); echo "${a:-?}")"
+}
+
+# ------------------------------------------------------------- updates
+sync_repo() {       # a shallow checkout of $1's main branch in $2, brought up to date
+    if [ -d "$2/.git" ]; then
+        git -C "$2" fetch -q --depth 1 origin main && git -C "$2" reset -q --hard FETCH_HEAD
+    else
+        rm -rf "$2"; mkdir -p "$(dirname "$2")"
+        git clone -q --depth 1 -b main "https://github.com/ruderigo/$1" "$2"
+    fi
+}
+update_firefly() {
+    say "FireFly: fetching the main branch..."
+    local src="$H/.cache/rk-apps/FireFly"
+    sync_repo "$FIREFLY_REPO" "$src" || { say "could not fetch FireFly."; return 1; }
+    say "FireFly: running its installer..."
+    ( cd "$src/firefly" && bash deploy/install.sh ) || { say "FireFly's installer stopped (its message is above)."; return 1; }
+    chmod +x "$H/firefly/deploy/"*.sh 2>/dev/null
+    say "FireFly is now $(py_version < "$H/firefly/firefly/__init__.py")."
+}
+update_stump() {
+    [ -f "$H/Stump/stump_pc.py" ] || { say "the Stump is not set up yet: open Stump on the dock first."; return 1; }
+    local inst="$H/R36MAX-Stump/handheld/install.sh" rc
+    say "Stump: running its installer (it fetches its own updates)..."
+    if [ -n "${SUDO_ASKPASS:-}" ]; then
+        # nobody at a keyboard: an update keeps everything (the RK3326 Provisioner's answers)
+        local ans; ans=$(mktemp) && chmod 600 "$ans"
+        printf '%s\n' "{\"folder for this stump\": \"$H/Stump\", \"change something\": \"\"," \
+            "\"use it for this stump\": false, \"use a heltec over bluetooth instead\": false," \
+            "\"fix it, then check again\": false}" > "$ans"
+        bash "$inst" --answers "$ans"; rc=$?
+        rm -f "$ans"
+    else
+        bash "$inst"; rc=$?
+    fi
+    [ "$rc" -eq 0 ] || { say "the Stump's installer stopped (its message is above)."; return 1; }
+    say "Stump is now $(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null)."
+}
+
 status() {
     for f in "$H/ports/Ember.sh:Ember" "$H/firefly/deploy/FireFly.sh:FireFly" "$H/R36MAX-Stump/handheld/LaBuche_Stump.sh:Stump"; do
         p=${f%%:*}; n=${f##*:}
@@ -91,5 +157,17 @@ case "$cmd" in
             *) echo "usage: rk-apps install ember|firefly|stump|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
-    *) echo "usage: rk-apps status | install ember|firefly|stump|all" >&2; exit 2 ;;
+    versions) versions ;;
+    update)
+        online || { say "not online. Join Wi-Fi first."; exit 1; }
+        rc=0
+        case "$what" in
+            ember) install_ember || rc=1 ;;
+            firefly) update_firefly || rc=1 ;;
+            stump) update_stump || rc=1 ;;
+            all) install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1 ;;
+            *) echo "usage: rk-apps update ember|firefly|stump|all" >&2; exit 2 ;;
+        esac
+        exit "$rc" ;;
+    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump all)" >&2; exit 2 ;;
 esac

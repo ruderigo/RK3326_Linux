@@ -400,6 +400,71 @@ class StumpSetup:
             self.done = True
 
 
+RK_APPS = "/usr/local/sbin/rk-apps"
+
+
+class AppVersions:
+    """`rk-apps versions` in the background (it asks GitHub): `apps` once
+    `done`, a list of {"id", "name", "installed", "newest"}; "-" is not
+    installed and "?" not known."""
+
+    def __init__(self):
+        self.done, self.apps = False, []
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        ok, out = run([RK_APPS, "versions"], timeout=45)
+        for line in out.splitlines() if ok else []:
+            parts = line.split("|")
+            if len(parts) == 4:
+                self.apps.append(dict(zip(("id", "name", "installed", "newest"), parts)))
+        self.done = True
+
+
+class AppUpdate:
+    """`rk-apps update <app>`, running: `lines`, then `done`, `ok`, and
+    `reason` "password" when sudo refused it. The handheld's password goes to
+    the app's installer through sudo's askpass helper, from a private file
+    that lives only while it runs (replaces: the starting password, when
+    `password` is a new one to set first)."""
+
+    def __init__(self, app, password, replaces=None):
+        self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        threading.Thread(target=self._run, args=(app, password, replaces), daemon=True).start()
+
+    def _run(self, app, password, replaces):
+        if replaces is not None:
+            ok, why = change_password(replaces, password)
+            if not ok:
+                self.lines += ["The password was not changed:", why]
+                self.reason, self.done = "newpassword", True
+                return
+            self.lines.append("✓ this handheld's password is set")
+        d = tempfile.mkdtemp(prefix="rk-update-")          # 0700
+        try:
+            helper, secret = os.path.join(d, "askpass"), os.path.join(d, "pw")
+            for path, text, mode in ((helper, ASKPASS, 0o700), (secret, password + "\n", 0o600)):
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+                    f.write(text)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
+            env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
+            p = subprocess.Popen([RK_APPS, "update", app], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, text=True, errors="replace", bufsize=1, env=env)
+            for raw in p.stdout:
+                line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
+                if line:
+                    self.lines.append(line)
+                    del self.lines[:-400]
+            self.ok = p.wait() == 0
+            if not self.ok and any("didn't take that password" in ln or "incorrect password" in ln for ln in self.lines[-8:]):
+                self.reason = "password"
+        except OSError as e:
+            self.lines.append(str(e))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+            self.done = True
+
+
 class Install:
     """rk-tools install-heavy, running. `lines` is its output so far; `done`
     is set when it ends, with `ok` saying whether everything installed."""
@@ -693,6 +758,12 @@ class System:
     def password_expired(self):
         return password_expired()
 
+    def app_versions(self):
+        return AppVersions()
+
+    def app_update(self, app, password, replaces=None):
+        return AppUpdate(app, password, replaces)
+
     def stump_storage(self):
         return stump_storage()
 
@@ -779,6 +850,20 @@ class DemoSystem(System):
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
     def password_expired(self): return True
+
+    def app_versions(self):
+        job = AppVersions.__new__(AppVersions)
+        job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.8.1", "newest": "0.9.11"},
+                                    {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.3-b.87"},
+                                    {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"}]
+        return job
+
+    def app_update(self, app, password, replaces=None):
+        job = AppUpdate.__new__(AppUpdate)
+        job.done, job.ok, job.reason = False, False, ""
+        job.lines = ["rk-apps: FireFly: fetching the main branch...", "rk-apps: FireFly: running its installer...",
+                     "== 2/5 App files -> /home/ark/firefly", "== 3/5 Reticulum + LXMF in a private environment"]
+        return job
     def stump_storage(self): return 991, 256, [256, 512, 768]
 
     def stump_search(self):

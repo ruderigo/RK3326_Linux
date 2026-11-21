@@ -110,6 +110,17 @@ def write_all(system, size, out_dir):
             app.stack.clear()
             app.window.view = "list"
             ArsenalPage_reset()
+        if item["name"] == "Apps":
+            app.toast_text = ""
+            from .pages.apps import AppsPage
+            app.tick()
+            shot("apps")
+            app.window.job = None
+            AppsPage.job = app.system.app_update("firefly", "x")
+            AppsPage.job_name, app.window.view = "FireFly", "running"
+            shot("apps-updating")
+            AppsPage.job = None
+            app.window.view = "list"
         if item["name"] == "Survey":
             time.sleep(0.3)
             shot("survey-list")
