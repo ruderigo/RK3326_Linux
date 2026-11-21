@@ -1,0 +1,4 @@
+# The Mali driver (libmali g29p1) allocates its buffers from the DMA-BUF
+# system heap; without this only root can, and apps fail with
+# "EGL not initialized". Same rule as dArkOS.
+SUBSYSTEM=="dma_heap", KERNEL=="system*", GROUP="video", MODE="0660"

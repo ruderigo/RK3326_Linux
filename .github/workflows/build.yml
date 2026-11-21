@@ -71,7 +71,10 @@ jobs:
           git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
           cd upstream
           git sparse-checkout init --no-cone
-          git sparse-checkout set /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/
+          git sparse-checkout set /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/ \
+            /rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate \
+            /rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt
           git checkout --quiet "$UPSTREAM_COMMIT"
           du -sh uboot boot/dArkOS/consoles rootfs/dArkOS/usr/lib/modules
 

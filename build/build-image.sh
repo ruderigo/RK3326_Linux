@@ -60,8 +60,15 @@ for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3 fdtput fdtget; do
 done
 CONS="$UP/boot/dArkOS/consoles"
 MODS="$UP/rootfs/dArkOS/usr/lib/modules"
+# dArkOS's graphics for the apps the dock opens: the Mali GPU driver and the
+# SDL2 built against it (the panel only shows what goes through these), and
+# its controller database (the right SELECT/START for this pad)
+MALI="$UP/rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so"
+SDLRK="$UP/rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate"
+PADDB="$UP/rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt"
 for f in "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
-         "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image"; do
+         "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image" \
+         "$MALI" "$SDLRK" "$PADDB"; do
     [ -f "$f" ] || die "missing in the upstream checkout: $f"
 done
 [ -d "$MODS" ] || die "missing in the upstream checkout: $MODS"
@@ -149,11 +156,24 @@ cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
 chown -R 0:0 "$ROOTFS/usr/lib/modules"
 ls "$ROOTFS/usr/lib/modules"
 
+say "Graphics for the apps (dArkOS's Mali driver and SDL2)"
+# Kept apart from the system's libraries: only apps the desktop launches load
+# them (it sets LD_LIBRARY_PATH), so the desktop itself keeps its own SDL.
+GPU="$ROOTFS/usr/lib/rk-gpu"
+mkdir -p "$GPU"
+install -m 0644 "$MALI" "$GPU/libmali.so"
+install -m 0644 "$SDLRK" "$GPU/libSDL2-2.0.so.0"
+for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n"; done
+mkdir -p "$ROOTFS/usr/share"
+install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
+ls -l "$GPU"
+
 say "System files"
 cp -a "$REPO/overlay/." "$ROOTFS/"
 # everything we add belongs to root, whoever owns the checkout
 ( cd "$REPO/overlay" && find . -mindepth 1 ) | while read -r f; do chown -h 0:0 "$ROOTFS/$f"; done
 chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
+chmod 755 "$ROOTFS"/usr/local/bin/rk-*
 chmod 440 "$ROOTFS/etc/sudoers.d/rkshell"
 in_root visudo -c -q -f /etc/sudoers.d/rkshell || die "the sudoers file for the desktop is not valid"
 

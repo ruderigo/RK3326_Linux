@@ -41,6 +41,7 @@ class App:
         self.toast_text, self.toast_until, self.toast_error = "", 0, False
         self.last_tick, self.t0 = 0, time.time()
         self.launch = None          # set to a command: the back end runs it and comes back
+        self.launch_item = None     # the dock entry it came from (its "before"/"after" steps)
         self.fill_dock()
 
     def fill_dock(self):
@@ -82,7 +83,7 @@ class App:
         elif not item.get("ready"):
             self.toast(f"{item['name']} is not installed yet", error=True)
         elif item.get("exec"):
-            self.launch = item["exec"]
+            self.launch, self.launch_item = item["exec"], item
         else:
             self.toast(f"{item['name']} would open here (demo)")
 

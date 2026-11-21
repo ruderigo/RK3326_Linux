@@ -94,9 +94,13 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /usr/lib/python3/dist-packages/rkshell/__main__.py /usr/lib/python3/dist-packages/rkshell/backends/device.py \
          /usr/lib/python3/dist-packages/pygame /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
          /usr/lib/python3/dist-packages/pyte /usr/lib/python3/dist-packages/rkshell/pages/terminal.py /usr/bin/nmap \
-         /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps; do
+         /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps \
+         /usr/lib/rk-gpu/libmali.so /usr/lib/rk-gpu/libSDL2-2.0.so.0 /usr/lib/rk-gpu/libEGL.so.1 \
+         /usr/lib/rk-gpu/libGLESv2.so.2 /usr/lib/rk-gpu/libgbm.so.1 /usr/share/gamecontrollerdb.txt \
+         /etc/udev/rules.d/70-mali-dma-heap.rules /usr/local/bin/rk-stump-pause; do
     has "$p" || fail "missing in the system: $p"
 done
+filecat /usr/share/gamecontrollerdb.txt | grep -q "GO-Super Gamepad" || fail "the controller database has no entry for the built-in pad"
 ok "system files, both kernels' modules and enabled services are present"
 for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/policy-rc.d \
          /etc/systemd/system/getty.target.wants/getty@tty1.service; do

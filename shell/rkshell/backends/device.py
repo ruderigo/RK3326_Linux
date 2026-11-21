@@ -48,6 +48,32 @@ PLAIN = {2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9"
 SHIFTED = dict(zip("1234567890-=[];'`\\,./", "!@#$%^&*()_+{}:\"~|<>?"))
 EVENT = struct.Struct("qqHHi")          # struct input_event on a 64-bit kernel
 EV_KEY = 1
+GPU_DIR = "/usr/lib/rk-gpu"                     # dArkOS's Mali driver and SDL2 (build-image.sh)
+PAD_DB = "/usr/share/gamecontrollerdb.txt"      # dArkOS's controller database
+
+
+def app_env():
+    """The environment for an app the dock opens. None of the desktop's own SDL
+    settings (its "dummy" driver would give the app a black screen); dArkOS's
+    Mali driver and SDL2, which is what this panel shows; and the controller
+    database that puts SELECT and START where they are on this pad."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
+    if os.path.isdir(GPU_DIR):
+        env["LD_LIBRARY_PATH"] = ":".join(p for p in (GPU_DIR, env.get("LD_LIBRARY_PATH")) if p)
+        env["SDL_VIDEODRIVER"] = "kmsdrm"
+    if os.path.isfile(PAD_DB):
+        env["SDL_GAMECONTROLLERCONFIG_FILE"] = PAD_DB
+    return env
+
+
+def run_step(cmd):
+    """An app's optional "before" or "after" step (a command list); quietly
+    skipped when it is missing or fails."""
+    if cmd:
+        try:
+            subprocess.run(cmd, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
 
 # -------------------------------------------------------------- framebuffer
@@ -69,6 +95,14 @@ class Framebuffer:
         except OSError:
             pass
         self.mm = mmap.mmap(self.fd, self.stride * self.h)
+
+    def unblank(self):
+        """Turn the panel back on (FBIOBLANK): an app that crashes on its way
+        out can leave it blanked, with the desktop drawing unseen behind."""
+        try:
+            fcntl.ioctl(self.fd, 0x4611, 0)
+        except OSError:
+            pass
         if self.bpp == 32:
             masks = (0xFF0000, 0xFF00, 0xFF, 0) if red_offset == 16 else (0xFF, 0xFF00, 0xFF0000, 0)
             self.out = None
@@ -229,15 +263,16 @@ def run(system, fps=10):
             app.tick()
             if app.launch:
                 cmd, app.launch = app.launch, None
-                console.restore()
-                # our headless "dummy" SDL driver must not reach the app we launch,
-                # or its SDL renders to nothing (a black screen): let it choose.
-                child_env = {k: v for k, v in os.environ.items()
-                             if k not in ("SDL_VIDEODRIVER", "SDL_AUDIODRIVER", "SDL_RENDER_DRIVER")}
+                item, app.launch_item = app.launch_item or {}, None
+                # the console stays in graphics mode, as EmulationStation keeps it
+                # while a port runs: the app owns the screen until it quits
+                run_step(item.get("before"))
                 try:
-                    subprocess.run(cmd, env=child_env)
+                    subprocess.run(cmd, env=app_env())
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
+                run_step(item.get("after"))
+                fb.unblank()
                 console.__init__()
                 held.clear()
                 app.dirty = True

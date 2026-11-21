@@ -46,9 +46,33 @@ It was written for dArkOS with EmulationStation; on this OS expect to adjust
 paths (it uses `/roms/ports`) and the launcher. This is the one that will need
 the most hands-on work.
 
-## Caveat
+## How they get the screen
 
-None of this is tested on the handheld yet. The dock entries, the shared
-packages, and the Ember and FireFly fetches are wired and ready to try; how
-each program's own screen and input behave through the desktop's hand-off, and
-Stump's setup on this OS, are what to check on the device.
+The panel only shows what goes through the Mali GPU driver, so the image
+carries dArkOS's own graphics: its Mali driver (`libmali`, for this G31 GPU)
+and the SDL2 it builds against it, in `/usr/lib/rk-gpu`, plus its controller
+database in `/usr/share/gamecontrollerdb.txt` (SELECT and START in the right
+place on this pad). The desktop gives these to every app it opens; the
+desktop itself keeps drawing its own way. A udev rule lets the `video` group
+reach the GPU's memory heap, without which apps fail with
+"EGL not initialized".
+
+While an app runs it owns the screen, as a port does under EmulationStation,
+and the desktop comes back when it quits. If an app crashes on its way out,
+the desktop turns the panel back on itself. By hand, the same is
+`echo 0 | sudo tee /sys/class/graphics/fb0/blank`.
+
+## FireFly and Stump take turns
+
+Both run Reticulum, and Reticulum's local-network discovery (UDP port 29716)
+can belong to only one program on a machine. So while FireFly is open, the
+Stump pauses (`rk-stump-pause`, run by the dock before and after FireFly),
+and it comes back when you quit FireFly. Opening Stump's cockpit needs
+nothing: FireFly is closed then.
+
+## Tested
+
+On an R36MAX, all three open from the dock, draw, take the gamepad, and quit
+back to the desktop with SELECT+START; Stump pauses for FireFly and resumes.
+Still open: Ember makes no sound yet, and an app can leave the display's
+hardware cursor frozen over the desktop after it quits (a reboot clears it).
