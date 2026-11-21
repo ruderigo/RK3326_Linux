@@ -38,7 +38,11 @@ parts, for teaching and authorised testing on your own equipment.
   Network window, and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
 
-Not in it yet: FireFly, the Stump, and tools that need monitor mode.
+On the dock as well: **FireFly**, **Stump** and **Ember**, shown as *(not
+installed)* until you fetch them with `rk-apps install all` over Wi-Fi — see
+[`docs/apps.md`](docs/apps.md).
+
+Not baked in yet: tools that need Wi-Fi monitor mode.
 
 ### The desktop
 

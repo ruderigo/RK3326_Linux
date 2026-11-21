@@ -83,7 +83,7 @@ has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
 filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \

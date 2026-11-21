@@ -1,0 +1,3 @@
+{"name": "Stump", "icon": "stump", "group": "Comms",
+ "about": "This handheld as a Stump mesh node",
+ "exec": ["/home/ark/R36MAX-Stump/handheld/LaBuche_Stump.sh"]}

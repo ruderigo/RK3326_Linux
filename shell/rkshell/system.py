@@ -510,7 +510,8 @@ class DemoSystem(System):
 
     def apps(self):
         return [{"name": "FireFly", "icon": "firefly", "group": "Comms", "about": "Messages over LoRa and Wi-Fi", "ready": True},
-                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "Run and watch a Stump node", "ready": True},
+                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "This handheld as a Stump mesh node", "ready": True},
+                {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
     def survey(self, rescan=True):
