@@ -6,6 +6,7 @@
 #   rk-apps versions                   installed and newest version of each
 #   rk-apps install ember|firefly|stump|all     (from each one's latest release)
 #   rk-apps update ember|firefly|stump|all
+#   rk-apps source firefly stable|sandbox       where FireFly's updates come from
 #
 # An update takes FireFly and the Stump from the main branch of their
 # repositories (their GitHub releases lag behind), and Ember from its latest
@@ -78,18 +79,27 @@ clone_stump() {
 
 # ------------------------------------------------------------ versions
 RAW=https://raw.githubusercontent.com/ruderigo
-FIREFLY_REPO=FireFly_RK3326_R36MAX_R36S
+# FireFly has two repositories: the published one, and the sandbox where new
+# versions land first. "rk-apps source firefly sandbox" (or the Apps window)
+# switches; the choice is kept in ~/.config/rk-apps.
+CONF="$H/.config/rk-apps"
+FIREFLY_SOURCE=stable
+[ -r "$CONF" ] && . "$CONF"
+case "$FIREFLY_SOURCE" in
+    sandbox) FIREFLY_REPO=SandBox_FireFly_RK3326 ;;
+    *) FIREFLY_SOURCE=stable; FIREFLY_REPO=FireFly_RK3326_R36MAX_R36S ;;
+esac
 py_version() { sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' | head -1; }
 ember_latest() {    # the tag the "latest release" link leads to, without its v
     curl -fsSLI -m 10 -o /dev/null -w '%{url_effective}' https://github.com/ruderigo/Ember/releases/latest 2>/dev/null |
         sed -n 's#.*/tag/v\{0,1\}##p'
 }
-versions() {        # one line each: id|name|installed|newest   ("-" not installed, "?" not known)
+versions() {        # one line each: id|name|installed|newest|source   ("-" not installed, "?" not known)
     local i a
     i=$(py_version < "$H/firefly/firefly/__init__.py" 2>/dev/null)
     a=$(curl -fsSL -m 10 "$RAW/$FIREFLY_REPO/main/firefly/firefly/__init__.py" 2>/dev/null | py_version)
     [ -x "$H/firefly/deploy/FireFly.sh" ] || i=-
-    echo "firefly|FireFly|${i:-?}|${a:-?}"
+    echo "firefly|FireFly|${i:-?}|${a:-?}|$FIREFLY_SOURCE"
     i=$(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null)
     a=$(curl -fsSL -m 10 "$RAW/R36MAX-Stump/main/handheld/VERSION" 2>/dev/null | head -1)
     [ -f "$H/Stump/stump_pc.py" ] && [ -x "$H/stump_r36max/stump_r36max_engine" ] || i=-
@@ -109,8 +119,8 @@ sync_repo() {       # a shallow checkout of $1's main branch in $2, brought up t
     fi
 }
 update_firefly() {
-    say "FireFly: fetching the main branch..."
-    local src="$H/.cache/rk-apps/FireFly"
+    say "FireFly: fetching the main branch of $FIREFLY_REPO..."
+    local src="$H/.cache/rk-apps/FireFly-$FIREFLY_SOURCE"
     sync_repo "$FIREFLY_REPO" "$src" || { say "could not fetch FireFly."; return 1; }
     say "FireFly: running its installer..."
     ( cd "$src/firefly" && bash deploy/install.sh ) || { say "FireFly's installer stopped (its message is above)."; return 1; }
@@ -158,6 +168,13 @@ case "$cmd" in
         esac
         exit "$rc" ;;
     versions) versions ;;
+    source)
+        [ "$what" = firefly ] || { echo "usage: rk-apps source firefly stable|sandbox" >&2; exit 2; }
+        case "${3:-}" in
+            stable|sandbox) mkdir -p "$(dirname "$CONF")" && echo "FIREFLY_SOURCE=$3" > "$CONF" && say "FireFly now comes from: $3" ;;
+            "") echo "$FIREFLY_SOURCE" ;;
+            *) echo "usage: rk-apps source firefly stable|sandbox" >&2; exit 2 ;;
+        esac ;;
     update)
         online || { say "not online. Join Wi-Fi first."; exit 1; }
         rc=0

@@ -416,8 +416,8 @@ class AppVersions:
         ok, out = run([RK_APPS, "versions"], timeout=45)
         for line in out.splitlines() if ok else []:
             parts = line.split("|")
-            if len(parts) == 4:
-                self.apps.append(dict(zip(("id", "name", "installed", "newest"), parts)))
+            if len(parts) in (4, 5):
+                self.apps.append(dict(zip(("id", "name", "installed", "newest", "source"), parts)))
         self.done = True
 
 
@@ -867,6 +867,10 @@ class System:
     def app_update(self, app, password, replaces=None):
         return AppUpdate(app, password, replaces)
 
+    def app_source(self, app, source):
+        """Where an app's updates come from ("stable" or "sandbox"); FireFly has both."""
+        return run([RK_APPS, "source", app, source])[0]
+
     def stump_storage(self):
         return stump_storage()
 
@@ -960,10 +964,16 @@ class DemoSystem(System):
 
     def app_versions(self):
         job = AppVersions.__new__(AppVersions)
-        job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.8.1", "newest": "0.9.11"},
+        src = getattr(self, "_src", "stable")
+        job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.9.11", "source": src,
+                                     "newest": "0.9.12" if src == "sandbox" else "0.9.11"},
                                     {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.3-b.87"},
                                     {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"}]
         return job
+
+    def app_source(self, app, source):
+        self._src = source
+        return True
 
     def app_update(self, app, password, replaces=None):
         job = AppUpdate.__new__(AppUpdate)

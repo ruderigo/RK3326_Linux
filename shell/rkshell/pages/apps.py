@@ -55,7 +55,10 @@ class AppsPage(Page):
         if self.view == "running":
             job = AppsPage.job
             return [("B", "back")] if job and job.done else [("B", "hide")]
-        return [("A", "update"), ("X", "check again"), ("B", "close")]
+        hints = [("A", "update"), ("X", "check again")]
+        if self.apps and self.apps[min(self.sel, len(self.apps) - 1)].get("source"):
+            hints.append(("Y", "stable / sandbox"))
+        return hints + [("B", "close")]
 
     def wants_back(self):
         return self.view == "running" and bool(AppsPage.job and AppsPage.job.done)
@@ -108,6 +111,13 @@ class AppsPage(Page):
             self.update(self.apps[self.sel])
         elif action == "x" and self.check is None:
             self.look()
+        elif action == "y" and self.apps and self.check is None:
+            a = self.apps[self.sel]
+            if a.get("source"):
+                to = "sandbox" if a["source"] == "stable" else "stable"
+                if self.app.system.app_source(a["id"], to):
+                    self.app.toast(f"{a['name']} now comes from its {to} repository", 3)
+                    self.look()
 
     # ---------------------------------------------------------------- draw
     def draw(self, surf, f, area):
@@ -127,10 +137,12 @@ class AppsPage(Page):
             text, colour, _ = self.state(a)
             G.text(surf, f.big, a["name"], (r.x + 14, r.y + 5), T.EMBER_BRIGHT if sel else T.TEXT)
             G.text(surf, f.small, G.fit(f.small, text, r.w - 28), (r.x + 14, r.y + 9 + f.line), colour)
+            if a.get("source"):
+                G.text(surf, f.small, "from: " + a["source"], (r.right - 14, r.y + 10), T.MUTED, right=True)
             y += row_h
         note = ("Checking again…" if self.check is not None else
-                "An update runs the app's own installer; its data is kept. FireFly and Stump come from their "
-                "repositories' main branch, Ember from its latest release.")
+                "An update runs the app's own installer; its data is kept. FireFly has two sources, switched "
+                "with Y: stable (its published repository) and sandbox (new versions land there first).")
         for k, ln in enumerate(G.wrap(f.small, note, area.w - 32)[:3]):
             G.text(surf, f.small, ln, (x, area.bottom - 3 * f.small_line - 6 + k * f.small_line), T.DIM)
 
