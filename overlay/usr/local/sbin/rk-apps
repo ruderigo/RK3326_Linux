@@ -47,7 +47,7 @@ install_firefly() {
     local tmp; tmp=$(mktemp -d)
     if ! curl -fsSL "$url" -o "$tmp/firefly.zip"; then say "download failed."; rm -rf "$tmp"; return 1; fi
     ( cd "$tmp" && python3 -m zipfile -e firefly.zip . ) || { say "could not unzip FireFly."; rm -rf "$tmp"; return 1; }
-    local src; src=$(find "$tmp" -maxdepth 2 -name install.sh -path '*deploy*' | head -1)
+    local src; src=$(find "$tmp" -maxdepth 4 -name install.sh -path '*deploy*' | head -1)
     [ -n "$src" ] || { say "no deploy/install.sh in the zip."; rm -rf "$tmp"; return 1; }
     say "Running FireFly's own installer..."
     ( cd "$(dirname "$src")/.." && bash deploy/install.sh ) && say "FireFly installed in $H/firefly." || say "FireFly installer reported a problem (see its output)."
