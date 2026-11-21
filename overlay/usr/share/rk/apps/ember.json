@@ -1,0 +1,3 @@
+{"name": "Ember", "icon": "ember", "group": "Audio",
+ "about": "Analog pads and a vocoder",
+ "exec": ["/home/ark/ports/Ember.sh"]}

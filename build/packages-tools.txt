@@ -62,3 +62,14 @@ macchanger
 # --- in the middle, and handy ---
 ettercap-text-only
 proxychains4
+
+# --- support for the dock apps (FireFly, Ember; Stump installs its own) ---
+# FireFly: a Python/pygame app that makes a venv and talks to a LoRa radio
+python3-venv
+python3-serial
+python3-cryptography
+opus-tools
+codec2
+# Ember: a prebuilt arm64 SDL2/ALSA synth; these are its runtime libraries
+libsdl2-2.0-0
+libsdl2-ttf-2.0-0

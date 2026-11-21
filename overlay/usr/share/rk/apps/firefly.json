@@ -1,0 +1,3 @@
+{"name": "FireFly", "icon": "firefly", "group": "Comms",
+ "about": "Messages over LoRa and Wi-Fi",
+ "exec": ["/home/ark/firefly/deploy/FireFly.sh"]}

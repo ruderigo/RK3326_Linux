@@ -154,7 +154,14 @@ def _survey(s, c):
         pygame.draw.rect(s, c, (46 + i * 28, 140 - h, 18, h), border_radius=4)
 
 
-GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal,
+def _ember(s, c):
+    bright = T.EMBER_BRIGHT if c != T.DIM else c
+    pygame.draw.polygon(s, c, [(96, 34), (130, 92), (124, 128), (96, 150),
+                               (68, 128), (62, 92)])          # outer flame
+    pygame.draw.polygon(s, bright, [(96, 72), (114, 110), (96, 140), (78, 110)])  # inner flame
+
+
+GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 

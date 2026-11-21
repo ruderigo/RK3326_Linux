@@ -169,6 +169,11 @@ for bad in '{"target":"-oN /etc/rk-pwned"}' '{"target":"10.0.0.1 --script=/tmp/x
     fi
 done
 [ ! -e "$ROOTFS/etc/rk-pwned" ] || die "rk-scan let a target write a file"
+# the dock app descriptions must be valid JSON with a name and an exec
+for j in "$ROOTFS"/usr/share/rk/apps/*.json; do
+    python3 -I -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['name'] and d['exec']" "$j" \
+        || die "bad app file: $j"
+done
 rm -rf "$ROOTFS/tmp/rkshell-check"
 echo "$HOSTNAME_" > "$ROOTFS/etc/hostname"
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_" > "$ROOTFS/etc/hosts"
