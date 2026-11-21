@@ -40,7 +40,7 @@ OUT=${2:?usage: build-image.sh <upstream dir> <out dir>}
 CONSOLE=${CONSOLE:-r36max type1}
 KERNEL=${KERNEL:-5.10}
 VERSION=${VERSION:-dev}
-ROOT_MB=${ROOT_MB:-6144}
+ROOT_MB=${ROOT_MB:-3072}
 BOOT_MB=256
 case $CONSOLE in
     r36max*) DEF_HOST=r36max ;;
