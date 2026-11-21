@@ -74,3 +74,10 @@ codec2
 libsdl2-2.0-0
 libsdl2-ttf-2.0-0
 # (the apps' graphics are dArkOS's Mali driver, installed by build-image.sh)
+# the Stump's installer compiles its cockpit on the handheld and gives its own
+# Python the low ports: have what it would otherwise fetch with apt
+gcc
+libc6-dev
+libasound2-dev
+libcap2-bin
+iw

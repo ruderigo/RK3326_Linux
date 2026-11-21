@@ -241,6 +241,28 @@ rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
 
+say "The dock apps (Ember, FireFly, and the Stump's files)"
+# Installed here, so a fresh card has them without a command being typed.
+# They are fetched as rk-apps fetches them on a running handheld (the latest
+# release of each), into ark's home, and handed to ark afterwards.
+as_ark() { in_root env HOME=/home/ark USER=ark LOGNAME=ark "$@"; }
+as_ark /usr/local/sbin/rk-apps install ember || die "Ember could not be fetched"
+as_ark /usr/local/sbin/rk-apps install firefly || die "FireFly could not be installed"
+[ -x "$ROOTFS/home/ark/firefly/venv/bin/python" ] && [ -x "$ROOTFS/home/ark/firefly/deploy/FireFly.sh" ] ||
+    die "FireFly is not complete in the image"
+# The Stump is set up on the handheld (its questions are the owner's: which
+# chain, its secret, the radio). What needs no answer is put in place now:
+# both repositories, the folder its cockpit writes to, and its service
+# starting at boot without a login.
+as_ark /usr/local/sbin/rk-apps install stump || die "the Stump's files could not be fetched"
+in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
+    die "SandBox_Stump_On could not be fetched"
+mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"
+mkdir -p "$ROOTFS/var/lib/systemd/linger" && : > "$ROOTFS/var/lib/systemd/linger/ark"
+in_root chown -R ark:ark /home/ark /roms/ports/stump_r36max
+in_root apt-get clean
+ls -la "$ROOTFS/home/ark" "$ROOTFS/home/ark/ports"
+
 rm -f "$ROOTFS/usr/sbin/policy-rc.d"
 for m in dev/pts dev proc sys; do umount "$ROOTFS/$m"; done
 du -sh "$ROOTFS"
