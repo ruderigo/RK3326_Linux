@@ -30,6 +30,10 @@ install_ember() {
     if curl -fsSL https://github.com/ruderigo/Ember/releases/latest/download/ember-arkos-arm64.tar.gz \
             | tar xz --no-same-owner -C "$H/ports"; then
         chmod +x "$H/ports/Ember.sh" 2>/dev/null
+        # Ember's launcher runs "sudo chmod 666 /dev/tty1"; on our desktop ark
+        # owns tty1, so drop the sudo (it would prompt for a password with no
+        # way to answer it).
+        sed -i 's/^\( *\)sudo /\1/' "$H/ports/Ember.sh" 2>/dev/null
         say "Ember installed in $H/ports."
     else
         say "could not fetch Ember."; return 1

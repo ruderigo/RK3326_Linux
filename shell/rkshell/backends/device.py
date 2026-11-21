@@ -230,8 +230,12 @@ def run(system, fps=10):
             if app.launch:
                 cmd, app.launch = app.launch, None
                 console.restore()
+                # our headless "dummy" SDL driver must not reach the app we launch,
+                # or its SDL renders to nothing (a black screen): let it choose.
+                child_env = {k: v for k, v in os.environ.items()
+                             if k not in ("SDL_VIDEODRIVER", "SDL_AUDIODRIVER", "SDL_RENDER_DRIVER")}
                 try:
-                    subprocess.run(cmd)
+                    subprocess.run(cmd, env=child_env)
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
                 console.__init__()
