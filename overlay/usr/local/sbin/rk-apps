@@ -47,6 +47,9 @@ install_firefly() {
     [ -n "$src" ] || { say "no deploy/install.sh in the zip."; rm -rf "$tmp"; return 1; }
     say "Running FireFly's own installer..."
     ( cd "$(dirname "$src")/.." && bash deploy/install.sh ) && say "FireFly installed in $H/firefly." || say "FireFly installer reported a problem (see its output)."
+    # python's zipfile does not keep the executable bit, so the dock would see
+    # the launcher as not runnable: put it back.
+    chmod +x "$H/firefly/deploy/"*.sh 2>/dev/null
     rm -rf "$tmp"
 }
 
