@@ -137,6 +137,12 @@ if [ -x "$ROOTFS/usr/sbin/locale-gen" ]; then
     echo 'LANG=C.UTF-8' > "$ROOTFS/etc/default/locale"
 fi
 
+# Time zone (no RTC battery on these; NTP sets the clock over Wi-Fi, this
+# names the zone so the desktop shows local time). Change with
+# "sudo timedatectl set-timezone <Zone>".
+ln -sf /usr/share/zoneinfo/America/Toronto "$ROOTFS/etc/localtime"
+echo "America/Toronto" > "$ROOTFS/etc/timezone"
+
 say "Kernel modules (4.4 and 5.10)"
 mkdir -p "$ROOTFS/usr/lib/modules"
 cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"

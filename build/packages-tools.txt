@@ -73,3 +73,8 @@ codec2
 # Ember: a prebuilt arm64 SDL2/ALSA synth; these are its runtime libraries
 libsdl2-2.0-0
 libsdl2-ttf-2.0-0
+# the GPU user-space so SDL fullscreen apps can drive /dev/dri via kmsdrm
+libgbm1
+libegl1
+libgles2
+libgl1-mesa-dri
