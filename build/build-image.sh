@@ -252,13 +252,13 @@ as_ark /usr/local/sbin/rk-apps install firefly || die "FireFly could not be inst
     die "FireFly is not complete in the image"
 # The Stump is set up on the handheld (its questions are the owner's: which
 # chain, its secret, the radio). What needs no answer is put in place now:
-# both repositories, the folder its cockpit writes to, and its service
-# starting at boot without a login.
+# both repositories and the folder its cockpit writes to. (Not "linger" for
+# ark: until the first password change the account is expired, and systemd's
+# user@1000.service fails at boot. The Stump's installer turns it on.)
 as_ark /usr/local/sbin/rk-apps install stump || die "the Stump's files could not be fetched"
 in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
     die "SandBox_Stump_On could not be fetched"
 mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"
-mkdir -p "$ROOTFS/var/lib/systemd/linger" && : > "$ROOTFS/var/lib/systemd/linger/ark"
 in_root chown -R ark:ark /home/ark /roms/ports/stump_r36max
 in_root apt-get clean
 ls -la "$ROOTFS/home/ark" "$ROOTFS/home/ark/ports"
