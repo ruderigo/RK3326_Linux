@@ -1,0 +1,14 @@
+{
+ "name": "Stump",
+ "icon": "stump",
+ "group": "Comms",
+ "about": "This handheld as a Stump mesh node",
+ "exec": [
+  "/home/ark/R36MAX-Stump/handheld/LaBuche_Stump.sh"
+ ],
+ "setup": "stump",
+ "needs": [
+  "~/Stump/stump_pc.py",
+  "~/stump_r36max/stump_r36max_engine"
+ ]
+}

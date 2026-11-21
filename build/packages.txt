@@ -12,6 +12,9 @@ libnss-mdns
 iputils-ping
 curl
 wget
+gnupg
+ca-certificates
+unzip
 
 # the card and its partitions
 parted

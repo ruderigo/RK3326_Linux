@@ -60,8 +60,15 @@ for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3 fdtput fdtget; do
 done
 CONS="$UP/boot/dArkOS/consoles"
 MODS="$UP/rootfs/dArkOS/usr/lib/modules"
+# dArkOS's graphics for the apps the dock opens: the Mali GPU driver and the
+# SDL2 built against it (the panel only shows what goes through these), and
+# its controller database (the right SELECT/START for this pad)
+MALI="$UP/rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so"
+SDLRK="$UP/rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate"
+PADDB="$UP/rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt"
 for f in "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
-         "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image"; do
+         "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image" \
+         "$MALI" "$SDLRK" "$PADDB"; do
     [ -f "$f" ] || die "missing in the upstream checkout: $f"
 done
 [ -d "$MODS" ] || die "missing in the upstream checkout: $MODS"
@@ -137,17 +144,36 @@ if [ -x "$ROOTFS/usr/sbin/locale-gen" ]; then
     echo 'LANG=C.UTF-8' > "$ROOTFS/etc/default/locale"
 fi
 
+# Time zone (no RTC battery on these; NTP sets the clock over Wi-Fi, this
+# names the zone so the desktop shows local time). Change with
+# "sudo timedatectl set-timezone <Zone>".
+ln -sf /usr/share/zoneinfo/America/Toronto "$ROOTFS/etc/localtime"
+echo "America/Toronto" > "$ROOTFS/etc/timezone"
+
 say "Kernel modules (4.4 and 5.10)"
 mkdir -p "$ROOTFS/usr/lib/modules"
 cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
 chown -R 0:0 "$ROOTFS/usr/lib/modules"
 ls "$ROOTFS/usr/lib/modules"
 
+say "Graphics for the apps (dArkOS's Mali driver and SDL2)"
+# Kept apart from the system's libraries: only apps the desktop launches load
+# them (it sets LD_LIBRARY_PATH), so the desktop itself keeps its own SDL.
+GPU="$ROOTFS/usr/lib/rk-gpu"
+mkdir -p "$GPU"
+install -m 0644 "$MALI" "$GPU/libmali.so"
+install -m 0644 "$SDLRK" "$GPU/libSDL2-2.0.so.0"
+for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n"; done
+mkdir -p "$ROOTFS/usr/share"
+install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
+ls -l "$GPU"
+
 say "System files"
 cp -a "$REPO/overlay/." "$ROOTFS/"
 # everything we add belongs to root, whoever owns the checkout
 ( cd "$REPO/overlay" && find . -mindepth 1 ) | while read -r f; do chown -h 0:0 "$ROOTFS/$f"; done
 chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
+chmod 755 "$ROOTFS"/usr/local/bin/rk-*
 chmod 440 "$ROOTFS/etc/sudoers.d/rkshell"
 in_root visudo -c -q -f /etc/sudoers.d/rkshell || die "the sudoers file for the desktop is not valid"
 
@@ -169,6 +195,11 @@ for bad in '{"target":"-oN /etc/rk-pwned"}' '{"target":"10.0.0.1 --script=/tmp/x
     fi
 done
 [ ! -e "$ROOTFS/etc/rk-pwned" ] || die "rk-scan let a target write a file"
+# the dock app descriptions must be valid JSON with a name and an exec
+for j in "$ROOTFS"/usr/share/rk/apps/*.json; do
+    python3 -I -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['name'] and d['exec']" "$j" \
+        || die "bad app file: $j"
+done
 rm -rf "$ROOTFS/tmp/rkshell-check"
 echo "$HOSTNAME_" > "$ROOTFS/etc/hostname"
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_" > "$ROOTFS/etc/hosts"
@@ -209,6 +240,28 @@ rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 # starting does not wait for a network that may not be there
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+
+say "The dock apps (Ember, FireFly, and the Stump's files)"
+# Installed here, so a fresh card has them without a command being typed.
+# They are fetched as rk-apps fetches them on a running handheld (the latest
+# release of each), into ark's home, and handed to ark afterwards.
+as_ark() { in_root env HOME=/home/ark USER=ark LOGNAME=ark "$@"; }
+as_ark /usr/local/sbin/rk-apps install ember || die "Ember could not be fetched"
+as_ark /usr/local/sbin/rk-apps install firefly || die "FireFly could not be installed"
+[ -x "$ROOTFS/home/ark/firefly/venv/bin/python" ] && [ -x "$ROOTFS/home/ark/firefly/deploy/FireFly.sh" ] ||
+    die "FireFly is not complete in the image"
+# The Stump is set up on the handheld (its questions are the owner's: which
+# chain, its secret, the radio). What needs no answer is put in place now:
+# both repositories and the folder its cockpit writes to. (Not "linger" for
+# ark: until the first password change the account is expired, and systemd's
+# user@1000.service fails at boot. The Stump's installer turns it on.)
+as_ark /usr/local/sbin/rk-apps install stump || die "the Stump's files could not be fetched"
+in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
+    die "SandBox_Stump_On could not be fetched"
+mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"
+in_root chown -R ark:ark /home/ark /roms/ports/stump_r36max
+in_root apt-get clean
+ls -la "$ROOTFS/home/ark" "$ROOTFS/home/ark/ports"
 
 rm -f "$ROOTFS/usr/sbin/policy-rc.d"
 for m in dev/pts dev proc sys; do umount "$ROOTFS/$m"; done
@@ -261,6 +314,12 @@ while IFS='|' read -r console action node prop value; do
                 fdtput -t u "$dtb" "$node" "$prop" "$value"
                 [ "$(fdtget -t u "$dtb" "$node" "$prop")" = "$value" ] || die "could not set $prop in $rel"
                 echo "set $prop to $value (was $old) in $node in $rel" ;;
+            set-last-cell)
+                [[ $value =~ ^[0-9]+$ ]] || die "dtb-fixes.txt: set-last-cell needs a decimal value for $prop"
+                cells=($old); cells[$(( ${#cells[@]} - 1 ))]=$value
+                fdtput -t u "$dtb" "$node" "$prop" "${cells[@]}"
+                [ "$(fdtget -t u "$dtb" "$node" "$prop")" = "${cells[*]}" ] || die "could not set $prop in $rel"
+                echo "set the last cell of $prop to $value (was: $old) in $node in $rel" ;;
             *) die "dtb-fixes.txt: unknown action: $action" ;;
         esac | tee -a "$BOOT/rk-dtb-fixes.txt"
     done

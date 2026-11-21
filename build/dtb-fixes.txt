@@ -1,6 +1,8 @@
 # Changes made to arkos4clone's device trees when the image is built.
 # One per line:   console | delete-prop | node path | property
 #                 console | set-u32     | node path | property | value (decimal)
+#                 console | set-last-cell | node path | property | value (decimal)
+#                   (changes only the last number of a property that holds several)
 # Each is applied to the console's 4.4 and 5.10 device trees; "console@5.10"
 # or "console@4.4" limits a line to that kernel's tree. The build fails if the
 # node or the property is not there, so an upstream change is noticed.
@@ -24,3 +26,10 @@ r36max type1 | set-u32 | /i2c@ff180000/pmic@20/charger | max_chrg_current | 800
 # arkos4clone has 3). With 3 the speaker was quiet on 5.10 (2026-11-20). The
 # 4.4 kernel is left at 3: there the same value was loud.
 r36max type1@5.10 | set-u32 | /i2c@ff180000/pmic@20/codec | spk-volume | 11
+
+# R36MAX type 1: read the headphone-detect pin the way the factory device
+# tree does (active high; arkos4clone has active low). With it backwards the
+# system believes headphones are always in: "Headphone Jack" read "on" with
+# nothing plugged in, and the speaker crackled until a plug was put in the
+# jack (2026-11-21). The last number of the property is the polarity.
+r36max type1 | set-last-cell | /rk817-sound | simple-audio-card,hp-det-gpio | 0

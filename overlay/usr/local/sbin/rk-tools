@@ -25,12 +25,13 @@ install_msf() {
     have msfconsole && { say "Metasploit is already installed"; return 0; }
     say "Fetching Metasploit (large; this takes a while)..."
     install -d -m 0755 /etc/apt/keyrings
-    if ! curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key |
-            gpg --dearmor -o /etc/apt/keyrings/metasploit.gpg 2>/dev/null; then
+    # apt reads an armoured key straight from signed-by, so no gpg needed here
+    if ! curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key \
+            -o /etc/apt/keyrings/metasploit.asc; then
         say "could not fetch the Metasploit signing key - are you online?"; return 1
     fi
     local arch; arch=$(dpkg --print-architecture)
-    echo "deb [signed-by=/etc/apt/keyrings/metasploit.gpg] https://apt.metasploit.com/ lucid main" \
+    echo "deb [signed-by=/etc/apt/keyrings/metasploit.asc] https://apt.metasploit.com/ lucid main" \
         > /etc/apt/sources.list.d/metasploit.list
     apt-get update -q || { say "could not reach the Metasploit repo"; return 1; }
     if ! apt-get install -y -q metasploit-framework; then

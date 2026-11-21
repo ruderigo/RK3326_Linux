@@ -61,6 +61,10 @@ while IFS='|' read -r console action node prop value; do
         got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
         [ "$got" = "$value" ] || fail "$DTB: $prop is $got, not $value"
         ok "$DTB: $prop is $value"
+    elif [ "$action" = set-last-cell ]; then
+        got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
+        [ "${got##* }" = "$value" ] || fail "$DTB: the last cell of $prop is ${got##* }, not $value"
+        ok "$DTB: the last cell of $prop is $value"
     else
         fdtget "$T/started.dtb" "$node" "$prop" >/dev/null 2>&1 && fail "$DTB still has $prop in $node"
         ok "$DTB: $prop is not in $node"
@@ -83,7 +87,7 @@ has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
 filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \
@@ -94,9 +98,16 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /usr/lib/python3/dist-packages/rkshell/__main__.py /usr/lib/python3/dist-packages/rkshell/backends/device.py \
          /usr/lib/python3/dist-packages/pygame /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
          /usr/lib/python3/dist-packages/pyte /usr/lib/python3/dist-packages/rkshell/pages/terminal.py /usr/bin/nmap \
-         /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps; do
+         /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps \
+         /usr/lib/rk-gpu/libmali.so /usr/lib/rk-gpu/libSDL2-2.0.so.0 /usr/lib/rk-gpu/libEGL.so.1 \
+         /usr/lib/rk-gpu/libGLESv2.so.2 /usr/lib/rk-gpu/libgbm.so.1 /usr/share/gamecontrollerdb.txt \
+         /etc/udev/rules.d/70-mali-dma-heap.rules /usr/local/bin/rk-stump-pause \
+         /home/ark/ports/Ember.sh /home/ark/ports/ember/ember /home/ark/firefly/deploy/FireFly.sh \
+         /home/ark/firefly/venv/bin/python /home/ark/R36MAX-Stump/handheld/install.sh \
+         /home/ark/SandBox_Stump_On/provisioner.py /roms/ports/stump_r36max/drop /usr/bin/gcc; do
     has "$p" || fail "missing in the system: $p"
 done
+filecat /usr/share/gamecontrollerdb.txt | grep -q "GO-Super Gamepad" || fail "the controller database has no entry for the built-in pad"
 ok "system files, both kernels' modules and enabled services are present"
 for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/policy-rc.d \
          /etc/systemd/system/getty.target.wants/getty@tty1.service; do

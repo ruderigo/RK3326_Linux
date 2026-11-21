@@ -24,7 +24,7 @@ parts, for teaching and authorised testing on your own equipment.
   is on the card as a fallback.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
-  Arsenal, Survey, Network, Devices and Settings. A USB keyboard works too.
+  Arsenal, Survey, Network, Devices, Apps and Settings. A USB keyboard works too.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
 - **Scan**: nmap as a loadout. Pick a target, equip the scan (mission,
   ports, technique, versions, OS guess, script packs, speed), see what it
@@ -38,7 +38,11 @@ parts, for teaching and authorised testing on your own equipment.
   Network window, and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
 
-Not in it yet: FireFly, the Stump, and tools that need monitor mode.
+On the dock as well: **FireFly**, **Stump** and **Ember**, shown as *(not
+installed)* until you fetch them with `rk-apps install all` over Wi-Fi — see
+[`docs/apps.md`](docs/apps.md).
+
+Not baked in yet: tools that need Wi-Fi monitor mode.
 
 ### The desktop
 

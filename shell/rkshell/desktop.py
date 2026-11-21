@@ -154,7 +154,20 @@ def _survey(s, c):
         pygame.draw.rect(s, c, (46 + i * 28, 140 - h, 18, h), border_radius=4)
 
 
-GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal,
+def _ember(s, c):
+    bright = T.EMBER_BRIGHT if c != T.DIM else c
+    pygame.draw.polygon(s, c, [(96, 34), (130, 92), (124, 128), (96, 150),
+                               (68, 128), (62, 92)])          # outer flame
+    pygame.draw.polygon(s, bright, [(96, 72), (114, 110), (96, 140), (78, 110)])  # inner flame
+
+
+def _update(s, c):
+    """An arrow coming down into a tray: something new arriving."""
+    pygame.draw.polygon(s, c, [(84, 40), (108, 40), (108, 88), (132, 88), (96, 128), (60, 88), (84, 88)])
+    pygame.draw.lines(s, c, False, [(48, 118), (48, 150), (144, 150), (144, 118)], 10)
+
+
+GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 
@@ -247,7 +260,8 @@ class Dock:
         for i, (it, s) in enumerate(zip(self.items, sizes)):
             surf.blit(icon(it.get("icon", ""), it["name"], s, dim=not it.get("ready", True)), (x, floor - s))
             if i == self.sel:
-                label = it["name"] if it.get("ready", True) else f"{it['name']} (not installed)"
+                label = (f"{it['name']} (not installed)" if not it.get("ready", True)
+                         else f"{it['name']} (set up)" if it.get("needs_setup") else it["name"])
                 tw = f.mono.size(label)[0] + 28
                 r = pygame.Rect(0, 0, tw, f.line + 10)
                 r.centerx = max(tw // 2 + 8, min(W - tw // 2 - 8, x + s // 2))

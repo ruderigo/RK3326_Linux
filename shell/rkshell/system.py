@@ -10,12 +10,16 @@ file that allows exactly those commands for the user the shell runs as.
 import glob
 import json
 import os
+import pty
 import re
+import select
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 
 APPS_DIRS = ["/usr/share/rk/apps", "/data/ark/apps"]
@@ -24,12 +28,12 @@ WIFI_DRIVERS = {"rt2800usb", "rtl8xxxu", "ath9k_htc", "mt7601u", "mt76x0u", "mt7
                 "8821cu", "rtw_8822bu", "rtw_8821cu", "rtw_8812au", "rtw_8821au", "rtw_8723du"}
 
 
-def run(cmd, timeout=8, root=False):
+def run(cmd, timeout=8, root=False, env=None):
     """Run a command; return (ok, output). Never raises."""
     if root:
         cmd = ["sudo", "-n"] + cmd
     try:
-        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, text=True)
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, text=True, env=env)
         return p.returncode == 0, p.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return False, str(e)
@@ -153,6 +157,312 @@ class Scan:
             self.proc.stdin.close()
         except (OSError, AttributeError):
             pass
+
+
+START_PASSWORD = "ark"                  # what a fresh card has, expired until it is changed
+STUMP_INSTALLER = os.path.expanduser("~/R36MAX-Stump/handheld/install.sh")
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+IPV4 = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+ASKPASS = '#!/bin/sh\ncat "$RK_ASKPASS_FILE"\n'
+
+
+STUMP_SIZES = (256, 512, 768, 1024, 1536, 2048, 4096, 8192, 16384)
+
+
+def stump_storage(folder="~/Stump"):
+    """How big the Stump's "card" (its sd/ folder) may be here, in MB:
+    (most, suggested, sizes to offer). The same sums as the Stump's wizard:
+    at most what is free, suggested a quarter of it in steps of 256 MB, 2048
+    at most. A little is held back for what the installer itself writes."""
+    p = os.path.expanduser(folder)
+    used = 0
+    for d, _, names in os.walk(os.path.join(p, "sd")):
+        for n in names:
+            try:
+                used += os.path.getsize(os.path.join(d, n))
+            except OSError:
+                pass
+    while not os.path.exists(p) and p != os.path.dirname(p):
+        p = os.path.dirname(p)
+    try:
+        free = shutil.disk_usage(p).free
+    except OSError:
+        free = 0
+    most = max(256, (free + used) // 1024 ** 2 - 128)
+    suggested = max(256, min(2048, free // 4 // 1024 ** 2 // 256 * 256))
+    return most, suggested, [n for n in STUMP_SIZES if n <= most] or [256]
+
+
+def stump_answers(form):
+    """The setup form -> the answers file of the Stump's wizard
+    (SandBox_Stump_On's `provisioner.py --pc --answers`: the keys are its
+    questions, up to their "?"). The same keys as the RK3326 Provisioner
+    sends. {"error": why} when the form is not complete."""
+    name = (form.get("name") or "").strip()
+    pw = form.get("pw") or ""
+    if not name:
+        return {"error": "Give this Stump a name"}
+    if not 4 <= len(pw) <= 64:
+        return {"error": "The Stump's password: 4 to 64 characters"}
+    try:
+        mb = int(form.get("storage") or 0)
+    except (TypeError, ValueError):
+        mb = 0
+    if mb < 256:
+        return {"error": "Storage: 256 MB or more"}
+    out = {"folder for this stump": os.path.expanduser("~/Stump"), "node name": name,
+           "the wi-fi name visitors join": name, "storage for this stump, in mb": str(mb),
+           "is this stump part of a chain": form.get("chain") in ("first", "member"),
+           "the heltec": "Plugged into this computer by USB" if form.get("radio") == "usb" else "None",
+           "start this stump automatically when you log in": True,
+           "admin password": pw, "use the same password for the fserv bot": True,
+           "fserv bot operator password": pw, "change any of those now": True, "admin password for /admin": "",
+           "identity requirement": "open", "how should file sharing work": "Free", "theme": "Amber",
+           "fix it, then check again": False,
+           # a Stump folder already there (a setup that stopped part-way, or one
+           # being redone): the wizard asks "Change something?"; "a" is all the
+           # questions again, so this form's answers are the ones that count
+           "change something": "a"}
+    if form.get("radio") == "usb":
+        out["its usb port"] = "auto"
+    secret = form.get("secret") or ""
+    if '"' in secret or "\\" in secret or len(secret) > 64:
+        return {"error": "The chain secret: at most 64 characters, no quotes or backslashes"}
+    if form.get("chain") == "first":
+        out["its place in the chain"] = "The first"
+        out["chain secret"] = secret
+    elif form.get("chain") == "member":
+        ip = (form.get("parent") or "").strip()
+        m = IPV4.match(ip)
+        if not m or not all(0 <= int(x) <= 255 for x in m.groups()):
+            return {"error": "The Stump it joins: its address, like 192.168.1.20"}
+        if not secret:
+            return {"error": "The chain secret of the first Stump is needed"}
+        out["its place in the chain"] = "Joins another"
+        out["how does this computer reach that stump"] = "On the Wi-Fi"
+        out["that stump's address"] = ip
+        out["chain secret"] = secret
+    return out
+
+
+def password_expired(user=None):
+    """True while the account still has its starting password, which must be
+    changed before anything else accepts it (sudo refuses it as it is)."""
+    ok, out = run(["chage", "-l", user or os.environ.get("USER") or "ark"], env=dict(os.environ, LC_ALL="C"))
+    return ok and "password must be changed" in out
+
+
+def change_password(old, new, timeout=20):
+    """Change this user's password with passwd, on a pseudo-terminal (it only
+    talks to a terminal). (True, "") or (False, passwd's reason)."""
+    try:
+        pid, fd = pty.fork()
+    except OSError as e:
+        return False, str(e)
+    if pid == 0:
+        os.environ["LC_ALL"] = "C"
+        try:
+            os.execvp("passwd", ["passwd"])
+        finally:
+            os._exit(127)
+    answers, out, pending, end = [old, new, new], "", "", time.time() + timeout
+    try:
+        while time.time() < end:
+            ready, _, _ = select.select([fd], [], [], 0.5)
+            if not ready:
+                continue
+            try:
+                data = os.read(fd, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+            text = data.decode("utf-8", "replace")
+            out += text
+            pending += text
+            if pending.rstrip().endswith(":") and answers:      # a prompt: Current / New / Retype
+                os.write(fd, (answers.pop(0) + "\n").encode())
+                pending = ""
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            _, status = os.waitpid(pid, 0)
+        except OSError:
+            status = 1
+    if status == 0 and not answers:
+        return True, ""
+    lines = [ln.strip() for ln in out.replace("\r", "").splitlines()
+             if ln.strip() and not ln.strip().endswith(":") and "Changing password" not in ln]
+    return False, (lines[-1] if lines else "The password was not changed")
+
+
+def find_stumps(networks, timeout=1.5, workers=64):
+    """Stumps answering on these networks (own_networks()): each address is
+    asked for /node.json at once, as the Stump's own installer does. A list
+    of {"address", "name", "links"}; "links" is True for one that takes
+    chain links here (those come first)."""
+    from concurrent.futures import ThreadPoolExecutor
+    import ipaddress
+
+    def ask(ip):
+        try:
+            with urllib.request.urlopen(f"http://{ip}/node.json", timeout=timeout) as r:
+                node = json.load(r)
+        except Exception:
+            return None
+        if not isinstance(node, dict):
+            return None
+        chain = node.get("chain") if isinstance(node.get("chain"), dict) else {}
+        links = bool(chain.get("enabled") and (chain.get("lan_ip") == ip or
+                                               (chain.get("role") == "root" and chain.get("ap_ip") == ip)))
+        return {"address": ip, "name": str(node.get("name") or "a Stump"), "links": links}
+    ips = []
+    for _, net, own in networks:
+        try:
+            hosts = list(ipaddress.ip_network(net, strict=False).hosts())
+        except ValueError:
+            continue
+        if len(hosts) <= 1024:
+            ips += [str(h) for h in hosts if str(h) != own]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        found = [x for x in pool.map(ask, ips) if x]
+    return sorted(found, key=lambda d: (not d["links"], d["address"]))
+
+
+class StumpSearch:
+    """find_stumps in the background: `found` once `done`."""
+
+    def __init__(self, networks):
+        self.done, self.found = False, []
+        threading.Thread(target=self._run, args=(networks,), daemon=True).start()
+
+    def _run(self, networks):
+        try:
+            self.found = find_stumps(networks)
+        finally:
+            self.done = True
+
+
+class StumpSetup:
+    """The Stump's own installer, running with the form's answers. `lines` is
+    what it printed, `step` its current stage; `done` and `ok` at the end.
+
+    The answers (they may hold the chain's secret) and the handheld's
+    password live in files only this user can read, for as long as the
+    installer runs. The password reaches sudo through its askpass helper, as
+    the installer asks for it (never on a command line)."""
+
+    def __init__(self, answers, password, installer=STUMP_INSTALLER, replaces=None):
+        """replaces: the starting password, when `password` is a new one to set first."""
+        self.lines, self.step, self.done, self.ok = [], "Starting", False, False
+        self.reason = ""            # "password" when sudo refused it
+        threading.Thread(target=self._run, args=(answers, password, installer, replaces), daemon=True).start()
+
+    def _run(self, answers, password, installer, replaces):
+        if replaces is not None:
+            self.step = "Setting this handheld's password"
+            ok, why = change_password(replaces, password)
+            if not ok:
+                self.lines += ["The password was not changed:", why]
+                self.reason, self.done = "newpassword", True
+                return
+            self.lines.append("✓ this handheld's password is set")
+        d = tempfile.mkdtemp(prefix="rk-stump-")           # 0700
+        try:
+            paths = {n: os.path.join(d, n) for n in ("answers.json", "askpass", "pw")}
+            for n, text, mode in (("answers.json", json.dumps(answers), 0o600), ("askpass", ASKPASS, 0o700),
+                                  ("pw", password + "\n", 0o600)):
+                with os.fdopen(os.open(paths[n], os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+                    f.write(text)
+            env = dict(os.environ, SUDO_ASKPASS=paths["askpass"], RK_ASKPASS_FILE=paths["pw"])
+            env = {k: v for k, v in env.items() if not k.startswith("SDL_")}
+            p = subprocess.Popen(["bash", installer, "--answers", paths["answers.json"]], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
+                                 bufsize=1, env=env, cwd=os.path.dirname(installer))
+            for raw in p.stdout:
+                line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
+                if not line:
+                    continue
+                if line.startswith(">>> "):
+                    self.step = line[4:]
+                self.lines.append(line)
+                del self.lines[:-400]
+            self.ok = p.wait() == 0
+            if not self.ok and any("didn't take that password" in ln or "incorrect password" in ln for ln in self.lines[-6:]):
+                self.reason = "password"
+        except OSError as e:
+            self.lines.append(str(e))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+            self.done = True
+
+
+RK_APPS = "/usr/local/sbin/rk-apps"
+
+
+class AppVersions:
+    """`rk-apps versions` in the background (it asks GitHub): `apps` once
+    `done`, a list of {"id", "name", "installed", "newest"}; "-" is not
+    installed and "?" not known."""
+
+    def __init__(self):
+        self.done, self.apps = False, []
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        ok, out = run([RK_APPS, "versions"], timeout=45)
+        for line in out.splitlines() if ok else []:
+            parts = line.split("|")
+            if len(parts) == 4:
+                self.apps.append(dict(zip(("id", "name", "installed", "newest"), parts)))
+        self.done = True
+
+
+class AppUpdate:
+    """`rk-apps update <app>`, running: `lines`, then `done`, `ok`, and
+    `reason` "password" when sudo refused it. The handheld's password goes to
+    the app's installer through sudo's askpass helper, from a private file
+    that lives only while it runs (replaces: the starting password, when
+    `password` is a new one to set first)."""
+
+    def __init__(self, app, password, replaces=None):
+        self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        threading.Thread(target=self._run, args=(app, password, replaces), daemon=True).start()
+
+    def _run(self, app, password, replaces):
+        if replaces is not None:
+            ok, why = change_password(replaces, password)
+            if not ok:
+                self.lines += ["The password was not changed:", why]
+                self.reason, self.done = "newpassword", True
+                return
+            self.lines.append("✓ this handheld's password is set")
+        d = tempfile.mkdtemp(prefix="rk-update-")          # 0700
+        try:
+            helper, secret = os.path.join(d, "askpass"), os.path.join(d, "pw")
+            for path, text, mode in ((helper, ASKPASS, 0o700), (secret, password + "\n", 0o600)):
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+                    f.write(text)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
+            env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
+            p = subprocess.Popen([RK_APPS, "update", app], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, text=True, errors="replace", bufsize=1, env=env)
+            for raw in p.stdout:
+                line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
+                if line:
+                    self.lines.append(line)
+                    del self.lines[:-400]
+            self.ok = p.wait() == 0
+            if not self.ok and any("didn't take that password" in ln or "incorrect password" in ln for ln in self.lines[-8:]):
+                self.reason = "password"
+        except OSError as e:
+            self.lines.append(str(e))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+            self.done = True
 
 
 class Install:
@@ -431,10 +741,34 @@ class System:
                     with open(f) as fh:
                         a = json.load(fh)
                     a["ready"] = bool(a.get("exec")) and shutil.which(a["exec"][0]) is not None
+                    # "needs": a file (or several) that exists once the app's own setup has run;
+                    # until then the dock opens the setup window named in "setup"
+                    needs = a.get("needs") or []
+                    needs = [needs] if isinstance(needs, str) else needs
+                    a["needs_setup"] = any(not os.path.exists(os.path.expanduser(n)) for n in needs)
                     found.append(a)
                 except (OSError, ValueError, KeyError, IndexError):
                     continue
         return found
+
+    def stump_setup(self, answers, password, replaces=None):
+        """Run the Stump's installer with these answers; returns a StumpSetup."""
+        return StumpSetup(answers, password, replaces=replaces)
+
+    def password_expired(self):
+        return password_expired()
+
+    def app_versions(self):
+        return AppVersions()
+
+    def app_update(self, app, password, replaces=None):
+        return AppUpdate(app, password, replaces)
+
+    def stump_storage(self):
+        return stump_storage()
+
+    def stump_search(self):
+        return StumpSearch(self.own_networks())
 
     # --------------------------------------------------------------- power
     def boot_selection(self):
@@ -510,8 +844,41 @@ class DemoSystem(System):
 
     def apps(self):
         return [{"name": "FireFly", "icon": "firefly", "group": "Comms", "about": "Messages over LoRa and Wi-Fi", "ready": True},
-                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "Run and watch a Stump node", "ready": True},
+                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "This handheld as a Stump mesh node", "ready": True,
+                 "setup": "stump", "needs_setup": True},
+                {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
+
+    def password_expired(self): return True
+
+    def app_versions(self):
+        job = AppVersions.__new__(AppVersions)
+        job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.8.1", "newest": "0.9.11"},
+                                    {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.3-b.87"},
+                                    {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"}]
+        return job
+
+    def app_update(self, app, password, replaces=None):
+        job = AppUpdate.__new__(AppUpdate)
+        job.done, job.ok, job.reason = False, False, ""
+        job.lines = ["rk-apps: FireFly: fetching the main branch...", "rk-apps: FireFly: running its installer...",
+                     "== 2/5 App files -> /home/ark/firefly", "== 3/5 Reticulum + LXMF in a private environment"]
+        return job
+    def stump_storage(self): return 991, 256, [256, 512, 768]
+
+    def stump_search(self):
+        job = StumpSearch.__new__(StumpSearch)
+        job.done, job.found = True, [{"address": "192.168.0.42", "name": "LaBuche3", "links": True},
+                                     {"address": "192.168.0.57", "name": "Atelier", "links": False}]
+        return job
+
+    def stump_setup(self, answers, password, replaces=None):
+        job = StumpSetup.__new__(StumpSetup)
+        job.reason = ""
+        job.step, job.done, job.ok = "3/6 The cockpit's files", False, False
+        job.lines = ["1/6 Packages", "✓ all present", "2/6 SandBox_Stump_On", "✓ up to date",
+                     "3/6 The cockpit's files", "✓ FireFly's font (DejaVu Sans Mono) next to the engine"]
+        return job
 
     def survey(self, rescan=True):
         return [{"active": True, "ssid": "Workshop", "bssid": "38:AD:2B:91:52:48", "channel": 6, "freq": 2437, "signal": 82, "security": "WPA2"},

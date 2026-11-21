@@ -31,6 +31,23 @@ def write_all(system, size, out_dir):
     for _ in range(4):
         app.handle("right")
     shot("desktop-app")
+    for i, item in enumerate(app.dock.items):       # the Stump's setup window, opened from its dock entry
+        if item.get("setup") == "stump":
+            from .pages.stumpsetup import StumpSetupPage
+            app.dock.sel = i
+            app.handle("a")
+            StumpSetupPage.form.update(pw="oak-and-moss", chain="member", secret="b1rch")
+            app.handle("down"); app.handle("down"); app.handle("down")
+            app.handle("a")                      # look for Stumps on the network
+            app.tick()
+            shot("stump-setup-found")
+            app.handle("a")                      # the first one found
+            shot("stump-setup")
+            StumpSetupPage.form["sudo"] = "x"
+            app.handle("start")
+            shot("stump-setup-running")
+            StumpSetupPage.job, StumpSetupPage.form = None, None
+            app.window = None
     app.dock.sel = 0
     for i, item in enumerate(app.dock.items):
         if "window" not in item:
@@ -93,6 +110,17 @@ def write_all(system, size, out_dir):
             app.stack.clear()
             app.window.view = "list"
             ArsenalPage_reset()
+        if item["name"] == "Apps":
+            app.toast_text = ""
+            from .pages.apps import AppsPage
+            app.tick()
+            shot("apps")
+            app.window.job = None
+            AppsPage.job = app.system.app_update("firefly", "x")
+            AppsPage.job_name, app.window.view = "FireFly", "running"
+            shot("apps-updating")
+            AppsPage.job = None
+            app.window.view = "list"
         if item["name"] == "Survey":
             time.sleep(0.3)
             shot("survey-list")

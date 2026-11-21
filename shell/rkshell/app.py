@@ -21,12 +21,18 @@ from .pages.devices import DevicesPage
 from .pages.files import FilesPage
 from .pages.network import NetworkPage
 from .pages.scan import ScanPage
+from .pages.stumpsetup import StumpSetupPage
+from .pages.apps import AppsPage
 from .pages.arsenal import ArsenalPage
 from .pages.survey import SurveyPage
 from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, AppsPage, SystemPage]
+
+
+# setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists
+SETUPS = {"stump": StumpSetupPage}
 
 
 class App:
@@ -41,6 +47,7 @@ class App:
         self.toast_text, self.toast_until, self.toast_error = "", 0, False
         self.last_tick, self.t0 = 0, time.time()
         self.launch = None          # set to a command: the back end runs it and comes back
+        self.launch_item = None     # the dock entry it came from (its "before"/"after" steps)
         self.fill_dock()
 
     def fill_dock(self):
@@ -79,10 +86,13 @@ class App:
         if "window" in item:
             self.window = item["window"](self)
             self.window.enter()
+        elif item.get("needs_setup") and item.get("setup") in SETUPS:
+            self.window = SETUPS[item["setup"]](self)        # its own setup first, asked here
+            self.window.enter()
         elif not item.get("ready"):
             self.toast(f"{item['name']} is not installed yet", error=True)
         elif item.get("exec"):
-            self.launch = item["exec"]
+            self.launch, self.launch_item = item["exec"], item
         else:
             self.toast(f"{item['name']} would open here (demo)")
 
