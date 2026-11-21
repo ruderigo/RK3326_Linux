@@ -78,8 +78,8 @@ def run_step(cmd):
 
 # -------------------------------------------------------------- framebuffer
 class Framebuffer:
-    def __init__(self, path="/dev/fb0"):
-        sys_dir = "/sys/class/graphics/" + os.path.basename(path)
+    def __init__(self, path="/dev/fb0", sys_dir=None):
+        sys_dir = sys_dir or "/sys/class/graphics/" + os.path.basename(path)
         self.w, self.h = (int(x) for x in open(sys_dir + "/virtual_size").read().split(","))
         self.bpp = int(open(sys_dir + "/bits_per_pixel").read())
         try:
@@ -95,14 +95,6 @@ class Framebuffer:
         except OSError:
             pass
         self.mm = mmap.mmap(self.fd, self.stride * self.h)
-
-    def unblank(self):
-        """Turn the panel back on (FBIOBLANK): an app that crashes on its way
-        out can leave it blanked, with the desktop drawing unseen behind."""
-        try:
-            fcntl.ioctl(self.fd, 0x4611, 0)
-        except OSError:
-            pass
         if self.bpp == 32:
             masks = (0xFF0000, 0xFF00, 0xFF, 0) if red_offset == 16 else (0xFF, 0xFF00, 0xFF0000, 0)
             self.out = None
@@ -112,6 +104,14 @@ class Framebuffer:
             self.out = pygame.Surface((self.w, self.h), 0, 16, (0xF800, 0x07E0, 0x001F, 0))
         else:
             raise SystemExit(f"rkshell: a {self.bpp}-bit screen is not supported")
+
+    def unblank(self):
+        """Turn the panel back on (FBIOBLANK): an app that crashes on its way
+        out can leave it blanked, with the desktop drawing unseen behind."""
+        try:
+            fcntl.ioctl(self.fd, 0x4611, 0)
+        except OSError:
+            pass
 
     def show(self):
         src = self.surf

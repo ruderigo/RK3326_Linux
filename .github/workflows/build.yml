@@ -35,6 +35,7 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core >/dev/null
           cd shell
           python3 -m compileall -q rkshell
+          python3 tests/test_device.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
