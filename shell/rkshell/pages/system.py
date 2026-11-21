@@ -20,7 +20,9 @@ class SystemPage(Page):
         s = self.app.system
         rows = []
         if s.volume() is not None:
-            rows.append({"name": "Volume", "get": s.volume, "set": s.set_volume})
+            rows.append({"name": s.volume_name(), "get": s.volume, "set": s.set_volume})
+        if s.mic() is not None:
+            rows.append({"name": s.mic_name(), "get": s.mic, "set": s.set_mic})
         if s.brightness() is not None:
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
         rows += [{"name": "About this handheld", "do": self.about},

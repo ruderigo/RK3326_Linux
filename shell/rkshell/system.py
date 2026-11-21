@@ -465,6 +465,53 @@ class AppUpdate:
             self.done = True
 
 
+def parse_mixer(text):
+    """`amixer scontents` -> [{"name", "caps", "pct", "cpct", "on"}], one for
+    each simple control: its capabilities (pvolume, cvolume, ...), its
+    playback and capture levels as percentages (absent or None when it has
+    none) and its switch (None when it has none)."""
+    out, cur = [], None
+    for line in text.splitlines():
+        m = re.match(r"Simple mixer control '(.*)',\d+", line)
+        if m:
+            cur = {"name": m.group(1), "caps": set(), "pct": None, "on": None}
+            out.append(cur)
+        elif cur is not None:
+            line = line.strip()
+            if line.startswith("Capabilities:"):
+                cur["caps"] = set(line.split(":", 1)[1].split())
+            else:
+                # a control can hold both directions on one line (a headset's
+                # "Mic": its sidetone and its capture level): keep them apart
+                for key, word in (("pct", "Playback"), ("cpct", "Capture")):
+                    m = re.search(word + r" \d+ \[(\d+)%\]", line)
+                    if m and cur.get(key) is None:
+                        cur[key] = int(m.group(1))
+                m = re.search(r"\[(\d+)%\]", line)
+                if m and cur["pct"] is None and cur.get("cpct") is None:
+                    cur["pct"] = int(m.group(1))
+                m = re.search(r"\[(on|off)\]", line)
+                if m and cur["on"] is None:
+                    cur["on"] = m.group(1) == "on"
+    return out
+
+
+def usb_sound_cards(text):
+    """/proc/asound/cards -> [(number, name)] of the USB sound devices."""
+    return [(int(m.group(1)), m.group(2).strip())
+            for m in re.finditer(r"(?m)^\s*(\d+)\s+\[.*?\]:\s+USB-Audio\s+-\s+(.*)$", text)]
+
+
+def pick_control(controls, cap, prefer):
+    """The control with this capability to use: a preferred name, else the first."""
+    have = [c for c in controls if cap in c["caps"] or (cap + "-joined") in c["caps"]]
+    for name in prefer:
+        for c in have:
+            if c["name"].lower() == name.lower():
+                return c
+    return have[0] if have else None
+
+
 class Install:
     """rk-tools install-heavy, running. `lines` is its output so far; `done`
     is set when it ends, with `ok` saying whether everything installed."""
@@ -643,19 +690,75 @@ class System:
             return None
 
     # ------------------------------------------------- sound and backlight
+    # ---------------------------------------------------------------- sound
+    # Output: a USB sound device when one is plugged in (the apps play there
+    # too), else the built-in sound chip. Microphone: the USB device's, else
+    # the built-in one when the chip has a level for it.
+    def _sound(self):
+        """{"out": (card, control, pct, name), "mic": the same or None}, kept for a moment."""
+        now = time.time()
+        if getattr(self, "_sound_at", 0) > now - 0.4:
+            return self._sound_now
+        found = {"out": None, "mic": None}
+        for card, name in usb_sound_cards(read("/proc/asound/cards")):
+            ok, text = run(["amixer", "-c", str(card), "scontents"])
+            controls = parse_mixer(text) if ok else []
+            out = pick_control(controls, "pvolume", ("PCM", "Speaker", "Headphone", "Headset", "Master"))
+            mic = pick_control(controls, "cvolume", ("Mic", "Capture", "Headset"))
+            if out and not found["out"]:
+                found["out"] = (card, out["name"], out["pct"], name)
+            if mic and not found["mic"]:
+                found["mic"] = (card, mic["name"], mic.get("cpct", mic["pct"]), name)
+        if not found["mic"]:
+            ok, text = run(["amixer", "-c", "0", "scontents"])
+            mic = pick_control(parse_mixer(text) if ok else [], "cvolume", ("Mic", "Capture"))
+            if mic:
+                found["mic"] = (0, mic["name"], mic.get("cpct", mic["pct"]), "")
+        self._sound_now, self._sound_at = found, now
+        return found
+
+    def volume_name(self):
+        out = self._sound()["out"]
+        return "Headphones" if out else "Volume"
+
     def volume(self):
-        """Speaker volume, 0 to 100, or None when there is no mixer control."""
-        ok, out = run(["amixer", "-c0", "cget", "name=Playback Volume"])
+        """Output volume, 0 to 100, or None when there is no mixer control."""
+        out = self._sound()["out"]
+        if out:
+            return out[2]
+        ok, text = run(["amixer", "-c0", "cget", "name=Playback Volume"])
         try:
-            mx = int(out.split("max=")[1].split(",")[0])
-            val = int(out.split(": values=")[1].split(",")[0])
+            mx = int(text.split("max=")[1].split(",")[0])
+            val = int(text.split(": values=")[1].split(",")[0])
             return round(val * 100 / mx) if mx else None
         except (IndexError, ValueError):
             return None
 
     def set_volume(self, pct):
         pct = max(0, min(100, pct))
-        run(["amixer", "-c0", "cset", "name=Playback Volume", f"{pct}%"])
+        out = self._sound()["out"]
+        if out:
+            run(["amixer", "-q", "-c", str(out[0]), "sset", out[1], "playback", f"{pct}%", "unmute"])
+        else:
+            run(["amixer", "-c0", "cset", "name=Playback Volume", f"{pct}%"])
+        self._sound_at = 0
+        return pct
+
+    def mic_name(self):
+        mic = self._sound()["mic"]
+        return ("Microphone (USB)" if mic[3] else "Microphone") if mic else ""
+
+    def mic(self):
+        """Microphone level, 0 to 100, or None when no microphone has one."""
+        mic = self._sound()["mic"]
+        return mic[2] if mic else None
+
+    def set_mic(self, pct):
+        pct = max(0, min(100, pct))
+        mic = self._sound()["mic"]
+        if mic:
+            run(["amixer", "-q", "-c", str(mic[0]), "sset", mic[1], "capture", f"{pct}%", "cap"])
+            self._sound_at = 0
         return pct
 
     def _backlight(self):
@@ -828,6 +931,10 @@ class DemoSystem(System):
     _vol, _bri = 60, 80
     def volume(self): return self._vol
     def set_volume(self, pct): self._vol = max(0, min(100, pct)); return self._vol
+    def volume_name(self): return "Volume"
+    def mic_name(self): return "Microphone (USB)"
+    def mic(self): return getattr(self, "_mic", 70)
+    def set_mic(self, pct): self._mic = max(0, min(100, pct)); return self._mic
     def brightness(self): return self._bri
     def set_brightness(self, pct): self._bri = max(5, min(100, pct)); return self._bri
 

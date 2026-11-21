@@ -248,7 +248,7 @@ def run(system, fps=10):
                 elif code in VOLUME and value:
                     v = system.volume()
                     if v is not None:
-                        app.toast(f"Volume {system.set_volume(v + VOLUME[code])}%", 1.5)
+                        app.toast(f"{system.volume_name()} {system.set_volume(v + VOLUME[code])}%", 1.5)
                 elif typing and code in SPECIAL:            # value 2 is the keyboard's own repeat
                     if value:
                         app.text_input(SPECIAL[code])

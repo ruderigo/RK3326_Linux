@@ -84,8 +84,11 @@ The same from a terminal: `rk-apps versions` and
 The speaker is switched on at every start (`rk-audio`): this handheld's
 sound chip plays nowhere until its output path is set. The volume keys work
 on the desktop and while an app is open; the desktop answers them for the
-apps, which do not read them. They change the built-in sound chip: a USB
-sound device has its own volume.
+apps, which do not read them. With a USB sound device plugged in (USB-C
+headphones, a headset), the keys change its volume, since the sound goes
+there; without one, the built-in sound chip's. **Settings** has the same
+volume and, when a microphone has a level, a **Microphone** row for it (the
+USB device's microphone when there is one).
 
 ## How they get the screen
 

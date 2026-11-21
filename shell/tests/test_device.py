@@ -63,4 +63,34 @@ class Sound:
 sound = Sound()
 assert device.run_app(["sleep", "0.6"], dict(os.environ), Keys(), sound) == 0
 assert (sound.level, sound.sets) == (55, 3), (sound.level, sound.sets)
+
+# reading the mixer: a USB headset's controls, and which sound cards are USB
+from rkshell import system as S
+cards = """ 0 [rockchiprk817co]: simple-card - rockchip,rk817-codec
+                      rockchip,rk817-codec
+ 1 [Device         ]: USB-Audio - USB Audio Device
+                      GeneralPlus USB Audio Device at usb-ff300000.usb-1.2, full speed
+"""
+mixer = """Simple mixer control 'Speaker',0
+  Capabilities: pvolume pswitch pswitch-joined
+  Playback channels: Front Left - Front Right
+  Limits: Playback 0 - 37
+  Front Left: Playback 19 [51%] [-18.00dB] [on]
+  Front Right: Playback 19 [51%] [-18.00dB] [on]
+Simple mixer control 'Mic',0
+  Capabilities: pvolume pvolume-joined cvolume cvolume-joined pswitch pswitch-joined cswitch cswitch-joined
+  Capture channels: Mono
+  Limits: Playback 0 - 31 Capture 0 - 35
+  Mono: Playback 16 [52%] [-7.00dB] [off] Capture 28 [80%] [18.00dB] [on]
+Simple mixer control 'Auto Gain Control',0
+  Capabilities: pswitch pswitch-joined
+  Mono: Playback [on]
+"""
+assert S.usb_sound_cards(cards) == [(1, "USB Audio Device")], S.usb_sound_cards(cards)
+controls = S.parse_mixer(mixer)
+assert S.pick_control(controls, "pvolume", ("PCM", "Speaker"))["name"] == "Speaker"
+assert S.pick_control(controls, "pvolume", ("PCM", "Speaker"))["pct"] == 51
+mic = S.pick_control(controls, "cvolume", ("Mic", "Capture"))
+assert (mic["name"], mic["cpct"], mic["pct"]) == ("Mic", 80, 52), mic          # capture 80%, sidetone 52%
+assert S.pick_control(S.parse_mixer(""), "cvolume", ("Mic",)) is None
 print("device back end: ok")
