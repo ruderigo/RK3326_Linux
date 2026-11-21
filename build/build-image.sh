@@ -292,6 +292,12 @@ while IFS='|' read -r console action node prop value; do
                 fdtput -t u "$dtb" "$node" "$prop" "$value"
                 [ "$(fdtget -t u "$dtb" "$node" "$prop")" = "$value" ] || die "could not set $prop in $rel"
                 echo "set $prop to $value (was $old) in $node in $rel" ;;
+            set-last-cell)
+                [[ $value =~ ^[0-9]+$ ]] || die "dtb-fixes.txt: set-last-cell needs a decimal value for $prop"
+                cells=($old); cells[$(( ${#cells[@]} - 1 ))]=$value
+                fdtput -t u "$dtb" "$node" "$prop" "${cells[@]}"
+                [ "$(fdtget -t u "$dtb" "$node" "$prop")" = "${cells[*]}" ] || die "could not set $prop in $rel"
+                echo "set the last cell of $prop to $value (was: $old) in $node in $rel" ;;
             *) die "dtb-fixes.txt: unknown action: $action" ;;
         esac | tee -a "$BOOT/rk-dtb-fixes.txt"
     done

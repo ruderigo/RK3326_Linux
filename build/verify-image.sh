@@ -61,6 +61,10 @@ while IFS='|' read -r console action node prop value; do
         got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
         [ "$got" = "$value" ] || fail "$DTB: $prop is $got, not $value"
         ok "$DTB: $prop is $value"
+    elif [ "$action" = set-last-cell ]; then
+        got=$(fdtget -t u "$T/started.dtb" "$node" "$prop" 2>/dev/null) || fail "$DTB has no $prop in $node"
+        [ "${got##* }" = "$value" ] || fail "$DTB: the last cell of $prop is ${got##* }, not $value"
+        ok "$DTB: the last cell of $prop is $value"
     else
         fdtget "$T/started.dtb" "$node" "$prop" >/dev/null 2>&1 && fail "$DTB still has $prop in $node"
         ok "$DTB: $prop is not in $node"
