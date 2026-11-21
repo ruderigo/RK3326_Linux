@@ -42,7 +42,7 @@ install_firefly() {
     [ -n "$url" ] || { say "could not find a FireFly release asset."; return 1; }
     local tmp; tmp=$(mktemp -d)
     if ! curl -fsSL "$url" -o "$tmp/firefly.zip"; then say "download failed."; rm -rf "$tmp"; return 1; fi
-    ( cd "$tmp" && unzip -q firefly.zip ) || { say "unzip failed."; rm -rf "$tmp"; return 1; }
+    ( cd "$tmp" && python3 -m zipfile -e firefly.zip . ) || { say "could not unzip FireFly."; rm -rf "$tmp"; return 1; }
     local src; src=$(find "$tmp" -maxdepth 2 -name install.sh -path '*deploy*' | head -1)
     [ -n "$src" ] || { say "no deploy/install.sh in the zip."; rm -rf "$tmp"; return 1; }
     say "Running FireFly's own installer..."
