@@ -34,17 +34,24 @@ for the radio; it also works over Wi-Fi/LAN without one.
 
 ## Stump — this handheld as a mesh node
 
-Stump is only **cloned** by `rk-apps install stump`, to `/home/ark/R36MAX-Stump`.
-Its installer does more than a normal app: it runs a Stump server in the
-background from boot, binds ports 80 and 53, and sets up a captive DNS for its
-own hotspot. That is invasive enough that you should run it yourself, once you
-have decided it suits this machine:
+The Stump's files are in the image, but its setup is yours to answer: its
+name, its password, whether it is part of a chain, and its radio. Until that
+is done, the dock shows it as **Stump (set up)** and opens a setup window in
+place of the cockpit:
 
-    bash ~/R36MAX-Stump/handheld/install.sh
+![Stump setup](stump-setup.png)
 
-It was written for dArkOS with EmulationStation; on this OS expect to adjust
-paths (it uses `/roms/ports`) and the launcher. This is the one that will need
-the most hands-on work.
+Fill it in with the gamepad and press START. The window hands the answers to
+the Stump's own installer (`R36MAX-Stump/handheld/install.sh --answers`, the
+same way the RK3326 Provisioner drives it) and shows its progress. It needs
+Wi-Fi, takes a few minutes, and asks for this handheld's password because the
+installer needs root for a few steps. The password goes to `sudo` and is not
+kept; the answers file is removed when the installer ends.
+
+The window covers a Stump on its own, the first Stump of a chain, or one
+that joins another Stump on the Wi-Fi the handheld is on. For anything else
+(Bluetooth radio, joining a Stump's own hotspot), run the installer in the
+Terminal: `bash ~/R36MAX-Stump/handheld/install.sh`.
 
 ## How they get the screen
 

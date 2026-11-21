@@ -14,6 +14,7 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -153,6 +154,96 @@ class Scan:
             self.proc.stdin.close()
         except (OSError, AttributeError):
             pass
+
+
+STUMP_INSTALLER = os.path.expanduser("~/R36MAX-Stump/handheld/install.sh")
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+IPV4 = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+ASKPASS = '#!/bin/sh\ncat "$RK_ASKPASS_FILE"\n'
+
+
+def stump_answers(form):
+    """The setup form -> the answers file of the Stump's wizard
+    (SandBox_Stump_On's `provisioner.py --pc --answers`: the keys are its
+    questions, up to their "?"). The same keys as the RK3326 Provisioner
+    sends. {"error": why} when the form is not complete."""
+    name = (form.get("name") or "").strip()
+    pw = form.get("pw") or ""
+    if not name:
+        return {"error": "Give this Stump a name"}
+    if not 4 <= len(pw) <= 64:
+        return {"error": "The Stump's password: 4 to 64 characters"}
+    out = {"folder for this stump": os.path.expanduser("~/Stump"), "node name": name,
+           "the wi-fi name visitors join": name, "storage for this stump, in mb": "2048",
+           "is this stump part of a chain": form.get("chain") in ("first", "member"),
+           "the heltec": "Plugged into this computer by USB" if form.get("radio") == "usb" else "None",
+           "start this stump automatically when you log in": True,
+           "admin password": pw, "use the same password for the fserv bot": True,
+           "fserv bot operator password": pw, "change any of those now": True, "admin password for /admin": "",
+           "identity requirement": "open", "how should file sharing work": "Free", "theme": "Amber",
+           "fix it, then check again": False}
+    if form.get("radio") == "usb":
+        out["its usb port"] = "auto"
+    secret = form.get("secret") or ""
+    if '"' in secret or "\\" in secret or len(secret) > 64:
+        return {"error": "The chain secret: at most 64 characters, no quotes or backslashes"}
+    if form.get("chain") == "first":
+        out["its place in the chain"] = "The first"
+        out["chain secret"] = secret
+    elif form.get("chain") == "member":
+        ip = (form.get("parent") or "").strip()
+        m = IPV4.match(ip)
+        if not m or not all(0 <= int(x) <= 255 for x in m.groups()):
+            return {"error": "The Stump it joins: its address, like 192.168.1.20"}
+        if not secret:
+            return {"error": "The chain secret of the first Stump is needed"}
+        out["its place in the chain"] = "Joins another"
+        out["how does this computer reach that stump"] = "On the Wi-Fi"
+        out["that stump's address"] = ip
+        out["chain secret"] = secret
+    return out
+
+
+class StumpSetup:
+    """The Stump's own installer, running with the form's answers. `lines` is
+    what it printed, `step` its current stage; `done` and `ok` at the end.
+
+    The answers (they may hold the chain's secret) and the handheld's
+    password live in files only this user can read, for as long as the
+    installer runs. The password reaches sudo through its askpass helper, as
+    the installer asks for it (never on a command line)."""
+
+    def __init__(self, answers, password, installer=STUMP_INSTALLER):
+        self.lines, self.step, self.done, self.ok = [], "Starting", False, False
+        threading.Thread(target=self._run, args=(answers, password, installer), daemon=True).start()
+
+    def _run(self, answers, password, installer):
+        d = tempfile.mkdtemp(prefix="rk-stump-")           # 0700
+        try:
+            paths = {n: os.path.join(d, n) for n in ("answers.json", "askpass", "pw")}
+            for n, text, mode in (("answers.json", json.dumps(answers), 0o600), ("askpass", ASKPASS, 0o700),
+                                  ("pw", password + "\n", 0o600)):
+                with os.fdopen(os.open(paths[n], os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+                    f.write(text)
+            env = dict(os.environ, SUDO_ASKPASS=paths["askpass"], RK_ASKPASS_FILE=paths["pw"])
+            env = {k: v for k, v in env.items() if not k.startswith("SDL_")}
+            p = subprocess.Popen(["bash", installer, "--answers", paths["answers.json"]], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
+                                 bufsize=1, env=env, cwd=os.path.dirname(installer))
+            for raw in p.stdout:
+                line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
+                if not line:
+                    continue
+                if line.startswith(">>> "):
+                    self.step = line[4:]
+                self.lines.append(line)
+                del self.lines[:-400]
+            self.ok = p.wait() == 0
+        except OSError as e:
+            self.lines.append(str(e))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+            self.done = True
 
 
 class Install:
@@ -431,10 +522,17 @@ class System:
                     with open(f) as fh:
                         a = json.load(fh)
                     a["ready"] = bool(a.get("exec")) and shutil.which(a["exec"][0]) is not None
+                    # "needs": a file that exists once the app's own setup has run;
+                    # until then the dock opens the setup window named in "setup"
+                    a["needs_setup"] = bool(a.get("needs")) and not os.path.exists(os.path.expanduser(a["needs"]))
                     found.append(a)
                 except (OSError, ValueError, KeyError, IndexError):
                     continue
         return found
+
+    def stump_setup(self, answers, password):
+        """Run the Stump's installer with these answers; returns a StumpSetup."""
+        return StumpSetup(answers, password)
 
     # --------------------------------------------------------------- power
     def boot_selection(self):
@@ -510,9 +608,17 @@ class DemoSystem(System):
 
     def apps(self):
         return [{"name": "FireFly", "icon": "firefly", "group": "Comms", "about": "Messages over LoRa and Wi-Fi", "ready": True},
-                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "This handheld as a Stump mesh node", "ready": True},
+                {"name": "Stump", "icon": "stump", "group": "Comms", "about": "This handheld as a Stump mesh node", "ready": True,
+                 "setup": "stump", "needs_setup": True},
                 {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
+
+    def stump_setup(self, answers, password):
+        job = StumpSetup.__new__(StumpSetup)
+        job.step, job.done, job.ok = "3/6 The cockpit's files", False, False
+        job.lines = ["1/6 Packages", "✓ all present", "2/6 SandBox_Stump_On", "✓ up to date",
+                     "3/6 The cockpit's files", "✓ FireFly's font (DejaVu Sans Mono) next to the engine"]
+        return job
 
     def survey(self, rescan=True):
         return [{"active": True, "ssid": "Workshop", "bssid": "38:AD:2B:91:52:48", "channel": 6, "freq": 2437, "signal": 82, "security": "WPA2"},

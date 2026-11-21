@@ -31,6 +31,19 @@ def write_all(system, size, out_dir):
     for _ in range(4):
         app.handle("right")
     shot("desktop-app")
+    for i, item in enumerate(app.dock.items):       # the Stump's setup window, opened from its dock entry
+        if item.get("setup") == "stump":
+            from .pages.stumpsetup import StumpSetupPage
+            app.dock.sel = i
+            app.handle("a")
+            StumpSetupPage.form.update(pw="oak-and-moss", chain="member", parent="192.168.0.42", secret="b1rch")
+            app.handle("down"); app.handle("down")
+            shot("stump-setup")
+            StumpSetupPage.form["sudo"] = "x"
+            app.handle("start")
+            shot("stump-setup-running")
+            StumpSetupPage.job, StumpSetupPage.form = None, None
+            app.window = None
     app.dock.sel = 0
     for i, item in enumerate(app.dock.items):
         if "window" not in item:

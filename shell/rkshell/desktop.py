@@ -254,7 +254,8 @@ class Dock:
         for i, (it, s) in enumerate(zip(self.items, sizes)):
             surf.blit(icon(it.get("icon", ""), it["name"], s, dim=not it.get("ready", True)), (x, floor - s))
             if i == self.sel:
-                label = it["name"] if it.get("ready", True) else f"{it['name']} (not installed)"
+                label = (f"{it['name']} (not installed)" if not it.get("ready", True)
+                         else f"{it['name']} (set up)" if it.get("needs_setup") else it["name"])
                 tw = f.mono.size(label)[0] + 28
                 r = pygame.Rect(0, 0, tw, f.line + 10)
                 r.centerx = max(tw // 2 + 8, min(W - tw // 2 - 8, x + s // 2))
