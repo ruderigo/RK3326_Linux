@@ -21,6 +21,7 @@ ABOUT = {"name": "The name other people see for this Stump.",
          "chain": "A chain links Stumps over Wi-Fi. On its own is fine to start.",
          "parent": "The Stump this one joins. A looks for Stumps on the Wi-Fi you are on now.",
          "secret": "Every Stump in a chain has the same secret. Note it down.",
+         "storage": "Room for what visitors share on this Stump. It fills to three quarters, then the oldest files make room.",
          "radio": "The LoRa radio. Choose USB only if a Heltec is plugged in.",
          "sudo": "This handheld's own password, for the installer's root steps. SELECT on the keyboard shows it.",
          "new": "This handheld still has its starting password. Choose your own, 8 characters or more: "
@@ -37,6 +38,7 @@ class StumpSetupPage(Page):
         super().__init__(app)
         self.sel, self.view, self.told = 0, "form", False
         self.expired, self.search, self.quiet = False, None, False
+        self.most, self.sizes = 256, [256]
 
     def enter(self):
         cls = StumpSetupPage
@@ -46,6 +48,9 @@ class StumpSetupPage(Page):
         if cls.job is not None:
             self.view = "running"
         self.expired = self.app.system.password_expired()
+        self.most, suggested, self.sizes = self.app.system.stump_storage()
+        if cls.form.get("storage") not in self.sizes:
+            cls.form["storage"] = suggested if suggested in self.sizes else self.sizes[0]
 
     # --------------------------------------------------------------- form
     def rows(self):
@@ -55,11 +60,11 @@ class StumpSetupPage(Page):
             keys.append("parent")
         if chain != "none":
             keys.append("secret")
-        return keys + ["radio", "sudo", "go"]
+        return keys + ["storage", "radio", "sudo", "go"]
 
     def label(self, key):
         return {"name": "Name", "pw": "Stump password", "chain": "Chain", "parent": "Joins",
-                "secret": "Chain secret", "radio": "Radio", "go": "",
+                "secret": "Chain secret", "storage": "Storage", "radio": "Radio", "go": "",
                 "sudo": "New password" if self.expired else "Your password"}[key]
 
     def value(self, key):
@@ -68,6 +73,8 @@ class StumpSetupPage(Page):
             return dict(CHAIN)[v]
         if key == "radio":
             return dict(RADIO)[v]
+        if key == "storage":
+            return f"{v} MB  (max {self.most})"
         if key == "sudo":
             return "•" * len(v) if v else "needed"
         if key == "go":
@@ -87,7 +94,7 @@ class StumpSetupPage(Page):
         self.app.push(Keyboard(self.app, self.label(key), done, secret=key == "sudo", initial=self.form[key]))
 
     def cycle(self, key, step):
-        options = [k for k, _ in (CHAIN if key == "chain" else RADIO)]
+        options = self.sizes if key == "storage" else [k for k, _ in (CHAIN if key == "chain" else RADIO)]
         self.form[key] = options[(options.index(self.form[key]) + step) % len(options)]
         if self.form["chain"] == "member" and not self.form["parent"] and self.search is None:
             self.look(quiet=True)
@@ -179,12 +186,12 @@ class StumpSetupPage(Page):
         key = keys[self.sel]
         if action in ("up", "down"):
             self.sel = (self.sel + (-1 if action == "up" else 1)) % len(keys)
-        elif action in ("left", "right") and key in ("chain", "radio"):
+        elif action in ("left", "right") and key in ("chain", "radio", "storage"):
             self.cycle(key, -1 if action == "left" else 1)
         elif action == "a":
             if key == "go":
                 self.start()
-            elif key in ("chain", "radio"):
+            elif key in ("chain", "radio", "storage"):
                 self.cycle(key, 1)
             elif key == "parent":
                 if self.search is None:
@@ -206,7 +213,7 @@ class StumpSetupPage(Page):
         row_h = f.line + 12 if len(keys) * (f.line + 12) <= room else f.line + 4
         visible = max(1, min(len(keys), room // row_h))
         top = max(0, min(self.sel - visible // 2, len(keys) - visible))
-        label_w = f.mono.size("Joins (address)  ")[0]
+        label_w = f.mono.size("Stump password  ")[0]
         y = area.y + 6
         for i, key in list(enumerate(keys))[top:top + visible]:
             r = pygame.Rect(area.x + pad, y, area.w - 2 * pad, row_h - 3)
@@ -223,7 +230,7 @@ class StumpSetupPage(Page):
                 G.text(surf, f.mono, self.label(key), (r.x + 12, ty), T.MUTED)
                 G.text(surf, f.mono, G.fit(f.mono, text, r.w - label_w - 70), (r.x + 12 + label_w, ty), colour)
                 if sel:
-                    G.text(surf, f.mono, "◄ ►" if key in ("chain", "radio") else "A", (r.right - 12, ty), T.EMBER, right=True)
+                    G.text(surf, f.mono, "◄ ►" if key in ("chain", "radio", "storage") else "A", (r.right - 12, ty), T.EMBER, right=True)
             y += row_h
         y = area.bottom - foot
         pygame.draw.line(surf, T.BORDER, (area.x + pad, y), (area.right - pad, y))

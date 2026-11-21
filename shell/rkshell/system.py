@@ -166,6 +166,33 @@ IPV4 = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 ASKPASS = '#!/bin/sh\ncat "$RK_ASKPASS_FILE"\n'
 
 
+STUMP_SIZES = (256, 512, 768, 1024, 1536, 2048, 4096, 8192, 16384)
+
+
+def stump_storage(folder="~/Stump"):
+    """How big the Stump's "card" (its sd/ folder) may be here, in MB:
+    (most, suggested, sizes to offer). The same sums as the Stump's wizard:
+    at most what is free, suggested a quarter of it in steps of 256 MB, 2048
+    at most. A little is held back for what the installer itself writes."""
+    p = os.path.expanduser(folder)
+    used = 0
+    for d, _, names in os.walk(os.path.join(p, "sd")):
+        for n in names:
+            try:
+                used += os.path.getsize(os.path.join(d, n))
+            except OSError:
+                pass
+    while not os.path.exists(p) and p != os.path.dirname(p):
+        p = os.path.dirname(p)
+    try:
+        free = shutil.disk_usage(p).free
+    except OSError:
+        free = 0
+    most = max(256, (free + used) // 1024 ** 2 - 128)
+    suggested = max(256, min(2048, free // 4 // 1024 ** 2 // 256 * 256))
+    return most, suggested, [n for n in STUMP_SIZES if n <= most] or [256]
+
+
 def stump_answers(form):
     """The setup form -> the answers file of the Stump's wizard
     (SandBox_Stump_On's `provisioner.py --pc --answers`: the keys are its
@@ -177,8 +204,14 @@ def stump_answers(form):
         return {"error": "Give this Stump a name"}
     if not 4 <= len(pw) <= 64:
         return {"error": "The Stump's password: 4 to 64 characters"}
+    try:
+        mb = int(form.get("storage") or 0)
+    except (TypeError, ValueError):
+        mb = 0
+    if mb < 256:
+        return {"error": "Storage: 256 MB or more"}
     out = {"folder for this stump": os.path.expanduser("~/Stump"), "node name": name,
-           "the wi-fi name visitors join": name, "storage for this stump, in mb": "2048",
+           "the wi-fi name visitors join": name, "storage for this stump, in mb": str(mb),
            "is this stump part of a chain": form.get("chain") in ("first", "member"),
            "the heltec": "Plugged into this computer by USB" if form.get("radio") == "usb" else "None",
            "start this stump automatically when you log in": True,
@@ -654,6 +687,9 @@ class System:
     def password_expired(self):
         return password_expired()
 
+    def stump_storage(self):
+        return stump_storage()
+
     def stump_search(self):
         return StumpSearch(self.own_networks())
 
@@ -737,6 +773,7 @@ class DemoSystem(System):
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
 
     def password_expired(self): return True
+    def stump_storage(self): return 991, 256, [256, 512, 768]
 
     def stump_search(self):
         job = StumpSearch.__new__(StumpSearch)

@@ -48,6 +48,10 @@ Wi-Fi, takes a few minutes, and asks for this handheld's password because the
 installer needs root for a few steps. The password goes to `sudo` and is not
 kept; the answers file is removed when the installer ends.
 
+**Storage** is the room for what visitors share. The window offers only
+sizes that fit the space free on the system partition, as the Stump's own
+wizard would allow.
+
 For a Stump that joins another, the window looks for Stumps on the Wi-Fi the
 handheld is on and lists them, so no address is typed. On a card whose
 password has never been changed, the window asks for a new one and sets it
