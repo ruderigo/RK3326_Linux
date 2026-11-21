@@ -66,6 +66,20 @@ def app_env():
     return env
 
 
+def run_app(cmd, env, inputs, system):
+    """Run an app the dock opened, and wait for it. The desktop is paused
+    meanwhile and the apps do not read the volume keys, so those are answered
+    here; every other key is the app's own business."""
+    p = subprocess.Popen(cmd, env=env)
+    while p.poll() is None:
+        for code, value in inputs.read(0.25):
+            if code in VOLUME and value:
+                v = system.volume()
+                if v is not None:
+                    system.set_volume(v + VOLUME[code])
+    return p.returncode
+
+
 def run_step(cmd):
     """An app's optional "before" or "after" step (a command list); quietly
     skipped when it is missing or fails."""
@@ -234,7 +248,7 @@ def run(system, fps=10):
                 elif code in VOLUME and value:
                     v = system.volume()
                     if v is not None:
-                        app.toast(f"Volume {system.set_volume(v + VOLUME[code])}%", 1.5)
+                        app.toast(f"{system.volume_name()} {system.set_volume(v + VOLUME[code])}%", 1.5)
                 elif typing and code in SPECIAL:            # value 2 is the keyboard's own repeat
                     if value:
                         app.text_input(SPECIAL[code])
@@ -268,7 +282,7 @@ def run(system, fps=10):
                 # while a port runs: the app owns the screen until it quits
                 run_step(item.get("before"))
                 try:
-                    subprocess.run(cmd, env=app_env())
+                    run_app(cmd, app_env(), inputs, system)
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
                 run_step(item.get("after"))

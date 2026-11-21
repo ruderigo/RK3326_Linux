@@ -76,8 +76,25 @@ branch of their repositories (their GitHub releases lag behind); Ember from
 its latest release, since its binary is only built for releases. The window
 asks for this handheld's password, for the installers' root steps.
 
-The same from a terminal: `rk-apps versions` and
-`rk-apps update firefly|stump|ember|all`.
+FireFly has two sources. **stable** is its published repository
+(`FireFly_RK3326_R36MAX_R36S`); **sandbox** is `SandBox_FireFly_RK3326`, where
+a new version lands first. Press Y on FireFly's row to switch; the row shows
+which one is in use, and the choice is kept in `~/.config/rk-apps`.
+
+The same from a terminal: `rk-apps versions`,
+`rk-apps update firefly|stump|ember|all` and
+`rk-apps source firefly stable|sandbox`.
+
+## Sound and volume
+
+The speaker is switched on at every start (`rk-audio`): this handheld's
+sound chip plays nowhere until its output path is set. The volume keys work
+on the desktop and while an app is open; the desktop answers them for the
+apps, which do not read them. With a USB sound device plugged in (USB-C
+headphones, a headset), the keys change its volume, since the sound goes
+there; without one, the built-in sound chip's. **Settings** has the same
+volume and, when a microphone has a level, a **Microphone** row for it (the
+USB device's microphone when there is one).
 
 ## How they get the screen
 
