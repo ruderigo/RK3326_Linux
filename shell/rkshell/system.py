@@ -672,9 +672,11 @@ class System:
                     with open(f) as fh:
                         a = json.load(fh)
                     a["ready"] = bool(a.get("exec")) and shutil.which(a["exec"][0]) is not None
-                    # "needs": a file that exists once the app's own setup has run;
+                    # "needs": a file (or several) that exists once the app's own setup has run;
                     # until then the dock opens the setup window named in "setup"
-                    a["needs_setup"] = bool(a.get("needs")) and not os.path.exists(os.path.expanduser(a["needs"]))
+                    needs = a.get("needs") or []
+                    needs = [needs] if isinstance(needs, str) else needs
+                    a["needs_setup"] = any(not os.path.exists(os.path.expanduser(n)) for n in needs)
                     found.append(a)
                 except (OSError, ValueError, KeyError, IndexError):
                     continue
