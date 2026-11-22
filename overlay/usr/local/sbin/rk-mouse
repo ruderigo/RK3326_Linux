@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""rk-mouse: drive a mouse pointer with the left stick.
+
+There is no touchscreen and no trackpad, so GUI tools have no pointer. This
+reads the gamepad's left analog stick and presents a virtual mouse to the
+system (through uinput), so anything that reads a mouse — an X program, an SDL
+tool — sees a real pointer. The desktop itself navigates with the d-pad and
+never touches the left stick, so this does not disturb it.
+
+  * Left stick  -> pointer motion (dead zone in the middle, speeds up as you
+                   push further, capped).
+  * A button    -> left click, another -> right click, the shoulders -> wheel.
+                   Which buttons is in the config; the defaults are the
+                   triggers, so the face buttons stay free for apps.
+  * On / off    -> a state file (/run/rk-mouse/on), so the desktop's Settings
+                   screen can switch it, and a button combo toggles it too.
+                   Off means the virtual mouse sends nothing.
+
+Config is /data/ark/rk-mouse.json (or /etc/rk-mouse.json), all optional:
+
+  {"speed": 900, "deadzone": 0.18, "accel": 2.0, "poll_hz": 60,
+   "enabled": true,
+   "left_click": "BTN_TR2", "right_click": "BTN_TL2",
+   "wheel_up": "BTN_TR", "wheel_down": "BTN_TL",
+   "toggle": ["BTN_SELECT", "BTN_THUMBL"]}
+
+    rk-mouse            run (systemd starts it)
+    rk-mouse --print    print the merged config and the device it would use
+"""
+import glob
+import json
+import os
+import sys
+import time
+
+STATE_DIR = "/run/rk-mouse"
+STATE_ON = STATE_DIR + "/on"
+CONFIG_PATHS = ["/data/ark/rk-mouse.json", "/etc/rk-mouse.json"]
+
+DEFAULTS = {
+    "speed": 900.0,        # pixels per second at a full push
+    "deadzone": 0.18,      # fraction of the stick ignored around the centre
+    "accel": 2.0,          # push^accel: 1 is linear, higher is gentler near centre
+    "poll_hz": 60.0,
+    "enabled": True,
+    "left_click": "BTN_TR2",
+    "right_click": "BTN_TL2",
+    "wheel_up": "BTN_TR",
+    "wheel_down": "BTN_TL",
+    "toggle": ["BTN_SELECT", "BTN_THUMBL"],
+}
+
+
+# ----------------------------------------------------------- the motion math
+def axis_fraction(raw, lo, hi, flat=0):
+    """A raw stick reading mapped to -1..1, with the hardware's own flat (jitter)
+    zone around the centre removed."""
+    mid = (lo + hi) / 2.0
+    half = (hi - lo) / 2.0 or 1.0
+    f = (raw - mid) / half
+    if flat:
+        edge = flat / half
+        if abs(f) <= edge:
+            return 0.0
+        f = (f - edge * (1 if f > 0 else -1)) / (1 - edge)
+    return max(-1.0, min(1.0, f))
+
+
+def curve(frac, deadzone, accel):
+    """A stick fraction (-1..1) shaped by the dead zone and acceleration, back
+    to -1..1. Zero inside the dead zone; smooth from its edge outward."""
+    a = abs(frac)
+    if a <= deadzone:
+        return 0.0
+    a = (a - deadzone) / (1 - deadzone)
+    a = a ** accel
+    return a if frac > 0 else -a
+
+
+def delta(fx, fy, cfg, dt, carry):
+    """Pixels to move this tick for stick fractions fx, fy. carry keeps the
+    sub-pixel remainder so slow motion is smooth instead of stepping."""
+    sx = curve(fx, cfg["deadzone"], cfg["accel"]) * cfg["speed"] * dt + carry[0]
+    sy = curve(fy, cfg["deadzone"], cfg["accel"]) * cfg["speed"] * dt + carry[1]
+    dx, dy = int(sx), int(sy)
+    carry[0], carry[1] = sx - dx, sy - dy
+    return dx, dy
+
+
+# ------------------------------------------------------------- config / state
+def load_config():
+    cfg = dict(DEFAULTS)
+    for path in CONFIG_PATHS:
+        try:
+            with open(path) as f:
+                user = json.load(f)
+            if isinstance(user, dict):
+                cfg.update({k: user[k] for k in DEFAULTS if k in user})
+            break
+        except (OSError, ValueError):
+            continue
+    return cfg
+
+
+def enabled(cfg):
+    """On unless the state file says 0; its absence means the config default."""
+    try:
+        with open(STATE_ON) as f:
+            return f.read().strip() != "0"
+    except OSError:
+        return bool(cfg["enabled"])
+
+
+def ensure_state_dir():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:                                   # the desktop (group input) toggles it
+        import grp
+        os.chown(STATE_DIR, 0, grp.getgrnam("input").gr_gid)
+        os.chmod(STATE_DIR, 0o2775)
+    except (KeyError, OSError):
+        pass
+
+
+def write_state(on):
+    ensure_state_dir()
+    tmp = STATE_ON + ".new"
+    with open(tmp, "w") as f:
+        f.write("1" if on else "0")
+    os.replace(tmp, STATE_ON)
+
+
+# ------------------------------------------------------------------ the device
+def find_pad(evdev):
+    """The gamepad: an input device with a left stick (ABS_X and ABS_Y)."""
+    best = None
+    for path in sorted(glob.glob("/dev/input/event*")):
+        try:
+            dev = evdev.InputDevice(path)
+        except OSError:
+            continue
+        caps = dev.capabilities()
+        axes = [c for c, *_ in caps.get(evdev.ecodes.EV_ABS, [])]
+        if evdev.ecodes.ABS_X in axes and evdev.ecodes.ABS_Y in axes:
+            keys = caps.get(evdev.ecodes.EV_KEY, [])
+            # prefer a real gamepad (has BTN_GAMEPAD/BTN_SOUTH) over a touchpad
+            if evdev.ecodes.BTN_GAMEPAD in keys or evdev.ecodes.BTN_SOUTH in keys:
+                return dev
+            best = best or dev
+        else:
+            dev.close()
+    return best
+
+
+def code(evdev, name):
+    return getattr(evdev.ecodes, name, None) if isinstance(name, str) else None
+
+
+def main():
+    printing = "--print" in sys.argv
+    cfg = load_config()
+    try:
+        import evdev
+        from evdev import UInput, ecodes
+    except ImportError:
+        print("rk-mouse: python3-evdev is not installed", file=sys.stderr)
+        return 1 if not printing else 0
+
+    pad = find_pad(evdev)
+    if printing:
+        print(json.dumps(cfg, indent=2))
+        print("pad:", pad.path if pad else "none found",
+              "-", pad.name if pad else "")
+        return 0
+    if pad is None:
+        print("rk-mouse: no gamepad with a stick found", file=sys.stderr)
+        return 1
+
+    ax = {a: info for a, info in pad.capabilities().get(ecodes.EV_ABS, [])}
+    xinfo, yinfo = ax.get(ecodes.ABS_X), ax.get(ecodes.ABS_Y)
+
+    btn = {}
+    for role, cap in (("left", ecodes.BTN_LEFT), ("right", ecodes.BTN_RIGHT)):
+        src = code(evdev, cfg[f"{role}_click"])
+        if src is not None:
+            btn[src] = ("click", cap)
+    for role, direction in (("wheel_up", 1), ("wheel_down", -1)):
+        src = code(evdev, cfg[role])
+        if src is not None:
+            btn[src] = ("wheel", direction)
+    toggle = {code(evdev, n) for n in (cfg["toggle"] or []) if code(evdev, n) is not None}
+
+    ui = UInput({ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y, ecodes.REL_WHEEL],
+                 ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE]},
+                name="rk-mouse")
+
+    ensure_state_dir()
+    fx = fy = 0.0
+    carry = [0.0, 0.0]
+    held = set()
+    on = enabled(cfg)
+    period = 1.0 / max(10.0, cfg["poll_hz"])
+    last = time.time()
+    checked = last
+
+    try:
+        while True:
+            now = time.time()
+            # drain stick and button events without blocking
+            try:
+                for e in pad.read():
+                    if e.type == ecodes.EV_ABS:
+                        if e.code == ecodes.ABS_X and xinfo:
+                            fx = axis_fraction(e.value, xinfo.min, xinfo.max, xinfo.flat)
+                        elif e.code == ecodes.ABS_Y and yinfo:
+                            fy = axis_fraction(e.value, yinfo.min, yinfo.max, yinfo.flat)
+                    elif e.type == ecodes.EV_KEY:
+                        if e.value == 1:
+                            held.add(e.code)
+                        elif e.value == 0:
+                            held.discard(e.code)
+                        if toggle and toggle <= held and e.value == 1:
+                            on = not on
+                            write_state(on)
+                            continue
+                        if on and e.code in btn:
+                            kind, arg = btn[e.code]
+                            if kind == "click":
+                                ui.write(ecodes.EV_KEY, arg, e.value)
+                                ui.syn()
+                            elif kind == "wheel" and e.value == 1:
+                                ui.write(ecodes.EV_REL, ecodes.REL_WHEEL, arg)
+                                ui.syn()
+            except BlockingIOError:
+                pass
+            except OSError:                     # unplugged; wait for it to return
+                time.sleep(0.5)
+                pad = find_pad(evdev) or pad
+                continue
+
+            if now - checked > 0.5:             # the desktop may have toggled us
+                on = enabled(cfg)
+                checked = now
+
+            dt = now - last
+            last = now
+            if on:
+                dx, dy = delta(fx, fy, cfg, dt, carry)
+                if dx or dy:
+                    if dx:
+                        ui.write(ecodes.EV_REL, ecodes.REL_X, dx)
+                    if dy:
+                        ui.write(ecodes.EV_REL, ecodes.REL_Y, dy)
+                    ui.syn()
+            time.sleep(period)
+    finally:
+        ui.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

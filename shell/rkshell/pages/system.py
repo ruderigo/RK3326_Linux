@@ -25,6 +25,8 @@ class SystemPage(Page):
             rows.append({"name": s.mic_name(), "get": s.mic, "set": s.set_mic})
         if s.brightness() is not None:
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
+        if s.mouse_enabled() is not None:
+            rows.append({"name": "Left-stick mouse", "on": s.mouse_enabled, "flip": s.set_mouse})
         rows += [{"name": "About this handheld", "do": self.about},
                  {"name": "Restart", "do": lambda: self.app.confirm("Restart?", "The handheld starts again.", "Restart", self.restart)},
                  {"name": "Power off", "do": lambda: self.app.confirm("Power off?", "Press the power button to start it again.",
@@ -64,6 +66,8 @@ class SystemPage(Page):
             return
         if "set" in it and action in ("left", "right"):
             it["set"]((it["get"]() or 0) + (5 if action == "right" else -5))
+        elif "flip" in it and action in ("a", "left", "right"):
+            it["flip"](not it["on"]())
         elif "do" in it and action == "a":
             it["do"]()
 
@@ -76,3 +80,7 @@ class SystemPage(Page):
             v = it["get"]() or 0
             G.meter(surf, pygame.Rect(r.right - f.base * 12, r.y + 9, f.base * 9, f.line - 12), v / 100)
             G.text(surf, f.small, f"{v}%", (r.right - 14, r.y + 9), T.TEXT, right=True)
+        elif "on" in it:
+            state = it["on"]()
+            G.text(surf, f.mono, "On" if state else "Off",
+                   (r.right - 14, r.y + 5), T.OK if state else T.MUTED, right=True)

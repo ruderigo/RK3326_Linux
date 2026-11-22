@@ -81,3 +81,6 @@ libc6-dev
 libasound2-dev
 libcap2-bin
 iw
+
+# left-stick mouse (rk-mouse)
+python3-evdev

@@ -1,0 +1,11 @@
+[Unit]
+Description=Left-stick mouse pointer (virtual mouse from the gamepad)
+After=rkshell.service
+
+[Service]
+ExecStart=/usr/local/sbin/rk-mouse
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
