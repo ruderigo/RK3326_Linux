@@ -465,6 +465,128 @@ class AppUpdate:
             self.done = True
 
 
+SOUND_STATUS = "/run/rk-audio/status"
+SOUND_STATE = "/var/lib/rk-audio"
+SOUND_CLIP = os.path.expanduser("~/.cache/rk-sound/clip.wav")
+SOUND_TONE = os.path.expanduser("~/.cache/rk-sound/tone.wav")
+
+
+def write_tone(path, seconds=1.2, hz=440, rate=44100):
+    """A quiet test tone as a WAV file: left ear, then right, then both."""
+    import array
+    import math
+    import wave
+    n = int(seconds * rate)
+    data = array.array("h")
+    for i in range(n):
+        v = int(9000 * math.sin(2 * math.pi * hz * i / rate) * min(1, i / 800, (n - i) / 800))
+        third = i * 3 // n
+        data.extend((v if third != 1 else 0, v if third != 0 else 0))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(data.tobytes())
+
+
+class Recorder:
+    """Records a few seconds from the default microphone, with a live level,
+    and plays things back through the default output. What the Sound window
+    hears and plays is what any app that opens "default" gets."""
+    RATE = 44100
+
+    def __init__(self):
+        self.level = self.peak = 0.0          # now, and the loudest so far (0 to 1)
+        self.elapsed = self.seconds = 0.0
+        self.recording = False
+        self.error = ""
+        self.has_clip = False
+        self._play = None
+
+    def record(self, seconds=5):
+        if self.recording:
+            return
+        self.stop()
+        self.level = self.peak = self.elapsed = 0.0
+        self.seconds, self.recording, self.error, self.has_clip = seconds, True, "", False
+        threading.Thread(target=self._record, daemon=True).start()
+
+    def _record(self):
+        import array
+        import wave
+        frames = bytearray()
+        try:
+            proc = subprocess.Popen(["arecord", "-q", "-D", "default", "-f", "S16_LE", "-r", str(self.RATE), "-c", "1", "-t", "raw"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except OSError as e:
+            self.error, self.recording = str(e), False
+            return
+        want = int(self.seconds * self.RATE) * 2
+        try:
+            while len(frames) < want:
+                chunk = proc.stdout.read(min(self.RATE // 10 * 2, want - len(frames)))
+                if not chunk:
+                    break
+                frames += chunk
+                samples = array.array("h", chunk[:len(chunk) // 2 * 2])
+                self.level = max((abs(v) for v in samples), default=0) / 32768
+                self.peak = max(self.peak, self.level)
+                self.elapsed = len(frames) / 2 / self.RATE
+        finally:
+            proc.terminate()
+            try:
+                err = proc.communicate(timeout=3)[1].decode(errors="replace").strip()
+            except subprocess.SubprocessError:
+                err = ""
+        if frames:
+            os.makedirs(os.path.dirname(SOUND_CLIP), exist_ok=True)
+            with wave.open(SOUND_CLIP, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(self.RATE)
+                w.writeframes(bytes(frames))
+            self.has_clip = True
+        else:
+            self.error = (err.splitlines() or ["The microphone gave no sound"])[-1]
+        self.level, self.recording = 0.0, False
+
+    def _start(self, path):
+        self.stop()
+        try:
+            self._play = subprocess.Popen(["aplay", "-q", "-D", "default", path], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except OSError as e:
+            self.error = str(e)
+
+    def play(self):
+        if self.has_clip and not self.recording:
+            self._start(SOUND_CLIP)
+
+    def tone(self):
+        if not self.recording:
+            if not os.path.exists(SOUND_TONE):
+                write_tone(SOUND_TONE)
+            self._start(SOUND_TONE)
+
+    @property
+    def playing(self):
+        p = self._play
+        if p is None:
+            return False
+        if p.poll() is None:
+            return True
+        if p.returncode:
+            err = p.stderr.read().decode(errors="replace").strip()
+            self.error = (err.splitlines() or ["Could not play"])[-1]
+        self._play = None
+        return False
+
+    def stop(self):
+        if self._play is not None and self._play.poll() is None:
+            self._play.terminate()
+        self._play = None
+
+
 def parse_mixer(text):
     """`amixer scontents` -> [{"name", "caps", "pct", "cpct", "on"}], one for
     each simple control: its capabilities (pvolume, cvolume, ...), its
@@ -721,6 +843,31 @@ class System:
         out = self._sound()["out"]
         return "Headphones" if out else "Volume"
 
+    def sound_status(self):
+        """What rk-audiod decided: {"mode", "jack", "jack_found", "jack_reversed", "path", "out", "mic"}, or {}."""
+        try:
+            return json.loads(read(SOUND_STATUS))
+        except ValueError:
+            return {}
+
+    def set_sound_output(self, mode):
+        """"auto" (follow the jack), "spk" or "hp"; rk-audiod applies it within a second."""
+        return self._sound_choice("output", mode)
+
+    def set_jack_reversed(self, on):
+        return self._sound_choice("jack", "reversed" if on else "normal")
+
+    def _sound_choice(self, name, value):
+        try:
+            with open(f"{SOUND_STATE}/{name}", "w") as f:
+                f.write(value + "\n")
+            return True
+        except OSError:
+            return False
+
+    def recorder(self):
+        return Recorder()
+
     def volume(self):
         """Output volume, 0 to 100, or None when there is no mixer control."""
         out = self._sound()["out"]
@@ -937,6 +1084,25 @@ class DemoSystem(System):
     def set_volume(self, pct): self._vol = max(0, min(100, pct)); return self._vol
     def volume_name(self): return "Volume"
     def mic_name(self): return "Microphone (USB)"
+    _snd = {"mode": "auto", "jack": False, "jack_found": True, "jack_reversed": False, "path": "SPK",
+            "out": {"card": "rockchiprk817co", "dev": 0, "name": "rockchip,rk817-codec", "usb": False},
+            "mic": {"card": "Headset", "dev": 0, "name": "USB-C Headset", "usb": True}}
+
+    def sound_status(self): return dict(self._snd)
+
+    def set_sound_output(self, mode):
+        self._snd = dict(self._snd, mode=mode, path={"spk": "SPK", "hp": "HP"}.get(mode, "HP" if self._snd["jack"] else "SPK"))
+        return True
+
+    def set_jack_reversed(self, on):
+        self._snd = dict(self._snd, jack_reversed=on, jack=not self._snd["jack"])
+        return self.set_sound_output(self._snd["mode"])
+
+    def recorder(self):
+        rec = Recorder()
+        rec.record = lambda seconds=5: (setattr(rec, "has_clip", True), setattr(rec, "peak", 0.4))
+        rec.play = rec.tone = lambda: None
+        return rec
     def mic(self): return getattr(self, "_mic", 70)
     def set_mic(self, pct): self._mic = max(0, min(100, pct)); return self._mic
     def brightness(self): return self._bri

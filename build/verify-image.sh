@@ -93,6 +93,7 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/systemd/system/multi-user.target.wants/rk-firstboot.service \
          /etc/systemd/system/multi-user.target.wants/rk-bootcfg.service \
          /etc/systemd/system/multi-user.target.wants/rk-audio.service /usr/local/sbin/rk-audio \
+         /etc/systemd/system/multi-user.target.wants/rk-audiod.service /usr/local/sbin/rk-audiod \
          /etc/systemd/system/multi-user.target.wants/ssh.service \
          /etc/systemd/system/multi-user.target.wants/NetworkManager.service \
          /etc/systemd/system/multi-user.target.wants/rkshell.service \

@@ -96,6 +96,33 @@ there; without one, the built-in sound chip's. **Settings** has the same
 volume and, when a microphone has a level, a **Microphone** row for it (the
 USB device's microphone when there is one).
 
+### Where sound goes: the jack, USB audio, the default device
+
+A small service, `rk-audiod`, owns the routing for every app:
+
+- **The 3.5 mm jack.** This sound chip has one switch for speaker or
+  headphones (`Playback Path`), and software has to flip it. The service
+  watches the jack and sets it: plug in, the speaker goes quiet and the
+  headphones play.
+- **USB audio.** While a USB headset or microphone is plugged in, the system's
+  `default` device is that one; otherwise the built-in chip. It rewrites
+  `/etc/asound.conf` when something is plugged or unplugged (an
+  `asound.conf` of your own, without its first line, is left alone). An app
+  follows the change at its next start.
+- **The built-in chip is shared**, at 44100 Hz with a long buffer (ArkOS's
+  settings for this chip), so two programs can play at once.
+
+The **Sound** window on the dock shows what it decided and is the reference
+for "does sound work": a test tone (left, right, both), a five-second
+recording with a level meter, and playback, all through the same `default`
+device apps get. If it hears your microphone and an app does not, that app is
+choosing its own device. **Output** overrides the jack (Automatic, Speaker,
+Headphones), and if the jack reads the wrong way round on your unit, A on
+**Headphone jack** flips it. From a terminal: `cat /run/rk-audio/status`,
+`journalctl -u rk-audiod`, `rk-audiod --print`.
+
+![The Sound window](sound-window.png)
+
 ## How they get the screen
 
 The panel only shows what goes through the Mali GPU driver, so the image

@@ -23,12 +23,13 @@ from .pages.network import NetworkPage
 from .pages.scan import ScanPage
 from .pages.stumpsetup import StumpSetupPage
 from .pages.apps import AppsPage
+from .pages.sound import SoundPage
 from .pages.arsenal import ArsenalPage
 from .pages.survey import SurveyPage
 from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, AppsPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, AppsPage, SystemPage]
 
 
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists
@@ -103,6 +104,7 @@ class App:
             self.stack[-1].handle(action)
         elif self.window:
             if action == "b" and not self.window.wants_back():
+                getattr(self.window, "leave", lambda: None)()
                 self.window = None
             else:
                 self.window.handle(action)

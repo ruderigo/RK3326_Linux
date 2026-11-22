@@ -232,7 +232,7 @@ rm -f "$ROOTFS"/etc/ssh/ssh_host_*
 : > "$ROOTFS/etc/machine-id"
 rm -f "$ROOTFS/var/lib/dbus/machine-id"
 
-in_root systemctl enable rk-firstboot.service rk-bootcfg.service rk-audio.service ssh.service NetworkManager.service \
+in_root systemctl enable rk-firstboot.service rk-bootcfg.service rk-audio.service rk-audiod.service ssh.service NetworkManager.service \
     avahi-daemon.service systemd-timesyncd.service rkshell.service
 # the desktop has the first console; a text login is on the others (Ctrl+Alt+F2)
 in_root systemctl disable getty@tty1.service 2>/dev/null || true

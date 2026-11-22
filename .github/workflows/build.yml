@@ -36,6 +36,7 @@ jobs:
           cd shell
           python3 -m compileall -q rkshell
           python3 tests/test_device.py
+          python3 tests/test_sound.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
