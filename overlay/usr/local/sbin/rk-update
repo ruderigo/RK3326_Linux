@@ -1,0 +1,274 @@
+#!/bin/bash
+# rk-update: update the OS without a reflash, and without losing anything.
+#
+# It replaces the "soft" layer only — the desktop (rkshell) and our system
+# files under /usr/local, /etc/systemd/system, /etc/udev, /usr/lib/rk and
+# /usr/share/rk. It never touches the kernel, the boot chain, /home or /data,
+# so an adopter's identity, apps and settings are untouched by construction.
+# (Kernel and boot changes still need a reflash; /data survives that, and
+# rk-migrate brings the layout forward either way.)
+#
+# Safe by design: the new files are fetched to a temp dir and checked (the
+# desktop must import and draw) BEFORE anything is swapped; the current files
+# are backed up first; migrations run after; the desktop is restarted and, if
+# it does not come back, the backup is restored automatically.
+#
+#   rk-update status                 installed vs newest, and the schema
+#   rk-update check                  just print the newest available version
+#   rk-update apply [--to TAG]       update (to the newest, or a given tag)
+#   rk-update rollback               restore the last backup
+#   rk-update source official
+#   rk-update source fork  OWNER/REPO
+#   rk-update source url   URL [SHA256]
+#
+# Runs as root (it writes system files). From the desktop the password comes
+# through sudo's askpass helper; over SSH, run it with sudo.
+set -u
+
+say() { echo "rk-update: $*"; }
+die() { echo "rk-update: $*" >&2; exit 1; }
+
+ROOT="${RK_ROOT:-}"                                 # a prefix for tests; empty in normal use
+RELEASE="${RK_RELEASE:-$ROOT/etc/os-release.rk}"
+CONF="${RK_CONF:-$ROOT/data/ark/rk-update.json}"
+BK_DIR="${RK_BK_DIR:-$ROOT/data/ark/.rk-backups}"
+OFFICIAL=ruderigo/RK3326_Linux
+# the soft layer: what an update replaces (relative to the repo root -> system)
+SOFT_RKSHELL="shell/rkshell"                       # -> /usr/lib/python3/dist-packages/rkshell
+SOFT_OVERLAY="usr/local usr/lib/rk usr/share/rk etc/systemd/system etc/udev/rules.d etc/sudoers.d"
+PYDIR="$ROOT/usr/lib/python3/dist-packages"
+CHANNEL_FILE="$ROOT/usr/share/rk/channel"   # a tiny stamp that proves which content is installed
+
+online() { ip route 2>/dev/null | grep -q '^default'; }
+need_root() { [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run it with sudo (it writes system files)"; }
+
+installed_version() { sed -n 's/^RK_VERSION="\?\([^"]*\)"\?/\1/p' "$RELEASE" 2>/dev/null | head -1; }
+
+conf_get() {    # conf_get KEY DEFAULT
+    python3 -I -c "import json,sys
+try: d=json.load(open('$CONF'))
+except Exception: d={}
+print(d.get(sys.argv[1], sys.argv[2]))" "$1" "$2" 2>/dev/null
+}
+
+conf_set() {    # conf_set KEY VALUE ...
+    mkdir -p "$(dirname "$CONF")"
+    python3 -I - "$CONF" "$@" <<'PY'
+import json, sys
+path = sys.argv[1]
+try: d = json.load(open(path))
+except Exception: d = {}
+for i in range(2, len(sys.argv), 2):
+    d[sys.argv[i]] = sys.argv[i + 1]
+json.dump(d, open(path, "w"), indent=2)
+PY
+    chown ark:ark "$CONF" 2>/dev/null || true
+}
+
+repo_slug() {   # owner/repo of the current source (official or fork)
+    case "$(conf_get source official)" in
+        fork) conf_get repo "$OFFICIAL" ;;
+        *)    echo "$OFFICIAL" ;;
+    esac
+}
+
+repo_url() { echo "https://github.com/$(repo_slug)"; }
+
+installed_channel() { cat "$CHANNEL_FILE" 2>/dev/null; }
+
+remote_channel() {   # the marker file fetched straight from the source, one small file
+    local ref="${1:-main}"
+    curl -fsSL "https://raw.githubusercontent.com/$(repo_slug)/$ref/overlay/usr/share/rk/channel" 2>/dev/null
+}
+
+ping() {             # confirm the pipe without changing anything: fetch one small file
+    online || die "no network"
+    local ref="${1:-main}" got
+    say "fetching the channel marker from $(repo_slug) ($ref)..."
+    got=$(remote_channel "$ref") || true
+    [ -n "$got" ] || die "could not fetch the marker (the pipe is not open)"
+    echo "pipe    : ok"
+    echo "remote  : $got"
+    echo "here    : $(installed_channel)"
+}
+
+newest_tag() {  # highest vX.Y.Z tag on the source repo, or empty
+    git ls-remote --tags --refs "$(repo_url)" 2>/dev/null \
+        | sed 's#.*refs/tags/##' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -V | tail -1
+}
+
+# ---- the three steps of an update, each able to fail without side effects ----
+fetch() {       # fetch REF DEST  (a git tag/branch, or a tarball url)
+    local ref="$1" dest="$2" src url
+    src=$(conf_get source official)
+    if [ "$src" = url ]; then
+        url=$(conf_get url "")
+        [ -n "$url" ] || return 1
+        say "downloading $url"
+        curl -fsSL "$url" -o "$dest.tar" || return 1
+        local want; want=$(conf_get url_sha256 "")
+        if [ -n "$want" ]; then
+            local got; got=$(sha256sum "$dest.tar" | cut -d' ' -f1)
+            [ "$got" = "$want" ] || { say "checksum mismatch (got $got)"; return 1; }
+            say "checksum ok"
+        fi
+        mkdir -p "$dest"; tar xf "$dest.tar" -C "$dest" --strip-components=1 || return 1
+    else
+        say "fetching $ref from $(repo_url)"
+        git clone --depth 1 --branch "$ref" "$(repo_url)" "$dest" >/dev/null 2>&1 || return 1
+        say "at commit $(git -C "$dest" rev-parse --short HEAD 2>/dev/null)"
+    fi
+    [ -d "$dest/$SOFT_RKSHELL" ] || { say "that source has no $SOFT_RKSHELL"; return 1; }
+}
+
+verify() {      # the new desktop must import and draw before we swap it in
+    local dest="$1" out
+    say "checking the new desktop..."
+    python3 -I -c "import py_compile,glob,sys
+sys.exit(0 if all(py_compile.compile(f,doraise=False) for f in glob.glob('$dest/$SOFT_RKSHELL/**/*.py',recursive=True)) else 1)" \
+        || { say "the new desktop does not compile"; return 1; }
+    out=$(mktemp -d)
+    if ! PYTHONPATH="$dest/shell" SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots "$out" >/dev/null 2>&1; then
+        rm -rf "$out"; say "the new desktop does not draw"; return 1
+    fi
+    rm -rf "$out"
+}
+
+backup() {      # copy what we are about to overwrite, so rollback is possible
+    local bk="$BK_DIR/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$bk/files"
+    cp -a "$PYDIR/rkshell" "$bk/files/rkshell"
+    echo "$PYDIR/rkshell" > "$bk/manifest"
+    local d
+    for d in $SOFT_OVERLAY; do
+        if [ -e "$ROOT/$d" ]; then
+            mkdir -p "$bk/files/$d"; cp -a "$ROOT/$d/." "$bk/files/$d/" 2>/dev/null || true
+            echo "/$d" >> "$bk/manifest"
+        fi
+    done
+    cp -a "$RELEASE" "$bk/files/os-release.rk" 2>/dev/null || true
+    installed_version > "$bk/version"
+    ln -sfn "$bk" "$BK_DIR/latest"
+    echo "$bk"
+}
+
+install_soft() {        # copy the new soft layer over the system
+    local dest="$1" d
+    rm -rf "$PYDIR/rkshell"
+    cp -a "$dest/$SOFT_RKSHELL" "$PYDIR/rkshell"
+    find "$PYDIR/rkshell" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null
+    for d in $SOFT_OVERLAY; do
+        [ -d "$dest/overlay/$d" ] || continue
+        mkdir -p "$ROOT/$d"; cp -a "$dest/overlay/$d/." "$ROOT/$d/"
+    done
+    chmod 755 "$ROOT"/usr/local/sbin/rk-* "$ROOT"/usr/local/bin/rk-* 2>/dev/null || true
+    [ -f "$ROOT/etc/sudoers.d/rkshell" ] && { chmod 440 "$ROOT/etc/sudoers.d/rkshell"; [ -n "$ROOT" ] || visudo -c -q || return 1; }
+    python3 -m compileall -q "$PYDIR/rkshell" || return 1
+}
+
+set_version() { sed -i "s/^RK_VERSION=.*/RK_VERSION=\"$1\"/" "$RELEASE"; }
+
+is_version_ref() { case "${1#v}" in [0-9]*.[0-9]*.[0-9]*) return 0 ;; *) return 1 ;; esac; }
+
+restore() {     # put a backup back (rollback, or a failed update)
+    local bk="$1" line
+    [ -d "$bk/files" ] || return 1
+    while read -r line; do
+        case "$line" in
+            */dist-packages/rkshell) rm -rf "$PYDIR/rkshell"; cp -a "$bk/files/rkshell" "$PYDIR/rkshell" ;;
+            /*) rm -rf "$ROOT$line"; mkdir -p "$(dirname "$ROOT$line")"; cp -a "$bk/files${line}" "$ROOT$line" ;;
+        esac
+    done < "$bk/manifest"
+    [ -f "$bk/files/os-release.rk" ] && cp -a "$bk/files/os-release.rk" "$RELEASE"
+    systemctl daemon-reload 2>/dev/null || true
+}
+
+restart_desktop() {
+    systemctl daemon-reload 2>/dev/null || true
+    for u in /etc/systemd/system/*.service; do
+        case "$u" in */rk-*.service) systemctl enable "$(basename "$u")" >/dev/null 2>&1 || true ;; esac
+    done
+    systemctl restart rkshell 2>/dev/null || true
+    sleep 2
+    systemctl is-active --quiet rkshell
+}
+
+apply() {
+    need_root
+    online || die "no network"
+    local to="" dest bk cur
+    [ "${1:-}" = --to ] && { to="${2:?--to needs a TAG}"; }
+    cur=$(installed_version)
+    if [ -z "$to" ] && [ "$(conf_get source official)" != url ]; then
+        to=$(newest_tag) || true
+        [ -n "$to" ] || die "could not find a version to update to"
+        [ "$to" != "$cur" ] && [ "v$to" != "$cur" ] && [ "$to" != "v$cur" ] || { say "already on $cur"; return 0; }
+    fi
+    dest=$(mktemp -d)
+    trap 'rm -rf "$dest" "$dest.tar"' EXIT
+    fetch "${to:-main}" "$dest" || die "could not fetch the update"
+    verify "$dest" || die "the update did not pass its checks; nothing changed"
+    say "backing up the current system..."
+    bk=$(backup)
+    say "installing..."
+    if ! install_soft "$dest"; then
+        say "install failed; rolling back"; restore "$bk"; restart_desktop || true; die "rolled back"
+    fi
+    is_version_ref "$to" && set_version "${to#v}"
+    say "running migrations..."
+    /usr/local/sbin/rk-migrate run || say "a migration reported a problem (continuing)"
+    say "restarting the desktop..."
+    if restart_desktop; then
+        say "updated to $(installed_version). Backup kept at $bk"
+    else
+        say "the desktop did not come back; rolling back"
+        restore "$bk"; restart_desktop || true
+        die "rolled back to $(installed_version)"
+    fi
+}
+
+rollback() {
+    need_root
+    local bk; bk=$(readlink -f "$BK_DIR/latest" 2>/dev/null)
+    [ -n "$bk" ] && [ -d "$bk" ] || die "no backup to roll back to"
+    say "restoring $bk ..."
+    restore "$bk"
+    restart_desktop && say "rolled back to $(installed_version)" || die "the desktop did not come back"
+}
+
+status() {
+    local cur new src
+    cur=$(installed_version); src=$(conf_get source official)
+    echo "installed : ${cur:-unknown}"
+    echo "source    : $src ($(repo_url))"
+    if [ "$src" = url ]; then
+        echo "newest    : (from $(conf_get url ?))"
+    elif online; then
+        new=$(newest_tag); echo "newest    : ${new:-unknown}"
+    else
+        echo "newest    : (offline)"
+    fi
+    echo "channel   : $(installed_channel)"
+    echo "schema    : $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema recorded *: //p') of $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema available *: //p')"
+}
+
+[ -n "${RK_UPDATE_SOURCE:-}" ] && return 0
+
+case "${1:-status}" in
+    status)   status ;;
+    check)    online && newest_tag || die "offline" ;;
+    ping)     shift; ping "$@" ;;
+    apply)    shift; apply "$@" ;;
+    rollback) rollback ;;
+    source)
+        need_root
+        case "${2:-}" in
+            official) conf_set source official; say "updates come from $OFFICIAL" ;;
+            fork)     conf_set source fork repo "${3:?usage: rk-update source fork OWNER/REPO}"; say "updates come from the fork ${3}" ;;
+            url)      conf_set source url url "${3:?usage: rk-update source url URL [SHA256]}" url_sha256 "${4:-}"; say "updates come from ${3}" ;;
+            "")       echo "source: $(conf_get source official)" ;;
+            *)        die "usage: rk-update source official|fork OWNER/REPO|url URL [SHA256]" ;;
+        esac ;;
+    *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|rollback|source ..." >&2; exit 2 ;;
+esac

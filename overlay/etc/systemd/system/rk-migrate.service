@@ -1,0 +1,12 @@
+[Unit]
+Description=Bring card state up to the installed layout (idempotent)
+After=rk-firstboot.service local-fs.target data.mount
+Wants=rk-firstboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk-migrate run
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

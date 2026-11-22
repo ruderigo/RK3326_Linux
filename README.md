@@ -209,6 +209,16 @@ The image changes arkos4clone's device trees in the places listed in
 [`build/dtb-fixes.txt`](build/dtb-fixes.txt), each with its reason. What
 was changed on a card is in `rk-dtb-fixes.txt` on its BOOT partition.
 
+## Updating
+
+The handheld updates **in place — no reflash — from Settings → Update this
+handheld**, or `rk-update apply`. An update replaces only the desktop and
+system files (never the kernel, your apps or your data), checks the new
+version draws before swapping it in, backs up the old one, and rolls back by
+itself if the desktop doesn't come back. Adopter state — the mesh identity,
+apps and settings — lives on the `/data` partition, which a reflash keeps, so
+even a kernel reflash loses nothing. See [`docs/updates.md`](docs/updates.md).
+
 ## The card
 
 | Where | What |
