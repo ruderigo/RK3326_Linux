@@ -205,11 +205,24 @@ def icon(name, label, size, dim=False):
 class Dock:
     """A row of icons at the bottom. The one under the cursor is the largest
     and its neighbours grow with it, as in a desktop dock; the row slides so
-    the cursor stays in view when there are more icons than fit."""
+    the cursor stays in view when there are more icons than fit.
+
+    The cursor is the d-pad's selection, or the pointer while it is over the
+    dock: then the icon under it is the selected one, the row grows around
+    the pointer and stays put under it, and resting the pointer near the left
+    or right edge of the screen brings in the icons that did not fit."""
 
     def __init__(self):
         self.items, self.sel, self.pos = [], 0, 0.0        # pos follows sel smoothly
         self.last, self.shelves = time.time(), {}
+        self.hover = False          # the pointer is choosing
+        self.scrolling = False      # ...and is at an edge, bringing more icons in
+        self.px, self.size = 0, (720, 720)
+        self.row_x = 0.0            # while hovering: where the row would start with no icon grown
+        self.over = 0.0             # how far past the first or last icon's middle the pointer is, in icons
+        self.slip = 0.0             # eases the row between the d-pad's place for it and the pointer's
+        self.x0 = None              # where the row was last drawn...
+        self.drawn = []             # ...and each icon in it: (x, size)
 
     def set(self, items):
         self.items = items
@@ -225,33 +238,123 @@ class Dock:
 
     @property
     def moving(self):
-        return abs(self.pos - self.sel) > 0.01
+        if abs(self.slip) > 0.5:
+            return True
+        return self.scrolling if self.hover else abs(self.pos - self.sel) > 0.01
+
+    # ---------------------------------------------------------- the pointer
+    @staticmethod
+    def metrics(size):
+        """base and grown icon size, the gap, the line the icons stand on."""
+        W, H = size
+        return W // 10, int(W / 5.5), W // 60, H - W // 28      # 72 and 130 px on a 720 screen
+
+    def top(self, size):
+        """Below this line the pointer is over the dock."""
+        base, big, gap, floor = self.metrics(size)
+        return floor - big - gap
+
+    def span(self):
+        """Width of the row with no icon grown, and the range its start may have."""
+        W = self.size[0]
+        base, _, gap, _ = self.metrics(self.size)
+        n = len(self.items)
+        width = n * base + (n - 1) * gap
+        if width <= W - 40:
+            return width, (W - width) / 2, (W - width) / 2
+        return width, W - 20 - width, 20
+
+    def point(self, pos, size):
+        """Where the pointer is (None: hidden, or a window is open)."""
+        self.size = size
+        was = self.hover
+        base, _, gap, _ = self.metrics(size)
+        width, lo, hi = self.span()
+        self.hover = bool(pos and self.items and pos[1] >= self.top(size))
+        if self.hover:
+            self.px = pos[0]
+            if not was:
+                # start from the icon that is under the pointer as drawn now
+                at = None
+                for i, (x, s) in enumerate(self.drawn):
+                    if x - gap / 2 <= self.px < x + s + gap / 2:
+                        at = i + (self.px - x + gap / 2) / (s + gap)
+                        break
+                if at is None and self.drawn and lo == hi:
+                    self.hover = False              # beside a row that fits: not on it
+                elif at is None:
+                    at = 0 if self.drawn and self.px < self.drawn[0][0] else len(self.items)
+                if self.hover:
+                    self.row_x = max(lo, min(hi, self.px + gap / 2 - at * (base + gap)))
+            elif lo == hi and not (lo - gap <= self.px <= lo + width + gap):
+                self.hover = False
+        if self.hover:
+            self.track()
+        else:
+            self.scrolling = False
+        if was != self.hover:
+            self.slip = None                        # worked out at the next draw
+
+    def track(self):
+        """The icon under the pointer becomes the selected one."""
+        base, _, gap, _ = self.metrics(self.size)
+        n = len(self.items)
+        at = (self.px + gap / 2 - self.row_x) / (base + gap) - 0.5      # 0 on the first icon's middle
+        self.pos = max(0.0, min(n - 1.0, at))
+        self.over = max(-0.5, min(0.5, at - self.pos))
+        self.sel = int(self.pos + 0.5)
 
     def step(self):
         """Advance the animation. It goes by the clock, not by frames, so the
         cursor arrives in the same time however fast the handheld draws."""
         now = time.time()
         dt, self.last = min(0.2, now - self.last), now
+        if self.slip:
+            self.slip *= math.exp(-dt * 14)
+            if abs(self.slip) < 0.5:
+                self.slip = 0.0
+        if self.hover:
+            W = self.size[0]
+            base, _, gap, _ = self.metrics(self.size)
+            _, lo, hi = self.span()
+            edge = W // 7
+            push = 0.0                              # -1..1: how hard the pointer leans on an edge
+            if self.px < edge and self.row_x < hi:
+                push = 1 - self.px / edge
+            elif self.px > W - edge and self.row_x > lo:
+                push = -(1 - (W - 1 - self.px) / edge)
+            self.scrolling = push != 0
+            if push:
+                speed = (base + gap) * (1.5 + 5 * abs(push))        # icons a second: slow at the zone's start
+                self.row_x = max(lo, min(hi, self.row_x + speed * dt * (1 if push > 0 else -1)))
+                self.track()
+            return
         d = self.sel - self.pos
         self.pos = self.sel if abs(d) < 0.01 else self.pos + d * (1 - math.exp(-dt * 14))
 
     def draw(self, surf, f):
         W, H = surf.get_size()
-        base, big = W // 10, int(W / 5.5)                   # 72 and 130 px on a 720 screen
+        base, big, gap, floor = self.metrics((W, H))
         sizes = []
         for i in range(len(self.items)):
             near = max(0.0, 1 - abs(i - self.pos) / 2.2)      # 1 under the cursor, 0 two icons away
             sizes.append(int(base + (big - base) * near * near))
-        gap = W // 60
         total = sum(sizes) + gap * (len(sizes) - 1)
         centre = sum(sizes[:int(self.pos)]) + gap * int(self.pos)
         frac = self.pos - int(self.pos)
         if int(self.pos) < len(sizes):
             centre += sizes[int(self.pos)] / 2 + (sizes[int(self.pos)] / 2 + gap + (sizes[min(int(self.pos) + 1, len(sizes) - 1)] / 2)) * frac
-        if total <= W - 40:
+        if self.hover and sizes:    # the grown icon stays under the pointer
+            x0 = self.px - centre - self.over * (sizes[self.sel] + gap)
+        elif total <= W - 40:
             x0 = (W - total) // 2
         else:                       # more icons than fit: slide, but never past either end of the row
-            x0 = int(max(W - 20 - total, min(20, W / 2 - centre)))
+            x0 = max(W - 20 - total, min(20, W / 2 - centre))
+        if self.slip is None:       # the pointer just took over, or let go: no jump
+            self.slip = (self.x0 - x0) if self.x0 is not None else 0.0
+        x0 = self.x0 = x0 + self.slip
+        x0 = int(x0)
+        self.drawn = []
         floor = H - W // 28
         shelf = pygame.Rect(max(10, x0 - 14), floor - base - 10, min(W - 20, total + 28), base + 20)
         shelf.w -= shelf.w % 8                              # a few widths only: each is drawn once and kept
@@ -265,7 +368,9 @@ class Dock:
         surf.blit(veil, shelf.topleft)
         x = x0
         for i, (it, s) in enumerate(zip(self.items, sizes)):
+            self.drawn.append((x, s))
             surf.blit(icon(it.get("icon", ""), it["name"], s, dim=not it.get("ready", True)), (x, floor - s))
+            G.spot((x, floor - s, s, s), lambda i=i: setattr(self, "sel", i))
             if i == self.sel:
                 label = (f"{it['name']} (not installed)" if not it.get("ready", True)
                          else f"{it['name']} (set up)" if it.get("needs_setup") else it["name"])

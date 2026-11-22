@@ -11,6 +11,11 @@ Input. Every /dev/input/event* device is read directly: the built-in pad
 ("GO-Super Gamepad"), the volume keys, and any USB keyboard or pad, as soon
 as it is plugged in. Key codes, not device names, decide what a key does, so
 a second controller works without setup.
+
+Pointer. Anything that moves like a mouse moves the desktop's pointer: the
+left stick (the rk-mouse service presents it as a mouse) and any USB mouse.
+The pointer is drawn here, over the finished frame, and moving it rewrites
+only the few pixels around it, so it stays quick on a slow frame.
 """
 import fcntl
 import glob
@@ -47,7 +52,11 @@ PLAIN = {2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9"
          43: "\\", 44: "z", 45: "x", 46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: ",", 52: ".", 53: "/", 57: " "}
 SHIFTED = dict(zip("1234567890-=[];'`\\,./", "!@#$%^&*()_+{}:\"~|<>?"))
 EVENT = struct.Struct("qqHHi")          # struct input_event on a 64-bit kernel
-EV_KEY = 1
+EV_KEY, EV_REL = 1, 2
+REL_X, REL_Y, REL_WHEEL = 0, 1, 8
+MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE = 272, 273, 274
+EVIOCGNAME = 0x81004506                 # the device's name, up to 256 bytes
+STICK_MOUSE = "rk-mouse"                # the left stick as a mouse (overlay/usr/local/sbin/rk-mouse)
 GPU_DIR = "/usr/lib/rk-gpu"                     # dArkOS's Mali driver and SDL2 (build-image.sh)
 PAD_DB = "/usr/share/gamecontrollerdb.txt"      # dArkOS's controller database
 
@@ -118,6 +127,7 @@ class Framebuffer:
             self.out = pygame.Surface((self.w, self.h), 0, 16, (0xF800, 0x07E0, 0x001F, 0))
         else:
             raise SystemExit(f"rkshell: a {self.bpp}-bit screen is not supported")
+        self.pointer = None                     # where the pointer is on the screen now: a Rect, or None
 
     def unblank(self):
         """Turn the panel back on (FBIOBLANK): an app that crashes on its way
@@ -127,7 +137,47 @@ class Framebuffer:
         except OSError:
             pass
 
-    def show(self):
+    def show(self, cursor=None, at=None):
+        """Put the frame on the screen, with the pointer on top when `cursor`
+        (its picture) is given. The drawing surface is left without it."""
+        under = spot = None
+        if cursor is not None:
+            spot = cursor.get_rect(topleft=at).clip(self.surf.get_rect())
+            under = self.surf.subsurface(spot).copy()
+            self.surf.blit(cursor, at)
+        try:
+            self.write_frame()
+        finally:
+            if under is not None:
+                self.surf.blit(under, spot)
+        self.pointer = spot
+
+    def move_pointer(self, cursor=None, at=None):
+        """Move the pointer (or take it away: cursor None) without a new
+        frame: only the pixels it leaves and the ones it lands on are written."""
+        new = cursor.get_rect(topleft=at).clip(self.surf.get_rect()) if cursor is not None else None
+        old, self.pointer = self.pointer, new
+        if old and new and old.colliderect(new):
+            areas = [old.union(new)]            # one write: no moment without a pointer
+        else:
+            areas = [r for r in (old, new) if r]
+        size = self.bpp // 8
+        for area in areas:
+            if not area.w or not area.h:
+                continue
+            patch = self.surf.subsurface(area).copy()
+            if new is not None:
+                patch.blit(cursor, (at[0] - area.x, at[1] - area.y))
+            if self.out is not None:
+                small = pygame.Surface(area.size, 0, 16, (0xF800, 0x07E0, 0x001F, 0))
+                small.blit(patch, (0, 0))
+                patch = small
+            raw, pitch, row = patch.get_buffer().raw, patch.get_pitch(), area.w * size
+            for y in range(area.h):
+                to = (area.y + y) * self.stride + area.x * size
+                self.mm[to:to + row] = raw[y * pitch:y * pitch + row]
+
+    def write_frame(self):
         src = self.surf
         if self.out is not None:
             self.out.blit(self.surf, (0, 0))
@@ -184,6 +234,8 @@ class Console:
 class Inputs:
     def __init__(self):
         self.fds, self.next_scan, self.shift, self.ctrl = {}, 0, False, False
+        self.stick = set()                      # the left stick's mouse: its buttons are the pad's own
+        self.dx = self.dy = self.wheel = 0      # mouse movement since take_motion()
 
     def scan(self):
         """Open input devices that appeared; called every couple of seconds."""
@@ -191,12 +243,26 @@ class Inputs:
         for path in glob.glob("/dev/input/event*"):
             if path not in self.fds.values():
                 try:
-                    self.fds[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = path
+                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
                 except OSError:
-                    pass
+                    continue
+                self.fds[fd] = path
+                try:
+                    name = fcntl.ioctl(fd, EVIOCGNAME, bytes(256)).split(b"\0")[0].decode("utf-8", "replace")
+                except OSError:
+                    name = ""
+                if name == STICK_MOUSE:
+                    self.stick.add(fd)
+
+    def take_motion(self):
+        """How far the mice moved since the last call: (dx, dy, wheel)."""
+        m = self.dx, self.dy, self.wheel
+        self.dx = self.dy = self.wheel = 0
+        return m
 
     def read(self, timeout):
-        """Key events since the last call: a list of (code, value). value 1 = down, 0 = up."""
+        """Key events since the last call: a list of (code, value). value 1 = down, 0 = up.
+        Mouse movement is added up on the side, for take_motion()."""
         if time.time() >= self.next_scan:
             self.scan()
         out = []
@@ -212,11 +278,23 @@ class Inputs:
             except OSError:                     # unplugged
                 os.close(fd)
                 del self.fds[fd]
+                self.stick.discard(fd)
                 continue
+            stick = fd in self.stick
             for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
                 _, _, etype, code, value = EVENT.unpack_from(data, off)
-                if etype == EV_KEY and value in (0, 1, 2):
-                    out.append((code, value))
+                if etype == EV_REL:
+                    if code == REL_X:
+                        self.dx += value
+                    elif code == REL_Y:
+                        self.dy += value
+                    elif code == REL_WHEEL and not stick:
+                        self.wheel += value
+                elif etype == EV_KEY and value in (0, 1, 2):
+                    # the stick's mouse clicks with the triggers, for apps; here
+                    # those are the pad's buttons, already read from the pad
+                    if not (stick and MOUSE_LEFT <= code <= MOUSE_MIDDLE):
+                        out.append((code, value))
         return out
 
 
@@ -234,12 +312,18 @@ def run(system, fps=10):
     stop = []
     signal.signal(signal.SIGTERM, lambda *a: stop.append(1))
     signal.signal(signal.SIGINT, lambda *a: stop.append(1))
-    drawn, draw_time = 0, 0.0
+    drawn, draw_time, last_frame = 0, 0.0, 0.0
     print(f"rkshell: screen {fb.w}x{fb.h}, {fb.bpp} bits, line {fb.stride} bytes; console {console.name}", file=sys.stderr)
     try:
         while app.running and not stop:
             wait = 0.005 if app.dock.moving or held else (0.03 if app.live else (1 / fps if app.animating else 0.25))
-            for code, value in inputs.read(wait):
+            # The pointer wakes the loop many times a second. Frames keep their
+            # own pace: `wait` after the last one, however often it wakes.
+            now = time.time()
+            pause = min(wait, max(0.0, last_frame + wait - now)) if app.animating else wait
+            if app.pointer_on:
+                pause = min(pause, max(0.0, app.pointer_until - now) + 0.01)
+            for code, value in inputs.read(pause):
                 typing = bool(app.current and app.current.wants_keys)
                 if code in SHIFT:
                     inputs.shift = bool(value)
@@ -259,16 +343,28 @@ def run(system, fps=10):
                             app.text_input(chr(ord(ch) & 0x1f))
                         else:
                             app.text_input(SHIFTED.get(ch, ch.upper()) if inputs.shift else ch)
+                elif code == MOUSE_LEFT:                    # a USB mouse: on nothing, a click does nothing
+                    if value == 1:
+                        app.move_pointer(0, 0)
+                        app.click()
+                elif code == MOUSE_RIGHT:
+                    if value == 1:
+                        app.press("b")
                 else:
                     action = PAD.get(code) or KEYS.get(code)
                     if value == 2:                          # the shell does its own repeating for these
                         continue
                     if action and value:
-                        app.handle(action)
+                        app.press(action)
                         if action in REPEATING:
                             held[action] = time.time() + REPEAT_DELAY
                     elif action:
                         held.pop(action, None)
+            dx, dy, wheel = inputs.take_motion()
+            if dx or dy:
+                app.move_pointer(dx, dy)
+            for _ in range(min(abs(wheel), 10)):            # a mouse wheel is up and down
+                app.handle("up" if wheel > 0 else "down")
             now = time.time()
             for action, due in list(held.items()):
                 if now >= due:
@@ -281,20 +377,33 @@ def run(system, fps=10):
                 # the console stays in graphics mode, as EmulationStation keeps it
                 # while a port runs: the app owns the screen until it quits
                 run_step(item.get("before"))
+                # "mouse": false in the dock entry: the stick is not a mouse while this app runs
+                no_mouse = item.get("mouse") is False and system.mouse_enabled()
+                if no_mouse:
+                    system.set_mouse(False)
                 try:
                     run_app(cmd, app_env(), inputs, system)
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
+                if no_mouse:
+                    system.set_mouse(True)
                 run_step(item.get("after"))
                 fb.unblank()
                 console.__init__()
                 held.clear()
+                inputs.take_motion()                        # the stick was the app's meanwhile
+                app.hide_pointer()
                 app.dirty = True
-            if (app.dirty or app.animating) and console.in_front():
+            if console.in_front():
                 t = time.time()
-                app.draw()
-                fb.show()
-                drawn, draw_time = drawn + 1, draw_time + time.time() - t
+                cursor, at = (app.cursor, tuple(app.pointer)) if app.pointer_on else (None, None)
+                if app.dirty or (app.animating and t >= last_frame + wait):
+                    app.draw()
+                    fb.show(cursor, at)
+                    last_frame = time.time()
+                    drawn, draw_time = drawn + 1, draw_time + last_frame - t
+                elif (fb.pointer.topleft if fb.pointer else None) != at:
+                    fb.move_pointer(cursor, at)
     finally:
         console.restore()
         if drawn:

@@ -5,6 +5,42 @@ from . import theme as T
 
 _rendered = {}
 
+# ------------------------------------------------------------------ pointer
+# What the pointer can press. Whatever draws something pressable says where it
+# is (spot) while it draws; App.draw empties the list before each picture, so
+# it always matches what is on the screen.
+spots = []
+
+
+def spot(rect, select=None, press=None):
+    """`rect` can be pressed with the pointer. `select` moves the selection
+    there (as the d-pad would); then `press` runs, or A's action if None."""
+    spots.append((pygame.Rect(rect), select, press))
+
+
+def spot_at(pos):
+    for s in reversed(spots):                   # what was drawn last is on top
+        if s[0].collidepoint(pos):
+            return s
+    return None
+
+
+_cursors = {}
+
+
+def cursor(size):
+    """The pointer: an arrow `size` pixels tall, its tip at the top left."""
+    img = _cursors.get(size)
+    if img is None:
+        k = 4                                   # drawn large, scaled down: smooth edges
+        big = pygame.Surface((size * k, size * k), pygame.SRCALPHA)
+        shape = [(0.04, 0.03), (0.04, 0.80), (0.24, 0.62), (0.39, 0.95), (0.53, 0.89), (0.38, 0.57), (0.66, 0.57)]
+        pts = [(x * size * k, y * size * k) for x, y in shape]
+        pygame.draw.polygon(big, T.EMBER_BRIGHT, pts)
+        pygame.draw.polygon(big, T.BG, pts, width=max(2, size * k // 14))
+        img = _cursors[size] = pygame.transform.smoothscale(big, (size, size))
+    return img
+
 
 def text(surf, font, s, pos, color=T.TEXT, right=False, center=False):
     # Drawing a string is the slow part on the handheld and most strings are

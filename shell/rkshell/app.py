@@ -6,6 +6,13 @@ Settings) or an installed app. A window covers the desktop; B closes it.
 Windows can push screens (menus, the keyboard) on a stack; B closes the top
 one first.
 
+The left stick moves a pointer (the rk-mouse service turns the stick into a
+mouse; a USB mouse works the same). It is one more way to choose: A presses
+what the pointer is on, and the d-pad works as before. Over the dock the
+icon under the pointer is the selected one. The pointer goes away
+after a few seconds of rest or at the first d-pad press. The back ends put it
+on the screen, so moving it never redraws the desktop.
+
 The loop that feeds actions in and puts the picture on the screen lives in
 the back ends, so the same App runs on the handheld, in a window and in the
 tests. `animating` tells the back end to keep drawing without input.
@@ -35,6 +42,9 @@ WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPa
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists
 SETUPS = {"stump": StumpSetupPage}
 
+POINTER_REST = 3.0          # seconds without moving before the pointer goes away
+DPAD = ("up", "down", "left", "right")
+
 
 class App:
     def __init__(self, system, surf):
@@ -49,6 +59,9 @@ class App:
         self.last_tick, self.t0 = 0, time.time()
         self.launch = None          # set to a command: the back end runs it and comes back
         self.launch_item = None     # the dock entry it came from (its "before"/"after" steps)
+        self.pointer = [surf.get_width() // 2, surf.get_height() // 2]
+        self.pointer_until = 0      # shown until then
+        self.cursor = G.cursor(max(16, surf.get_height() // 24))
         self.fill_dock()
 
     def fill_dock(self):
@@ -96,6 +109,51 @@ class App:
             self.launch, self.launch_item = item["exec"], item
         else:
             self.toast(f"{item['name']} would open here (demo)")
+
+    # ------------------------------------------------------------ pointer
+    @property
+    def pointer_on(self):
+        return time.time() < self.pointer_until
+
+    def move_pointer(self, dx, dy):
+        """The stick or a mouse moved: the pointer shows, and stays inside the screen."""
+        W, H = self.surf.get_size()
+        self.pointer[0] = max(0, min(W - 1, self.pointer[0] + dx))
+        self.pointer[1] = max(0, min(H - 1, self.pointer[1] + dy))
+        self.pointer_until = time.time() + POINTER_REST
+        if self.window is None and (self.dock.hover or self.pointer[1] >= self.dock.top((W, H))):
+            self.dirty = True       # over the dock: the icon under the pointer grows
+
+    def hide_pointer(self):
+        self.pointer_until = 0
+
+    def click(self):
+        """Press what the pointer is on. False when it is on nothing."""
+        s = G.spot_at(self.pointer) if self.pointer_on else None
+        if s is None:
+            return False
+        _, select, press = s
+        self.pointer_until = time.time() + POINTER_REST
+        if select:
+            select()
+        if press:
+            self.dirty = True
+            press()
+        else:
+            self.handle("a")
+        return True
+
+    def press(self, action):
+        """A button of the pad. With the pointer showing, A presses what it is
+        on, and on nothing it does nothing: it never opens what the d-pad had
+        chosen somewhere else. (Where nothing can be pressed at all, as in the
+        terminal, A stays A.) The d-pad takes over from the pointer."""
+        if action in DPAD:
+            self.hide_pointer()
+        if action == "a" and self.pointer_on:
+            if self.click() or len(G.spots) > (1 if self.window else 0):
+                return
+        self.handle(action)
 
     # -------------------------------------------------------------- input
     def handle(self, action):
@@ -171,9 +229,13 @@ class App:
     def draw(self):
         surf, f = self.surf, self.fonts
         W, H = surf.get_size()
+        G.spots.clear()
         self.wallpaper.draw(surf, time.time() - self.t0)
         if self.window is None:
+            self.dock.point(tuple(self.pointer) if self.pointer_on else None, (W, H))
             self.dock.step()
+            if self.dock.scrolling:             # resting at the edge is using the pointer
+                self.pointer_until = time.time() + POINTER_REST
             # the desktop: the time, the day, and where the handheld is on the network
             y = H // 8
             G.text(surf, f.clock, time.strftime("%H:%M"), (W // 2, y), T.TEXT, center=True)
@@ -203,16 +265,20 @@ class App:
             head = f.line + 20
             G.text(surf, f.big, self.window.title, (frame.x + 18, frame.y + 10), T.EMBER_BRIGHT)
             pygame.draw.line(surf, T.BORDER, (frame.x + 1, frame.y + head), (frame.right - 2, frame.y + head))
+            close = pygame.Rect(frame.right - head - 4, frame.y + 2, head, head - 2)     # for the pointer: the same as B
+            G.text(surf, f.big, "×", (close.centerx, frame.y + 10), T.MUTED, center=True)
             foot = f.small_line + 14
             area = pygame.Rect(frame.x + 2, frame.y + head + 4, frame.w - 4, frame.h - head - foot - 6)
             surf.set_clip(area)
             self.window.draw(surf, f, area)
             if self.stack:
+                G.spots.clear()                 # what is under a menu cannot be pressed
                 dim = pygame.Surface(area.size, pygame.SRCALPHA)
                 dim.fill((*T.BG, 200))
                 surf.blit(dim, area.topleft)
                 self.stack[-1].draw(surf, f, area)
             surf.set_clip(None)
+            G.spot(close, press=lambda: self.handle("b"))
             x, y = frame.x + 18, frame.bottom - foot + 4
             for button, label in self.current.hints:
                 x += G.text(surf, f.small, button, (x, y), T.EMBER_BRIGHT) + 6

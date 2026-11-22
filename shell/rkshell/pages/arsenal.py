@@ -159,6 +159,7 @@ class ArsenalPage(Page):
                 sel = i == self.sel
                 if sel:
                     G.box(surf, rr, T.ROW, 6, T.BORDER)
+                G.spot(rr.clip(area_rows), lambda i=i: setattr(self, "sel", i))
                 dot = T.OK if r["on"] else T.DIM
                 pygame.draw.circle(surf, dot, (rr.x + 14, rr.y + 12), 5)
                 G.text(surf, f.mono, r["label"], (rr.x + 28, rr.y + 4), T.EMBER_BRIGHT if sel else T.TEXT)

@@ -238,6 +238,7 @@ class ScanPage(Page):
             on = key in ("target", "preset") or N.applies(key, spec)
             if i == self.sel:
                 G.box(surf, r, T.ROW, 6, T.EMBER if on else T.BORDER)
+            G.spot(r, lambda i=i: setattr(self, "sel", i))
             ty = r.y + (r.h - f.line) // 2
             G.text(surf, f.mono, {"target": "Target", "preset": "Loadout"}.get(key, NAMES.get(key)), (r.x + 12, ty),
                    (T.MUTED if on else T.DIM))
