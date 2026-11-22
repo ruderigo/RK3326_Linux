@@ -1,0 +1,50 @@
+# Firmware for network adapters, taken from arkos4clone's system
+# (rootfs/dArkOS/usr/lib/firmware) next to the kernel modules that ask for it.
+# Debian's firmware packages come first; these fill in what Debian does not
+# carry (the AIC8800 dongles, for one) and never replace a Debian file.
+# One name per line, as in that folder; * matches as in a shell. The build
+# checks out exactly these, so a name that matches nothing costs nothing.
+
+# AIC Wi-Fi 6 dongles (aic8800_fdrv_usb)
+aic8800*
+
+# Realtek: rtw88 (8821CU, 8822BU, 8812AU, 8821AU, 8723DU), rtw89, the older
+# rtlwifi / rtl8xxxu chips, USB Ethernet (r8152) and the Bluetooth half of combo dongles
+rtw88
+rtw89
+rtlwifi
+rtl_nic
+rtl_bt
+RTL8192E
+
+# MediaTek / Ralink (mt7601u, mt76x0u, mt76x2u, rt2800usb, rt73usb, rt2500usb)
+mediatek
+mt76*.bin
+rt2*.bin
+rt3*.bin
+rt73.bin
+
+# Atheros (ath9k_htc, carl9170, ar5523)
+ath9k_htc
+htc_*.fw
+carl9170-1.fw
+ar5523.bin
+
+# older and rarer USB Wi-Fi: ZyDAS, Marvell/Libertas, Broadcom, Redpine, Atmel,
+# ST-Ericsson cw1200, Seekwave, Rockchip rk915
+zd1211
+zd1201*.fw
+libertas
+lbtf_usb.bin
+mrvl
+brcm
+rsi
+rsi_91x.fw
+atmel_at76c50*.bin
+wsm_22.bin
+sdd_sagrad_1091_1098.bin
+SWT6621S*
+rk915_*.bin
+
+# USB Ethernet that loads firmware
+kaweth

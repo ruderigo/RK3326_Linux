@@ -769,6 +769,21 @@ def wifi_audit_status(adapters, have_iw=True):
             "level": "muted", "ready": False}
 
 
+def nm_device(text, kind):
+    """The device of one kind ("wifi", "ethernet") in `nmcli -t -f
+    DEVICE,TYPE,STATE,CONNECTION dev`: the connected one when there are
+    several, else the first. None when there is none."""
+    found = None
+    for line in text.splitlines():
+        p = line.split(":")
+        if len(p) >= 4 and p[1] == kind:
+            dev = {"device": p[0], "state": p[2], "ssid": p[3] if p[2] == "connected" else "", "address": ""}
+            if dev["state"] == "connected":
+                return dev
+            found = found or dev
+    return found
+
+
 class System:
     demo = False
 
@@ -830,22 +845,26 @@ class System:
             return None
         return self.cached("battery", 10, get)
 
-    # --------------------------------------------------------------- Wi-Fi
-    def wifi(self):
-        """State of the first Wi-Fi card: None when there is no card."""
+    # ------------------------------------------------------ Wi-Fi and cable
+    def _net(self, kind):
         def get():
             ok, out = run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"])
-            dev = None
-            for line in out.splitlines() if ok else []:
-                p = line.split(":")
-                if len(p) >= 4 and p[1] == "wifi":
-                    dev = {"device": p[0], "state": p[2], "ssid": p[3] if p[2] == "connected" else "", "address": ""}
-                    break
+            dev = nm_device(out if ok else "", kind)
             if dev and dev["state"] == "connected":
                 ok, out = run(["nmcli", "-t", "-g", "IP4.ADDRESS", "dev", "show", dev["device"]])
                 dev["address"] = out.splitlines()[0].split("/")[0] if ok and out else ""
             return dev
-        return self.cached("wifi", 4, get)
+        return self.cached(kind, 4, get)
+
+    def wifi(self):
+        """State of the first Wi-Fi card: None when there is no card."""
+        return self._net("wifi")
+
+    def wired(self):
+        """State of a network cable (a USB Ethernet adapter, or a hub or dock
+        with a network socket): None when there is no such adapter. "state" is
+        NetworkManager's: connected, connecting..., unavailable (no cable)."""
+        return self._net("ethernet")
 
     def wifi_scan(self):
         """Networks in range, strongest first: dicts with ssid, signal, secure, active."""
@@ -1227,6 +1246,7 @@ class DemoSystem(System):
     def memory(self): return 96, 714
     def battery(self): return {"percent": 78, "status": "Discharging"}
     def wifi(self): return {"device": "wlan0", "state": "connected", "ssid": "Workshop", "address": "192.168.0.167"}
+    def wired(self): return None
 
     def wifi_scan(self):
         return [{"ssid": "Workshop", "signal": 82, "secure": True, "active": True},

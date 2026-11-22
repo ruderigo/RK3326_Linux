@@ -83,6 +83,46 @@ def test_status_variants():
     assert "iw" in S.wifi_audit_status([], have_iw=False)["line"]
 
 
+def test_cable():
+    """A USB Ethernet adapter, as NetworkManager lists it, and where it shows."""
+    nm = "wlan0:wifi:disconnected:\neth0:ethernet:unavailable:\neth1:ethernet:connected:Wired connection 2\nlo:loopback:unmanaged:\n"
+    assert S.nm_device(nm, "ethernet")["device"] == "eth1"          # the one with a cable in it
+    assert S.nm_device(nm, "wifi") == {"device": "wlan0", "state": "disconnected", "ssid": "", "address": ""}
+    assert S.nm_device("lo:loopback:unmanaged:\n", "ethernet") is None
+    assert S.nm_device("", "wifi") is None
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    import pygame
+    from rkshell import app as A
+    from rkshell import gfx as G
+    pygame.display.init()
+    pygame.font.init()
+    pygame.display.set_mode((1, 1))
+
+    class Cabled(S.DemoSystem):
+        def wifi(self): return None
+        def wired(self): return {"device": "eth0", "state": "connected", "ssid": "", "address": "10.0.0.42"}
+
+    drawn = []
+    real = G.text
+    G.text = lambda surf, font, s, *a, **k: (drawn.append(s), real(surf, font, s, *a, **k))[1]
+    try:
+        app = A.App(Cabled(), pygame.Surface((720, 720)))
+        app.draw()
+        assert "Ethernet" in drawn and "no Wi-Fi card" not in drawn, drawn
+        assert any("10.0.0.42" in s for s in drawn)                 # the desktop says where the handheld is
+        app.dock.sel = next(i for i, it in enumerate(app.dock.items) if it["name"] == "Network")
+        app.handle("a")
+        rows = {r[0]: r[1] for r in app.window.list.items}
+        assert rows["Ethernet"] == "Connected  ·  10.0.0.42", rows
+        assert "ssh ark@10.0.0.42" in rows["Remote access (SSH)"], rows
+        Cabled.wired = lambda self: {"device": "eth0", "state": "unavailable", "ssid": "", "address": ""}
+        app.window.enter()
+        assert dict((r[0], r[1]) for r in app.window.list.items)["Ethernet"].startswith("No cable")
+    finally:
+        G.text = real
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

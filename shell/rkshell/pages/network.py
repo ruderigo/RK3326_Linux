@@ -1,4 +1,4 @@
-"""NETWORK: Wi-Fi and remote access."""
+"""NETWORK: Wi-Fi, a network cable, and remote access."""
 import threading
 
 import pygame
@@ -95,9 +95,19 @@ class NetworkPage(Page):
             w = ("Wi-Fi", f"{wifi['ssid']}  ·  {wifi['address']}", self.join)
         else:
             w = ("Wi-Fi", "Not connected. Press A to join a network.", self.join)
+        rows = [w]
+        cable = s.wired()                   # a USB Ethernet adapter or a hub with a network socket: nothing to set up
+        if cable:
+            if cable["state"] == "connected":
+                rows.append(("Ethernet", f"Connected  ·  {cable['address']}", None))
+            elif cable["state"].startswith("connecting"):
+                rows.append(("Ethernet", "Getting an address…", None))
+            else:
+                rows.append(("Ethernet", "No cable, or nothing at the other end.", None))
         ssh = s.cached("ssh", 5, s.ssh_enabled)
-        addr = wifi["address"] if wifi and wifi.get("address") else f"{s.hostname()}.local"
-        self.list.set([w, ("Remote access (SSH)", f"On  ·  ssh ark@{addr}" if ssh else "Off", self.toggle_ssh)])
+        addr = next((d["address"] for d in (wifi, cable) if d and d.get("address")), f"{s.hostname()}.local")
+        rows.append(("Remote access (SSH)", f"On  ·  ssh ark@{addr}" if ssh else "Off", self.toggle_ssh))
+        self.list.set(rows)
 
     def tick(self):
         self.enter()

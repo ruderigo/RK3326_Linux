@@ -210,11 +210,16 @@ class App:
             G.text(surf, f.small, "  ›  " + self.window.title, (x, 6), T.TEXT)
         wifi, bat = self.system.wifi(), self.system.battery()
         bits = []
+        cable = self.system.wired()
+        cabled = bool(cable and cable["state"] == "connected")
+        if cabled:
+            bits.append(("Ethernet", T.OK))
         if wifi is None:
-            bits.append(("no Wi-Fi card", T.DIM))
+            if not cabled:
+                bits.append(("no Wi-Fi card", T.DIM))
         elif wifi["state"] == "connected":
             bits.append((G.fit(f.small, wifi["ssid"], W // 5), T.OK))
-        else:
+        elif not cabled:
             bits.append(("Wi-Fi off-line", T.DIM))
         if bat and bat["percent"] >= 0:
             charging = bat["status"] in ("Charging", "Full")
@@ -243,8 +248,11 @@ class App:
             G.text(surf, f.mono, time.strftime("%A %-d %B"), (W // 2, y), T.MUTED, center=True)
             wifi = self.system.wifi()
             where = self.system.hostname()
+            cable = self.system.wired()
             if wifi and wifi["state"] == "connected":
                 where += "  ·  " + wifi["address"]
+            elif cable and cable["state"] == "connected":
+                where += "  ·  " + cable["address"]
             G.text(surf, f.small, where, (W // 2, y + f.line + 6), T.DIM, center=True)
             self.dock.draw(surf, f)
             self.menu_bar(surf, f)

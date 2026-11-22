@@ -60,6 +60,7 @@ for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3 fdtput fdtget; do
 done
 CONS="$UP/boot/dArkOS/consoles"
 MODS="$UP/rootfs/dArkOS/usr/lib/modules"
+FIRMWARE="$UP/rootfs/dArkOS/usr/lib/firmware"     # only what build/firmware-upstream.txt names is checked out
 # dArkOS's graphics for the apps the dock opens: the Mali GPU driver and the
 # SDL2 built against it (the panel only shows what goes through these), and
 # its controller database (the right SELECT/START for this pad)
@@ -155,6 +156,20 @@ mkdir -p "$ROOTFS/usr/lib/modules"
 cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
 chown -R 0:0 "$ROOTFS/usr/lib/modules"
 ls "$ROOTFS/usr/lib/modules"
+
+# Firmware for network adapters that Debian's packages do not carry, from the
+# same place as the kernel modules that load it. Debian's files are kept
+# where both have one (cp -n).
+if [ -d "$FIRMWARE" ]; then
+    say "Firmware for USB network adapters (from upstream, beside Debian's)"
+    mkdir -p "$ROOTFS/usr/lib/firmware"
+    before=$(find "$ROOTFS/usr/lib/firmware" -type f | wc -l)
+    cp -an "$FIRMWARE"/. "$ROOTFS/usr/lib/firmware/"
+    chown -R 0:0 "$ROOTFS/usr/lib/firmware"
+    echo "  $(( $(find "$ROOTFS/usr/lib/firmware" -type f | wc -l) - before )) files added, $(du -sh "$ROOTFS/usr/lib/firmware" | cut -f1) of firmware in all"
+else
+    echo "WARNING: no upstream firmware checked out ($FIRMWARE): some USB Wi-Fi dongles will not start"
+fi
 
 say "Graphics for the apps (dArkOS's Mali driver and SDL2)"
 # Kept apart from the system's libraries: only apps the desktop launches load

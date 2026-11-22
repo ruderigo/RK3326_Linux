@@ -50,6 +50,43 @@ asks a few questions the first time you open it. Updating them, and the
 radio is client-only, as on any RK3326 device. Arsenal shows whether the
 plugged-in adapter is ready — see [`docs/arsenal.md`](docs/arsenal.md).
 
+### Wi-Fi dongles and Ethernet
+
+Plug it in and it should work: there is nothing to install. What decides
+whether an adapter works is the chip inside it, not the name on the box, and
+the same product name is sometimes sold with different chips.
+
+**USB Wi-Fi** — the 5.10 kernel has drivers, and the image has the firmware,
+for these chips:
+
+| Family | Chips |
+|---|---|
+| Realtek, Wi-Fi 4 | RTL8188EU, 8188FU, 8188GU, 8192CU, 8192EU, 8723BU, 8723DU |
+| Realtek, Wi-Fi 5 | RTL8811AU, 8812AU, 8814AU, 8811CU / 8821CU, 8812BU / 8822BU |
+| Realtek, Wi-Fi 6 | RTL8852BU |
+| MediaTek / Ralink | MT7601U, MT7610U, MT7612U, RT2870, RT3070, RT3572, RT5370, RT5572 |
+| Atheros | AR9271, AR7010, AR9170 |
+| AIC | AIC8800 (the small, cheap Wi-Fi 6 dongles) |
+| Older | ZyDAS ZD1211, Prism54, Marvell and Broadcom USB |
+
+Tested on a handheld so far: **RT3070**. The rest is what the drivers cover;
+tell us what works and what does not, and this list becomes a tested one.
+**Not supported yet** (no driver in these kernels): MediaTek MT7921AU and
+Realtek RTL8852AU / RTL8832AU, both Wi-Fi 6.
+
+**Ethernet** — a USB Ethernet adapter, or a USB hub or dock with a network
+socket, connects by itself as soon as the cable is in (DHCP); the menu bar
+shows *Ethernet* and the **Network** window shows the address. The usual chips
+are all covered: Realtek RTL8152 / RTL8153, ASIX AX88772 and AX88179,
+Microchip LAN78xx and SMSC95xx / 75xx, Davicom DM9601, and anything that
+follows the USB standard for network adapters (CDC Ethernet / NCM, which
+includes most 2.5-gigabit adapters and phones sharing their connection).
+None has been tested on a handheld yet.
+
+If an adapter does nothing, plug it in and run `lsusb` and `sudo dmesg | tail
+-20` in the Terminal: the first line names the chip, the second says whether
+a driver took it and whether a firmware file was missing.
+
 ### The desktop
 
 | Button | Does |
@@ -248,7 +285,7 @@ To build by hand, on an arm64 Linux machine with Debian trixie's tools:
 ```sh
 . build/upstream.env
 git clone --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
-git -C upstream sparse-checkout set --no-cone /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/
+git -C upstream sparse-checkout set --no-cone /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/ /rootfs/dArkOS/usr/lib/firmware/
 git -C upstream checkout "$UPSTREAM_COMMIT"
 sudo CONSOLE="r36max type1" KERNEL=5.10 build/build-image.sh upstream out
 ```
