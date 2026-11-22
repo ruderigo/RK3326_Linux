@@ -49,12 +49,36 @@ not baked in. To add it, follow the instructions at
 [kismetwireless.net](https://www.kismetwireless.net/packages/), then it
 appears on the Terminal like the rest.
 
-## Wi-Fi monitor mode
+## Wi-Fi monitor mode and a USB adapter
 
-The Wi-Fi tools need a dongle that can enter monitor mode and, for some,
-inject packets. The Blueway RT3070 dongle lists monitor mode; injection has
-not been confirmed on this hardware yet. Until that is tested, treat the
-Wi-Fi group as present but unproven on the handheld.
+The onboard radio connects to networks but cannot audit them: it has no
+monitor mode and no packet injection. That is a property of the chip's
+firmware, not of the kernel, and it is the same on every RK3326 handheld,
+Kali included on hardware with a client-only card. So Wi-Fi testing is done
+through a USB adapter whose chipset supports those modes, exactly as it is on
+a laptop whose built-in card cannot.
+
+Both kernels here already carry the common adapter drivers (ath9k_htc, mt76,
+the rt2x00 family, rtl8xxxu, and the out-of-tree Realtek set that covers
+8812au / 8814au / 8188eu), so a supported adapter works without building
+anything. The **Arsenal** window shows a readiness line above the Wi-Fi
+group:
+
+- *Onboard radio is client-only* — no adapter plugged in. Client Wi-Fi works;
+  auditing does not.
+- *<driver> is plugged in but does not report monitor mode* — the adapter was
+  seen but its driver advertises no monitor mode. Try a different adapter or
+  driver.
+- *Ready: <driver> reports monitor mode* — the adapter can enter monitor mode.
+  Monitor mode is what `iw` reports; **injection is separate and only a real
+  test confirms it**, so verify injection on your own networks before relying
+  on it.
+
+Known-good chipsets for monitor mode and injection on these kernels include
+the Atheros AR9271 (ath9k_htc), Ralink RT3070 / RT5370 (rt2800usb), MediaTek
+MT7601U / MT7612U (mt76), and the Realtek RTL8812AU. Check readiness on the
+device rather than trusting a label: the Arsenal line reads the adapter that
+is actually plugged in.
 
 ## Running them
 
