@@ -28,18 +28,19 @@ set -u
 say() { echo "rk-update: $*"; }
 die() { echo "rk-update: $*" >&2; exit 1; }
 
-RELEASE="${RK_RELEASE:-/etc/os-release.rk}"
-CONF="${RK_CONF:-/data/ark/rk-update.json}"
-BK_DIR="${RK_BK_DIR:-/data/ark/.rk-backups}"
+ROOT="${RK_ROOT:-}"                                 # a prefix for tests; empty in normal use
+RELEASE="${RK_RELEASE:-$ROOT/etc/os-release.rk}"
+CONF="${RK_CONF:-$ROOT/data/ark/rk-update.json}"
+BK_DIR="${RK_BK_DIR:-$ROOT/data/ark/.rk-backups}"
 OFFICIAL=ruderigo/RK3326_Linux
 # the soft layer: what an update replaces (relative to the repo root -> system)
 SOFT_RKSHELL="shell/rkshell"                       # -> /usr/lib/python3/dist-packages/rkshell
 SOFT_OVERLAY="usr/local usr/lib/rk usr/share/rk etc/systemd/system etc/udev/rules.d etc/sudoers.d"
-PYDIR=/usr/lib/python3/dist-packages
-CHANNEL_FILE=/usr/share/rk/channel   # a tiny stamp that proves which content is installed
+PYDIR="$ROOT/usr/lib/python3/dist-packages"
+CHANNEL_FILE="$ROOT/usr/share/rk/channel"   # a tiny stamp that proves which content is installed
 
 online() { ip route 2>/dev/null | grep -q '^default'; }
-need_root() { [ "$(id -u)" = 0 ] || die "run it with sudo (it writes system files)"; }
+need_root() { [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run it with sudo (it writes system files)"; }
 
 installed_version() { sed -n 's/^RK_VERSION="\?\([^"]*\)"\?/\1/p' "$RELEASE" 2>/dev/null | head -1; }
 
@@ -141,8 +142,8 @@ backup() {      # copy what we are about to overwrite, so rollback is possible
     echo "$PYDIR/rkshell" > "$bk/manifest"
     local d
     for d in $SOFT_OVERLAY; do
-        if [ -e "/$d" ]; then
-            mkdir -p "$bk/files/$d"; cp -a "/$d/." "$bk/files/$d/" 2>/dev/null || true
+        if [ -e "$ROOT/$d" ]; then
+            mkdir -p "$bk/files/$d"; cp -a "$ROOT/$d/." "$bk/files/$d/" 2>/dev/null || true
             echo "/$d" >> "$bk/manifest"
         fi
     done
@@ -159,22 +160,24 @@ install_soft() {        # copy the new soft layer over the system
     find "$PYDIR/rkshell" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null
     for d in $SOFT_OVERLAY; do
         [ -d "$dest/overlay/$d" ] || continue
-        mkdir -p "/$d"; cp -a "$dest/overlay/$d/." "/$d/"
+        mkdir -p "$ROOT/$d"; cp -a "$dest/overlay/$d/." "$ROOT/$d/"
     done
-    chmod 755 /usr/local/sbin/rk-* /usr/local/bin/rk-* 2>/dev/null || true
-    [ -f /etc/sudoers.d/rkshell ] && { chmod 440 /etc/sudoers.d/rkshell; visudo -c -q || return 1; }
+    chmod 755 "$ROOT"/usr/local/sbin/rk-* "$ROOT"/usr/local/bin/rk-* 2>/dev/null || true
+    [ -f "$ROOT/etc/sudoers.d/rkshell" ] && { chmod 440 "$ROOT/etc/sudoers.d/rkshell"; [ -n "$ROOT" ] || visudo -c -q || return 1; }
     python3 -m compileall -q "$PYDIR/rkshell" || return 1
 }
 
 set_version() { sed -i "s/^RK_VERSION=.*/RK_VERSION=\"$1\"/" "$RELEASE"; }
+
+is_version_ref() { case "${1#v}" in [0-9]*.[0-9]*.[0-9]*) return 0 ;; *) return 1 ;; esac; }
 
 restore() {     # put a backup back (rollback, or a failed update)
     local bk="$1" line
     [ -d "$bk/files" ] || return 1
     while read -r line; do
         case "$line" in
-            "$PYDIR/rkshell") rm -rf "$PYDIR/rkshell"; cp -a "$bk/files/rkshell" "$PYDIR/rkshell" ;;
-            /*) rm -rf "$line"; mkdir -p "$(dirname "$line")"; cp -a "$bk/files${line}" "$line" ;;
+            */dist-packages/rkshell) rm -rf "$PYDIR/rkshell"; cp -a "$bk/files/rkshell" "$PYDIR/rkshell" ;;
+            /*) rm -rf "$ROOT$line"; mkdir -p "$(dirname "$ROOT$line")"; cp -a "$bk/files${line}" "$ROOT$line" ;;
         esac
     done < "$bk/manifest"
     [ -f "$bk/files/os-release.rk" ] && cp -a "$bk/files/os-release.rk" "$RELEASE"
@@ -212,7 +215,7 @@ apply() {
     if ! install_soft "$dest"; then
         say "install failed; rolling back"; restore "$bk"; restart_desktop || true; die "rolled back"
     fi
-    case "${to#v}" in [0-9]*.[0-9]*.[0-9]*) set_version "${to#v}" ;; esac
+    is_version_ref "$to" && set_version "${to#v}"
     say "running migrations..."
     /usr/local/sbin/rk-migrate run || say "a migration reported a problem (continuing)"
     say "restarting the desktop..."
@@ -249,6 +252,8 @@ status() {
     echo "channel   : $(installed_channel)"
     echo "schema    : $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema recorded *: //p') of $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema available *: //p')"
 }
+
+[ -n "${RK_UPDATE_SOURCE:-}" ] && return 0
 
 case "${1:-status}" in
     status)   status ;;
