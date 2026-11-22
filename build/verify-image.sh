@@ -141,6 +141,12 @@ ok "fstab and an empty machine-id"
 # firmware of the Wi-Fi dongle the project uses (Ralink RT3070, driver rt2800usb)
 has /usr/lib/firmware/rt2870.bin && ok "firmware for the RT3070 dongle (rt2870.bin)" ||
     echo "  WARNING: /usr/lib/firmware/rt2870.bin is missing: the RT3070 dongle will not start"
+# firmware for the other common dongles: Debian's packages and build/firmware-upstream.txt
+for fw in rtw88/rtw8821c_fw.bin rtw88/rtw8822b_fw.bin mt7601u.bin ath9k_htc/htc_9271-1.4.0.fw \
+          aic8800DC/fmacfw_patch_8800dc_u02.bin rtl_nic/rtl8153a-4.fw; do
+    has /usr/lib/firmware/$fw && ok "firmware $fw" ||
+        echo "  WARNING: /usr/lib/firmware/$fw is missing: dongles that need it will not start"
+done
 DEP=$(filecat /usr/lib/modules/$KVER/modules.dep)
 for m in rt2800usb cp210x; do
     echo "$DEP" | grep -q "/$m\.ko" && ok "kernel $KVER has the $m module" ||
