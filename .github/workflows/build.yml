@@ -113,13 +113,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      # only the image: the desktop's screenshots are folders, and a release takes files
       - uses: actions/download-artifact@v7
         with:
+          pattern: rk3326-linux-*
           path: out
           merge-multiple: true
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ls -la out
+          # a run that failed half-way leaves a draft behind; start clean (the tag stays)
+          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
           gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" \
             --title "RK3326 Linux ${GITHUB_REF_NAME#v}" --generate-notes
