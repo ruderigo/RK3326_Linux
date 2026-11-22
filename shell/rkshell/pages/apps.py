@@ -134,6 +134,7 @@ class AppsPage(Page):
             sel = i == self.sel
             if sel:
                 G.box(surf, r, T.ROW, 6, T.EMBER)
+            G.spot(r, lambda i=i: setattr(self, "sel", i))
             text, colour, _ = self.state(a)
             G.text(surf, f.big, a["name"], (r.x + 14, r.y + 5), T.EMBER_BRIGHT if sel else T.TEXT)
             G.text(surf, f.small, G.fit(f.small, text, r.w - 28), (r.x + 14, r.y + 9 + f.line), colour)

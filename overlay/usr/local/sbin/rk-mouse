@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """rk-mouse: drive a mouse pointer with the left stick.
 
-There is no touchscreen and no trackpad, so GUI tools have no pointer. This
+There is no touchscreen and no trackpad, so nothing has a pointer. This
 reads the gamepad's left analog stick and presents a virtual mouse to the
-system (through uinput), so anything that reads a mouse — an X program, an SDL
-tool — sees a real pointer. The desktop itself navigates with the d-pad and
-never touches the left stick, so this does not disturb it.
+system (through uinput), so anything that reads a mouse sees a real one: the
+desktop, which draws its own pointer from it (rkshell/backends/device.py), an
+X program, an SDL tool. The desktop uses only the movement; there A presses,
+and the buttons below are for apps.
 
   * Left stick  -> pointer motion (dead zone in the middle, speeds up as you
                    push further, capped).

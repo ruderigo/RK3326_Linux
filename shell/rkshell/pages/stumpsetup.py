@@ -219,6 +219,7 @@ class StumpSetupPage(Page):
             r = pygame.Rect(area.x + pad, y, area.w - 2 * pad, row_h - 3)
             sel = i == self.sel
             ty = r.y + (r.h - f.line) // 2
+            G.spot(r, lambda i=i: setattr(self, "sel", i))
             if key == "go":
                 G.box(surf, r, T.ROW if sel else T.PANEL, 8, T.EMBER if sel else T.BORDER)
                 G.text(surf, f.mono, self.value(key), (r.centerx, ty), T.EMBER_BRIGHT if sel else T.TEXT, center=True)

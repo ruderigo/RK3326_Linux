@@ -270,3 +270,4 @@ class TerminalPage(Page):
                     G.box(surf, c, T.EMBER if on else T.ROW, 5, T.BORDER)
                     G.text(surf, f.mono, k.upper() if self.shift else k, (c.centerx, c.centery - f.line // 2),
                            T.BG if on else T.TEXT, center=True)
+                    G.spot(c, lambda ri=ri, ci=ci: (setattr(self, "row", ri), setattr(self, "col", ci)))

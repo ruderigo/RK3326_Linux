@@ -5,6 +5,9 @@ A screen implements:
     text_input(s)    optional: text typed on a real keyboard
     draw(surf, f, area)
     hints            [(button, label)] for the bottom bar
+
+Rows and keys say where they are as they draw (gfx.spot), which is all the
+pointer needs to press them.
 """
 import pygame
 
@@ -73,6 +76,7 @@ class ListView:
             if i == self.sel:
                 G.box(surf, r, T.ROW, 6, T.BORDER)
             draw_row(surf, f, r, it, i == self.sel)
+            G.spot(r, lambda i=i: setattr(self, "sel", i))
             y += row_h
         if top > 0:
             G.text(surf, f.small, "▲", (area.right - 4, area.y - f.small_line + 2), T.DIM, right=True)
@@ -118,6 +122,7 @@ class Menu(Screen):
                 G.box(surf, row, T.ROW, 5, T.BORDER)
             G.text(surf, f.mono, G.fit(f.mono, label, w - 44), (row.x + 10, row.y + 2),
                    T.EMBER_BRIGHT if i == self.sel else T.TEXT)
+            G.spot(row, lambda i=i: setattr(self, "sel", i))
             y += f.line + 8
 
 
@@ -202,6 +207,7 @@ class Keyboard(Screen):
                 G.box(surf, c, T.EMBER if on else T.ROW, 6, T.BORDER)
                 G.text(surf, f.big, ch.upper() if self.shift else ch, (c.centerx, c.centery - f.line // 2 - 2),
                        T.BG if on else T.TEXT, center=True)
+                G.spot(c, lambda ri=ri, ci=ci: (setattr(self, "row", ri), setattr(self, "col", ci)))
 
 
 class TextView(Screen):

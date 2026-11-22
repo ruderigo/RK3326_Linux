@@ -3,7 +3,8 @@
 Arrows move, Z or Enter is A, X or Escape is B, S is X, A is Y, Q/W are L1/R1,
 1/2 are L2/R2, Space is START, Tab is SELECT. In a screen that takes typing
 (the on-screen keyboard, the terminal) the keyboard types, and Alt with one
-of those keys is the gamepad button.
+of those keys is the gamepad button. The computer's mouse is the pointer: a
+click presses what it is on, the right button is B.
 """
 import pygame
 
@@ -38,7 +39,14 @@ def run(system, size):
                 elif e.key in special:
                     app.text_input(special[e.key])
             elif e.type == pygame.KEYDOWN and e.key in KEYS:
-                app.handle(KEYS[e.key])
+                app.press(KEYS[e.key])
+            elif e.type == pygame.MOUSEMOTION:
+                app.move_pointer(e.pos[0] - app.pointer[0], e.pos[1] - app.pointer[1])
+            elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                app.move_pointer(e.pos[0] - app.pointer[0], e.pos[1] - app.pointer[1])
+                app.click()
+            elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
+                app.press("b")
         app.tick()
         if app.launch:
             app.toast("Starting an app needs the handheld")

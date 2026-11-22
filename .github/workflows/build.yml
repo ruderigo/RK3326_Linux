@@ -38,6 +38,7 @@ jobs:
           python3 tests/test_device.py
           python3 tests/test_sound.py
           python3 tests/test_mouse.py
+          python3 tests/test_pointer.py
           python3 tests/test_wifi.py
           python3 tests/test_update.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens

@@ -266,6 +266,7 @@ class Dock:
         x = x0
         for i, (it, s) in enumerate(zip(self.items, sizes)):
             surf.blit(icon(it.get("icon", ""), it["name"], s, dim=not it.get("ready", True)), (x, floor - s))
+            G.spot((x, floor - s, s, s), lambda i=i: setattr(self, "sel", i))
             if i == self.sel:
                 label = (f"{it['name']} (not installed)" if not it.get("ready", True)
                          else f"{it['name']} (set up)" if it.get("needs_setup") else it["name"])
