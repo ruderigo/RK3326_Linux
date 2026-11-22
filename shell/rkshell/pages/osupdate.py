@@ -104,6 +104,7 @@ class OsUpdatePage(Page):
                 ("Newest", (i.get("newest") or "unknown") + ("  (up to date)" if same else ""),
                  T.OK if same else T.EMBER_BRIGHT if i.get("newest") not in ("", "unknown") else T.MUTED),
                 ("Updates from", i.get("source") or "official", T.MUTED),
+                ("Channel", i.get("channel") or "—", T.MUTED),
                 ("State schema", i.get("schema") or "—", T.MUTED)]
         for label, value, colour in rows:
             G.text(surf, f.mono, label, (x, y), T.MUTED)

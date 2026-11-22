@@ -36,6 +36,7 @@ OFFICIAL=ruderigo/RK3326_Linux
 SOFT_RKSHELL="shell/rkshell"                       # -> /usr/lib/python3/dist-packages/rkshell
 SOFT_OVERLAY="usr/local usr/lib/rk usr/share/rk etc/systemd/system etc/udev/rules.d etc/sudoers.d"
 PYDIR=/usr/lib/python3/dist-packages
+CHANNEL_FILE=/usr/share/rk/channel   # a tiny stamp that proves which content is installed
 
 online() { ip route 2>/dev/null | grep -q '^default'; }
 need_root() { [ "$(id -u)" = 0 ] || die "run it with sudo (it writes system files)"; }
@@ -63,14 +64,31 @@ PY
     chown ark:ark "$CONF" 2>/dev/null || true
 }
 
-repo_url() {    # the git URL for the current source (official or fork)
-    local src repo
-    src=$(conf_get source official)
-    case "$src" in
-        fork) repo=$(conf_get repo "$OFFICIAL") ;;
-        *)    repo=$OFFICIAL ;;
+repo_slug() {   # owner/repo of the current source (official or fork)
+    case "$(conf_get source official)" in
+        fork) conf_get repo "$OFFICIAL" ;;
+        *)    echo "$OFFICIAL" ;;
     esac
-    echo "https://github.com/$repo"
+}
+
+repo_url() { echo "https://github.com/$(repo_slug)"; }
+
+installed_channel() { cat "$CHANNEL_FILE" 2>/dev/null; }
+
+remote_channel() {   # the marker file fetched straight from the source, one small file
+    local ref="${1:-main}"
+    curl -fsSL "https://raw.githubusercontent.com/$(repo_slug)/$ref/overlay/usr/share/rk/channel" 2>/dev/null
+}
+
+ping() {             # confirm the pipe without changing anything: fetch one small file
+    online || die "no network"
+    local ref="${1:-main}" got
+    say "fetching the channel marker from $(repo_slug) ($ref)..."
+    got=$(remote_channel "$ref") || true
+    [ -n "$got" ] || die "could not fetch the marker (the pipe is not open)"
+    echo "pipe    : ok"
+    echo "remote  : $got"
+    echo "here    : $(installed_channel)"
 }
 
 newest_tag() {  # highest vX.Y.Z tag on the source repo, or empty
@@ -194,7 +212,7 @@ apply() {
     if ! install_soft "$dest"; then
         say "install failed; rolling back"; restore "$bk"; restart_desktop || true; die "rolled back"
     fi
-    [ -n "$to" ] && set_version "${to#v}"
+    case "${to#v}" in [0-9]*.[0-9]*.[0-9]*) set_version "${to#v}" ;; esac
     say "running migrations..."
     /usr/local/sbin/rk-migrate run || say "a migration reported a problem (continuing)"
     say "restarting the desktop..."
@@ -228,12 +246,14 @@ status() {
     else
         echo "newest    : (offline)"
     fi
+    echo "channel   : $(installed_channel)"
     echo "schema    : $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema recorded *: //p') of $(/usr/local/sbin/rk-migrate status 2>/dev/null | sed -n 's/schema available *: //p')"
 }
 
 case "${1:-status}" in
     status)   status ;;
     check)    online && newest_tag || die "offline" ;;
+    ping)     shift; ping "$@" ;;
     apply)    shift; apply "$@" ;;
     rollback) rollback ;;
     source)
@@ -245,5 +265,5 @@ case "${1:-status}" in
             "")       echo "source: $(conf_get source official)" ;;
             *)        die "usage: rk-update source official|fork OWNER/REPO|url URL [SHA256]" ;;
         esac ;;
-    *) echo "usage: rk-update status|check|apply [--to TAG]|rollback|source ..." >&2; exit 2 ;;
+    *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|rollback|source ..." >&2; exit 2 ;;
 esac

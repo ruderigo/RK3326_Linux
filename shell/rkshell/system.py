@@ -989,7 +989,7 @@ class System:
     def os_status(self):
         """{"installed","newest","source","schema"} from rk-update status."""
         ok, out = run([RK_UPDATE, "status"])
-        info = {"installed": "", "newest": "", "source": "", "schema": ""}
+        info = {"installed": "", "newest": "", "source": "", "channel": "", "schema": ""}
         for line in out.splitlines():
             k, _, v = line.partition(":")
             k = k.strip()
@@ -1234,7 +1234,7 @@ class DemoSystem(System):
         return self.set_sound_output(self._snd["mode"])
 
     def os_status(self):
-        return {"installed": "0.9.0", "newest": "1.0.0", "source": "official (github.com/ruderigo/RK3326_Linux)", "schema": "1 of 1"}
+        return {"installed": "0.9.0", "newest": "1.0.0", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
 
     def os_update(self, password):
         job = OsUpdate.__new__(OsUpdate)
