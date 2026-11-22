@@ -11,10 +11,12 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first interface with the Stump, FireFly and the Provisioner as core
 parts, for teaching and authorised testing on your own equipment.
 
-> **Status: starts on an R36MAX (type 1 board), tested 2026-11-20.**
+> **Status: runs on an R36MAX (type 1 board), tested through 2026-11-21.**
 > Kernel 5.10, the screen, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH,
-> the data partition, power-off and restart, the speaker and charging all
-> worked on that handheld. No other handheld has been tried. The build also
+> the data partition, power-off and restart, and charging work on that
+> handheld; so do the FireFly, Stump and Ember apps, the volume keys, the
+> speaker and 3.5 mm jack switching, a USB microphone, and the Wi-Fi
+> adapter-readiness check. No other handheld has been tried. The build also
 > checks what can be checked without hardware, including a rehearsal of the
 > first start's partition step.
 
@@ -24,7 +26,7 @@ parts, for teaching and authorised testing on your own equipment.
   is on the card as a fallback.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
-  Arsenal, Survey, Network, Devices, Apps and Settings. A USB keyboard works too.
+  Arsenal, Survey, Network, Devices, Sound, Apps and Settings. A USB keyboard works too.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
 - **Scan**: nmap as a loadout. Pick a target, equip the scan (mission,
   ports, technique, versions, OS guess, script packs, speed), see what it
@@ -38,11 +40,15 @@ parts, for teaching and authorised testing on your own equipment.
   Network window, and answers **SSH**.
 - Makes its own SSH host keys and a data partition at the first start.
 
-On the dock as well: **FireFly**, **Stump** and **Ember**, shown as *(not
-installed)* until you fetch them with `rk-apps install all` over Wi-Fi — see
+On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
+built into the image. FireFly and Ember are ready on a fresh card; the Stump
+asks a few questions the first time you open it. Updating them, and the
+**Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
 
-Not baked in yet: tools that need Wi-Fi monitor mode.
+**Wi-Fi auditing** (monitor mode, injection) needs a USB adapter: the onboard
+radio is client-only, as on any RK3326 device. Arsenal shows whether the
+plugged-in adapter is ready — see [`docs/arsenal.md`](docs/arsenal.md).
 
 ### The desktop
 
@@ -53,7 +59,15 @@ Not baked in yet: tools that need Wi-Fi monitor mode.
 | B | close the window; go back |
 | X | more actions (in Files) |
 | START | confirm what you typed on the on-screen keyboard |
+| SELECT+START | quit an app, back to the dock |
 | Volume keys | volume |
+| Left stick | move the mouse pointer (when on) |
+
+The **left stick drives a mouse pointer** for GUI tools (the desktop itself is
+d-pad driven, so the stick is free for this). Turn it on or off in **Settings
+→ Left-stick mouse**; the triggers click, the shoulders are the wheel. It is a
+real virtual mouse (`rk-mouse`), so any X or SDL program sees a pointer. Speed,
+dead zone and the button map are in `/data/ark/rk-mouse.json`.
 
 In the **Terminal**, the D-pad is the arrow keys, A is Enter, Y is Ctrl+C,
 START is Tab, L1/R1 scroll back and X opens the keyboard (then: A types,
@@ -111,8 +125,12 @@ monitor-mode note, and how to install Metasploit by hand if the automatic
 fetch has no build for this CPU. Use these on networks and machines that are
 yours, or that you have been asked to test.
 
-Apps add themselves to the dock with one small file: see
-[`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).
+**Building apps for the dock.** An app is any program plus one small JSON
+file. The full contract — the dock entry, how an app gets this screen and the
+controls, how sound is routed, how two apps take turns, and how updates are
+delivered — is in **[`docs/building-apps.md`](docs/building-apps.md)**, for
+Team r36max and anyone making apps for this or another build. The short field
+reference is [`overlay/usr/share/rk/apps/README`](overlay/usr/share/rk/apps/README).
 
 A text login is always one key press away on a USB keyboard:
 **Ctrl+Alt+F2** (and **Ctrl+Alt+F1** to come back). If the desktop cannot

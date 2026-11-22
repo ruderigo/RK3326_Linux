@@ -1,5 +1,8 @@
 # The dock apps: FireFly, Stump, Ember
 
+> Making an app of your own? The builder's contract is in
+> [`building-apps.md`](building-apps.md). This page is about using the three.
+
 These three are your own programs ported onto the desktop. They are not baked
 into the image (each is large and wants its own setup), so they show on the
 dock as **(not installed)** until you fetch them. Each is a full-screen app:
