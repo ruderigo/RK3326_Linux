@@ -1,0 +1,71 @@
+#!/bin/bash
+# rk-migrate: bring this card's state up to the layout the installed system
+# expects, one numbered step at a time.
+#
+# The point is that adopters never do a manual migration and never lose
+# anything to a reflash. Each step under /usr/lib/rk/migrations is idempotent
+# and safe to re-run; the schema number reached is recorded on /data (so it
+# survives a reflash, because it describes /data's own layout). A step only
+# runs when its number is above the recorded one.
+#
+#   rk-migrate run       apply every pending step, record progress as it goes
+#   rk-migrate status    recorded schema, highest available, and what is pending
+#   rk-migrate to N      apply up to step N only
+#
+# Runs as root (steps move files and change owners). It is run at every boot
+# (rk-migrate.service, where it no-ops once the card is current) and by
+# rk-update after it swaps in new files.
+set -u
+
+MIG_DIR="${RK_MIG_DIR:-/usr/lib/rk/migrations}"
+SCHEMA="${RK_SCHEMA:-/data/ark/.rk-schema}"
+log() { echo "rk-migrate: $*"; }
+
+current() { local v; v=$(cat "$SCHEMA" 2>/dev/null); echo "${v:-0}"; }
+
+steps() { ls "$MIG_DIR"/[0-9]*.sh 2>/dev/null | sort; }
+
+number_of() { basename "$1" | sed 's/^0*\([0-9][0-9]*\).*/\1/'; }
+
+available() { local n=0 s; for s in $(steps); do n=$(number_of "$s"); done; echo "$n"; }
+
+record() {
+    mkdir -p "$(dirname "$SCHEMA")"
+    echo "$1" > "$SCHEMA"
+    chown ark:ark "$SCHEMA" 2>/dev/null || true
+    chmod 644 "$SCHEMA" 2>/dev/null || true
+}
+
+run() {
+    local upto="${1:-999999}" cur s n ran=0
+    cur=$(current)
+    for s in $(steps); do
+        n=$(number_of "$s")
+        [ "$n" -gt "$cur" ] || continue
+        [ "$n" -le "$upto" ] || break
+        log "step $n: $(basename "$s")"
+        if bash "$s"; then
+            record "$n"
+            cur=$n
+            ran=$((ran + 1))
+        else
+            log "step $n failed; stopping at schema $cur"
+            return 1
+        fi
+    done
+    [ "$ran" -gt 0 ] && log "now at schema $cur" || log "already current (schema $cur)"
+    return 0
+}
+
+case "${1:-run}" in
+    run)    run ;;
+    to)     run "${2:?usage: rk-migrate to N}" ;;
+    status)
+        echo "schema recorded : $(current)"
+        echo "schema available: $(available)"
+        cur=$(current); pending=
+        for s in $(steps); do n=$(number_of "$s"); [ "$n" -gt "$cur" ] && pending="$pending $n"; done
+        echo "pending         :${pending:- none}"
+        ;;
+    *) echo "usage: rk-migrate run|status|to N" >&2; exit 2 ;;
+esac

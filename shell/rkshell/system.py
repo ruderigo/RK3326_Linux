@@ -401,6 +401,7 @@ class StumpSetup:
 
 
 RK_APPS = "/usr/local/sbin/rk-apps"
+RK_UPDATE = "/usr/local/sbin/rk-update"
 
 
 class AppVersions:
@@ -457,6 +458,43 @@ class AppUpdate:
                     del self.lines[:-400]
             self.ok = p.wait() == 0
             if not self.ok and any("didn't take that password" in ln or "incorrect password" in ln for ln in self.lines[-8:]):
+                self.reason = "password"
+        except OSError as e:
+            self.lines.append(str(e))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+            self.done = True
+
+
+class OsUpdate:
+    """Update the OS itself, or roll it back: `lines`, then `done`/`ok`, and
+    `reason` "password" if sudo refused. rk-update does the safe work (fetch,
+    check, back up, swap, migrate, restart, auto-rollback); this just runs it
+    as root through sudo's askpass helper and streams what it says."""
+
+    def __init__(self, password, action="apply"):
+        self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        threading.Thread(target=self._run, args=(password, action), daemon=True).start()
+
+    def _run(self, password, action):
+        d = tempfile.mkdtemp(prefix="rk-os-")
+        try:
+            helper, secret = os.path.join(d, "askpass"), os.path.join(d, "pw")
+            for path, text, mode in ((helper, ASKPASS, 0o700), (secret, password + "\n", 0o600)):
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+                    f.write(text)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
+            env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
+            p = subprocess.Popen(["sudo", "-A", RK_UPDATE, action], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
+                                 errors="replace", bufsize=1, env=env)
+            for raw in p.stdout:
+                line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
+                if line:
+                    self.lines.append(line)
+                    del self.lines[:-400]
+            self.ok = p.wait() == 0
+            if not self.ok and any("try again" in ln or "incorrect password" in ln or "Sorry" in ln for ln in self.lines[-8:]):
                 self.reason = "password"
         except OSError as e:
             self.lines.append(str(e))
@@ -948,6 +986,23 @@ class System:
     def recorder(self):
         return Recorder()
 
+    def os_status(self):
+        """{"installed","newest","source","schema"} from rk-update status."""
+        ok, out = run([RK_UPDATE, "status"])
+        info = {"installed": "", "newest": "", "source": "", "schema": ""}
+        for line in out.splitlines():
+            k, _, v = line.partition(":")
+            k = k.strip()
+            if k in info:
+                info[k] = v.strip()
+        return info
+
+    def os_update(self, password):
+        return OsUpdate(password, "apply")
+
+    def os_rollback(self, password):
+        return OsUpdate(password, "rollback")
+
     def volume(self):
         """Output volume, 0 to 100, or None when there is no mixer control."""
         out = self._sound()["out"]
@@ -1177,6 +1232,22 @@ class DemoSystem(System):
     def set_jack_reversed(self, on):
         self._snd = dict(self._snd, jack_reversed=on, jack=not self._snd["jack"])
         return self.set_sound_output(self._snd["mode"])
+
+    def os_status(self):
+        return {"installed": "0.9.0", "newest": "1.0.0", "source": "official (github.com/ruderigo/RK3326_Linux)", "schema": "1 of 1"}
+
+    def os_update(self, password):
+        job = OsUpdate.__new__(OsUpdate)
+        job.lines = ["rk-update: fetching v1.0.0 from github.com/ruderigo/RK3326_Linux",
+                     "rk-update: checking the new desktop...", "rk-update: backing up the current system...",
+                     "rk-update: installing...", "rk-update: running migrations...",
+                     "rk-migrate: already current (schema 1)", "rk-update: restarting the desktop...",
+                     "rk-update: updated to 1.0.0. Backup kept at /data/ark/.rk-backups/…"]
+        job.done, job.ok, job.reason = True, True, ""
+        return job
+
+    def os_rollback(self, password):
+        return self.os_update(password)
 
     def recorder(self):
         rec = Recorder()

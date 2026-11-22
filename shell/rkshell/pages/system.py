@@ -2,6 +2,7 @@
 import pygame
 
 from .. import gfx as G
+from .osupdate import OsUpdatePage
 from .. import theme as T
 from ..widgets import ListView, TextView
 from .base import Page
@@ -25,7 +26,8 @@ class SystemPage(Page):
             rows.append({"name": s.mic_name(), "get": s.mic, "set": s.set_mic})
         if s.brightness() is not None:
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
-        rows += [{"name": "About this handheld", "do": self.about},
+        rows += [{"name": "Update this handheld", "do": lambda: self.app.push(OsUpdatePage(self.app))},
+                 {"name": "About this handheld", "do": self.about},
                  {"name": "Restart", "do": lambda: self.app.confirm("Restart?", "The handheld starts again.", "Restart", self.restart)},
                  {"name": "Power off", "do": lambda: self.app.confirm("Power off?", "Press the power button to start it again.",
                                                                      "Power off", self.power_off)}]
