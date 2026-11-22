@@ -1315,7 +1315,7 @@ class DemoSystem(System):
         src = getattr(self, "_src", "stable")
         job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.9.11", "source": src,
                                      "newest": "0.9.12" if src == "sandbox" else "0.9.11"},
-                                    {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.3-b.87"},
+                                    {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.4-b.87", "source": "stable"},
                                     {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"}]
         return job
 

@@ -6,7 +6,7 @@
 #   rk-apps versions                   installed and newest version of each
 #   rk-apps install ember|firefly|stump|all     (from each one's latest release)
 #   rk-apps update ember|firefly|stump|all
-#   rk-apps source firefly stable|sandbox       where FireFly's updates come from
+#   rk-apps source firefly|stump stable|sandbox  where FireFly/Stump updates come from
 #
 # An update takes FireFly and the Stump from the main branch of their
 # repositories (their GitHub releases lag behind), and Ember from its latest
@@ -65,30 +65,46 @@ install_firefly() {
 }
 
 clone_stump() {
-    say "Cloning Stump (its installer is not run automatically)..."
+    say "Fetching Stump ($STUMP_SOURCE) ..."
+    local url="https://github.com/ruderigo/$STUMP_REPO"
     if [ -d "$H/R36MAX-Stump/.git" ]; then
-        ( cd "$H/R36MAX-Stump" && git pull --ff-only ) && say "Stump repo updated."
-    elif git clone --depth 1 https://github.com/ruderigo/R36MAX-Stump "$H/R36MAX-Stump"; then
-        say "Stump cloned to $H/R36MAX-Stump."
+        ( cd "$H/R36MAX-Stump" \
+          && git remote set-url origin "$url" \
+          && git fetch --depth 1 origin main \
+          && git reset --hard origin/main ) && say "Stump updated from $STUMP_SOURCE." || { say "could not update Stump."; return 1; }
+    elif git clone --depth 1 "$url" "$H/R36MAX-Stump"; then
+        say "Stump cloned from $STUMP_SOURCE."
     else
-        say "could not clone Stump."; return 1
+        say "could not fetch Stump."; return 1
     fi
-    say "To finish Stump, read docs/apps.md: it stands up a background service"
-    say "and a captive DNS, so run handheld/install.sh yourself when ready."
 }
 
 # ------------------------------------------------------------ versions
 RAW=https://raw.githubusercontent.com/ruderigo
-# FireFly has two repositories: the published one, and the sandbox where new
-# versions land first. "rk-apps source firefly sandbox" (or the Apps window)
-# switches; the choice is kept in ~/.config/rk-apps.
+# FireFly and Stump each have two repositories: the published one, and the
+# sandbox where new versions land first. "rk-apps source firefly|stump sandbox"
+# (or Y in the Apps window) switches; the choice is kept in ~/.config/rk-apps.
 CONF="$H/.config/rk-apps"
 FIREFLY_SOURCE=stable
+STUMP_SOURCE=stable
 [ -r "$CONF" ] && . "$CONF"
 case "$FIREFLY_SOURCE" in
     sandbox) FIREFLY_REPO=SandBox_FireFly_RK3326 ;;
     *) FIREFLY_SOURCE=stable; FIREFLY_REPO=FireFly_RK3326_R36MAX_R36S ;;
 esac
+case "$STUMP_SOURCE" in
+    sandbox) STUMP_REPO=SandBox_RK3326_Stump ;;
+    *) STUMP_SOURCE=stable; STUMP_REPO=R36MAX-Stump ;;
+esac
+
+set_conf() {        # set KEY=VALUE in CONF, keeping the other keys
+    mkdir -p "$(dirname "$CONF")"
+    if [ -f "$CONF" ] && grep -q "^$1=" "$CONF"; then
+        sed -i "s#^$1=.*#$1=$2#" "$CONF"
+    else
+        echo "$1=$2" >> "$CONF"
+    fi
+}
 py_version() { sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' | head -1; }
 ember_latest() {    # the tag the "latest release" link leads to, without its v
     curl -fsSLI -m 10 -o /dev/null -w '%{url_effective}' https://github.com/ruderigo/Ember/releases/latest 2>/dev/null |
@@ -101,9 +117,9 @@ versions() {        # one line each: id|name|installed|newest|source   ("-" not 
     [ -x "$H/firefly/deploy/FireFly.sh" ] || i=-
     echo "firefly|FireFly|${i:-?}|${a:-?}|$FIREFLY_SOURCE"
     i=$(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null)
-    a=$(curl -fsSL -m 10 "$RAW/R36MAX-Stump/main/handheld/VERSION" 2>/dev/null | head -1)
+    a=$(curl -fsSL -m 10 "$RAW/$STUMP_REPO/main/handheld/VERSION" 2>/dev/null | head -1)
     [ -f "$H/Stump/stump_pc.py" ] && [ -x "$H/stump_r36max/stump_r36max_engine" ] || i=-
-    echo "stump|Stump|${i:-?}|${a:-?}"
+    echo "stump|Stump|${i:-?}|${a:-?}|$STUMP_SOURCE"
     i=$(head -1 "$H/ports/ember/.rk-version" 2>/dev/null)
     [ -x "$H/ports/Ember.sh" ] || i=-
     echo "ember|Ember|${i:-?}|$(a=$(ember_latest); echo "${a:-?}")"
@@ -143,7 +159,7 @@ update_stump() {
         bash "$inst"; rc=$?
     fi
     [ "$rc" -eq 0 ] || { say "the Stump's installer stopped (its message is above)."; return 1; }
-    say "Stump is now $(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null)."
+    say "Stump is now $(head -1 "$H/R36MAX-Stump/handheld/VERSION" 2>/dev/null) ($STUMP_SOURCE)."
 }
 
 status() {
@@ -169,11 +185,12 @@ case "$cmd" in
         exit "$rc" ;;
     versions) versions ;;
     source)
-        [ "$what" = firefly ] || { echo "usage: rk-apps source firefly stable|sandbox" >&2; exit 2; }
+        case "$what" in firefly) key=FIREFLY_SOURCE; cur=$FIREFLY_SOURCE ;; stump) key=STUMP_SOURCE; cur=$STUMP_SOURCE ;;
+            *) echo "usage: rk-apps source firefly|stump stable|sandbox" >&2; exit 2 ;; esac
         case "${3:-}" in
-            stable|sandbox) mkdir -p "$(dirname "$CONF")" && echo "FIREFLY_SOURCE=$3" > "$CONF" && say "FireFly now comes from: $3" ;;
-            "") echo "$FIREFLY_SOURCE" ;;
-            *) echo "usage: rk-apps source firefly stable|sandbox" >&2; exit 2 ;;
+            stable|sandbox) set_conf "$key" "$3" && say "$what now comes from: $3" ;;
+            "") echo "$cur" ;;
+            *) echo "usage: rk-apps source firefly|stump stable|sandbox" >&2; exit 2 ;;
         esac ;;
     update)
         online || { say "not online. Join Wi-Fi first."; exit 1; }
