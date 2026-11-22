@@ -1,24 +1,37 @@
 # RK3326 Linux
 
 A small Linux system for RK3326 handhelds (R36MAX first, R36S next), built
-as one SD card image: flash it, put it in the handheld, switch on.
+as one SD card image: flash it, put it in the handheld, switch on. The
+current release is **1.0.0**; what changed is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ![The desktop: a dusk wallpaper with fireflies, the time, and a dock of icons](docs/desktop.png)
 
 It is our own system, not a desktop distribution squeezed onto a 4-inch
 screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
-[arkos4clone](https://github.com/lcdyk0517/arkos4clone), meant to grow a
-gamepad-first interface with the Stump, FireFly and the Provisioner as core
-parts, for teaching and authorised testing on your own equipment.
+[arkos4clone](https://github.com/lcdyk0517/arkos4clone), with a
+gamepad-first desktop and FireFly, the Stump and Ember built in, for teaching
+and authorised testing on your own equipment.
 
-> **Status: runs on an R36MAX (type 1 board), tested through 2026-11-21.**
-> Kernel 5.10, the screen, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH,
-> the data partition, power-off and restart, and charging work on that
-> handheld; so do the FireFly, Stump and Ember apps, the volume keys, the
-> speaker and 3.5 mm jack switching, a USB microphone, and the Wi-Fi
-> adapter-readiness check. No other handheld has been tried. The build also
-> checks what can be checked without hardware, including a rehearsal of the
-> first start's partition step.
+> **Status: 1.0.0 runs on an R36MAX (type 1 board), tested through 2026-11-22.**
+>
+> *Works on that handheld:* kernel 5.10, the screen, the desktop and its
+> pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data
+> partition, power-off and restart, charging, updating from Settings, the
+> FireFly, Stump and Ember apps, the volume keys, the speaker and 3.5 mm jack
+> switching, a USB microphone, and the Wi-Fi adapter-readiness check.
+>
+> *In the image but not yet tried on a handheld:* Wi-Fi dongles other than
+> the RT3070, USB Ethernet, a USB mouse, and the 4.4 fallback kernel's
+> drivers for them.
+>
+> *Not tried at all:* any other handheld, the R36S included.
+>
+> *Known problems:* Ember makes no sound yet, and an app can leave the
+> display's hardware cursor frozen over the desktop after it quits (a
+> restart clears it).
+>
+> The build also checks what can be checked without hardware, including a
+> rehearsal of the first start's partition step.
 
 ## What the image does
 
@@ -27,6 +40,8 @@ parts, for teaching and authorised testing on your own equipment.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
   Arsenal, Survey, Network, Devices, Sound, Apps and Settings. A USB keyboard works too.
+- The **left stick moves a pointer** over all of it; A presses what it is
+  on. A USB mouse does the same.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
 - **Scan**: nmap as a loadout. Pick a target, equip the scan (mission,
   ports, technique, versions, OS guess, script packs, speed), see what it
@@ -37,7 +52,10 @@ parts, for teaching and authorised testing on your own equipment.
 - **Survey**: every Wi-Fi access point in range, with its channel, signal
   and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
-  Network window, and answers **SSH**.
+  Network window, and answers **SSH**. A **network cable** on a USB adapter
+  or hub connects by itself.
+- **Updates itself** from Settings, without a reflash and without touching
+  your data ([`docs/updates.md`](docs/updates.md)).
 - Makes its own SSH host keys and a data partition at the first start.
 
 On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
@@ -99,6 +117,8 @@ a driver took it and whether a firmware file was missing.
 | SELECT+START | quit an app, back to the dock |
 | Volume keys | volume |
 | Left stick | move the pointer |
+
+![The pointer on the dock: the icon under it is the grown, selected one](docs/pointer.png)
 
 The **left stick moves a pointer** everywhere on the desktop: over the dock,
 in every window, on the on-screen keyboard. Point at something and press
