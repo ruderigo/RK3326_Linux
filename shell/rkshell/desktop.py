@@ -167,7 +167,14 @@ def _update(s, c):
     pygame.draw.lines(s, c, False, [(48, 118), (48, 150), (144, 150), (144, 118)], 10)
 
 
-GLYPHS = {"radar": _radar, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
+def _sound(s, c):
+    """A loudspeaker with two waves."""
+    pygame.draw.polygon(s, c, [(46, 80), (70, 80), (100, 52), (100, 140), (70, 112), (46, 112)])
+    pygame.draw.arc(s, c, (88, 66, 44, 60), -1.0, 1.0, 9)
+    pygame.draw.arc(s, c, (88, 44, 76, 104), -1.0, 1.0, 9)
+
+
+GLYPHS = {"radar": _radar, "sound": _sound, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 

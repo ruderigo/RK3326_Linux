@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""rk-audiod: where sound goes and where it comes from, for every app.
+
+Three things nobody else does on this handheld:
+
+  * The 3.5 mm jack. The RK817 sound chip has one "Playback Path" switch for
+    speaker or headphones, and software has to flip it: the jack only reports
+    that a plug went in. Without this the speaker stays on and the headphones
+    stay silent (R36MAX, 2026-11-21).
+  * One default device. /etc/asound.conf is written so that "default" means
+    the USB headset or microphone while one is plugged in, and the built-in
+    chip otherwise. An app that opens "default" follows it at its next start.
+  * The built-in chip is opened once, shared, at 44100 Hz with a long buffer
+    (the settings ArkOS uses for this chip), so two programs can play at once.
+
+It writes what it decided to /run/rk-audio/status (JSON) for the Sound window,
+and reads the user's choice of output from /var/lib/rk-audio/output:
+"auto" (follow the jack), "spk" or "hp". "reversed" in
+/var/lib/rk-audio/jack means the jack reports plugged when it is empty.
+
+    rk-audiod            run (systemd starts it)
+    rk-audiod --once     decide and apply once, print the status, and exit
+    rk-audiod --print    print the asound.conf it would write, change nothing
+"""
+import fcntl
+import glob
+import json
+import os
+import re
+import select
+import struct
+import subprocess
+import sys
+import time
+
+CARD = 0                                  # the built-in sound chip
+ASOUND = "/etc/asound.conf"
+RUN_DIR = "/run/rk-audio"
+STATE_DIR = "/var/lib/rk-audio"
+MARK = "# written by rk-audiod; edits are replaced\n"
+
+EV_SW, SW_HEADPHONE_INSERT = 0x05, 0x02
+EVENT = struct.Struct("llHHi")            # struct input_event on a 64-bit kernel
+
+
+def read(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return default
+
+
+def _ioc_read(nr, size):
+    return (2 << 30) | (size << 16) | (ord("E") << 8) | nr
+
+
+def open_jack():
+    """The input device that reports the headphone jack: (fd, path), or (None, "")."""
+    for path in sorted(glob.glob("/dev/input/event*")):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            bits = fcntl.ioctl(fd, _ioc_read(0x20 + EV_SW, 8), bytes(8))
+            if bits[0] & (1 << SW_HEADPHONE_INSERT):
+                return fd, path
+        except OSError:
+            pass
+        os.close(fd)
+    return None, ""
+
+
+def jack_state(fd):
+    """True when the device says a plug is in."""
+    try:
+        bits = fcntl.ioctl(fd, _ioc_read(0x1b, 8), bytes(8))
+        return bool(bits[0] & (1 << SW_HEADPHONE_INSERT))
+    except OSError:
+        return False
+
+
+def cards(proc="/proc/asound"):
+    """[{"n", "id", "name", "usb", "play", "rec"}] for every sound card."""
+    found = []
+    for m in re.finditer(r"^\s*(\d+)\s+\[(\S+)\s*\]:\s*(\S+)\s+-\s+(.*)$", read(f"{proc}/cards"), re.M):
+        n = int(m.group(1))
+        found.append({"n": n, "id": m.group(2), "name": m.group(4).strip(),
+                      "usb": m.group(3).startswith("USB") or os.path.exists(f"{proc}/card{n}/usbid"),
+                      "play": bool(glob.glob(f"{proc}/card{n}/pcm*p")),
+                      "rec": bool(glob.glob(f"{proc}/card{n}/pcm*c"))})
+    return found
+
+
+def first_pcm(card, kind, proc="/proc/asound"):
+    """The device number of a card's first playback ("p") or capture ("c") stream."""
+    nums = sorted(int(re.search(r"pcm(\d+)", p).group(1)) for p in glob.glob(f"{proc}/card{card}/pcm*{kind}"))
+    return nums[0] if nums else 0
+
+
+def choose(found, proc="/proc/asound"):
+    """(output, input): each {"card", "dev", "name", "usb"}; a USB device wins."""
+    def pick(kind, key):
+        for c in found:
+            if c["usb"] and c[key]:
+                return {"card": c["id"], "dev": first_pcm(c["n"], kind, proc), "name": c["name"], "usb": True}
+        for c in found:
+            if c["n"] == CARD and c[key]:
+                return {"card": c["id"], "dev": first_pcm(c["n"], kind, proc), "name": c["name"], "usb": False}
+        return None
+    return pick("p", "play"), pick("c", "rec")
+
+
+def asound_conf(out, mic):
+    """The text of /etc/asound.conf for these two devices."""
+    text = MARK
+    if out and out["usb"]:
+        text += f'''
+pcm.rkout {{
+    type plug
+    slave.pcm "hw:CARD={out["card"]},DEV={out["dev"]}"
+}}
+'''
+    elif out:
+        text += f'''
+pcm.rkout {{
+    type plug
+    slave.pcm "rkdmix"
+}}
+
+pcm.rkdmix {{
+    type dmix
+    ipc_key 1024
+    ipc_perm 0666
+    slave {{
+        pcm "hw:CARD={out["card"]},DEV={out["dev"]}"
+        period_time 0
+        period_size 1024
+        buffer_size 4096
+        rate 44100
+    }}
+    bindings {{
+        0 0
+        1 1
+    }}
+}}
+'''
+    if mic:
+        text += f'''
+pcm.rkin {{
+    type plug
+    slave.pcm "hw:CARD={mic["card"]},DEV={mic["dev"]}"
+}}
+'''
+    if out or mic:
+        text += "\npcm.!default {\n    type asym\n"
+        if out:
+            text += '    playback.pcm "rkout"\n'
+        if mic:
+            text += '    capture.pcm "rkin"\n'
+        text += "}\n"
+    ctl = out or mic
+    if ctl:
+        text += f'\nctl.!default {{\n    type hw\n    card "{ctl["card"]}"\n}}\n'
+    return text
+
+
+def write_if_changed(path, text):
+    if read(path, None) == text:
+        return False
+    old = read(path, None)
+    if path == ASOUND and old is not None and not old.startswith(MARK):
+        return False                      # somebody's own asound.conf: leave it
+    tmp = path + ".new"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+    return True
+
+
+def amixer(*args):
+    try:
+        return subprocess.run(["amixer", "-c", str(CARD), *args], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def path_now():
+    m = re.search(r"Item0: '(.*)'", amixer("sget", "Playback Path"))
+    return m.group(1) if m else ""
+
+
+def decide(mode, plugged):
+    """The Playback Path for a chosen mode and what the jack says."""
+    if mode == "spk":
+        return "SPK"
+    if mode == "hp":
+        return "HP"
+    return "HP" if plugged else "SPK"
+
+
+def step(jack_fd, last):
+    mode = read(f"{STATE_DIR}/output").strip() or "auto"
+    if mode not in ("auto", "spk", "hp"):
+        mode = "auto"
+    reverse = read(f"{STATE_DIR}/jack").strip() == "reversed"
+    plugged = (jack_state(jack_fd) != reverse) if jack_fd is not None else False
+    out, mic = choose(cards())
+    want = decide(mode, plugged)
+    have = path_now()
+    if have and have != want:
+        amixer("-q", "sset", "Playback Path", want)
+        have = path_now()
+    write_if_changed(ASOUND, asound_conf(out, mic))
+    status = {"mode": mode, "jack": plugged, "jack_found": jack_fd is not None, "jack_reversed": reverse,
+              "path": have, "out": out, "mic": mic}
+    if status != last:
+        os.makedirs(RUN_DIR, exist_ok=True)
+        write_if_changed(f"{RUN_DIR}/status", json.dumps(status) + "\n")
+        print("rk-audiod:", json.dumps(status), flush=True)
+    return status
+
+
+def main():
+    if "--print" in sys.argv:
+        print(asound_conf(*choose(cards())), end="")
+        return
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:                                   # the desktop (group audio) sets the choice
+        import grp
+        os.chown(STATE_DIR, 0, grp.getgrnam("audio").gr_gid)
+        os.chmod(STATE_DIR, 0o2775)
+    except (KeyError, OSError):
+        pass
+    jack_fd, _ = open_jack()
+    last = step(jack_fd, None)
+    if "--once" in sys.argv:
+        return
+    looked = time.time()
+    while True:
+        if jack_fd is None and time.time() - looked > 10:      # the sound card can come up late
+            jack_fd, _ = open_jack()
+            looked = time.time()
+        try:
+            ready = select.select([jack_fd] if jack_fd is not None else [], [], [], 1.0)[0]
+            if ready:
+                os.read(jack_fd, EVENT.size * 64)              # the state is read fresh in step()
+        except OSError:
+            if jack_fd is not None:
+                os.close(jack_fd)
+            jack_fd = None
+        last = step(jack_fd, last)
+
+
+if __name__ == "__main__":
+    main()
