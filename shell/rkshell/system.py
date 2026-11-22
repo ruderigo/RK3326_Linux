@@ -948,6 +948,28 @@ class System:
     def recorder(self):
         return Recorder()
 
+    MOUSE_BIN = "/usr/local/sbin/rk-mouse"
+    MOUSE_ON = "/run/rk-mouse/on"
+
+    def mouse_enabled(self):
+        """True/False if the left-stick mouse service is present, else None."""
+        if not os.path.exists(self.MOUSE_BIN):
+            return None
+        try:
+            with open(self.MOUSE_ON) as f:
+                return f.read().strip() != "0"
+        except OSError:
+            return True                     # present but not yet written: on by default
+
+    def set_mouse(self, on):
+        try:
+            os.makedirs("/run/rk-mouse", exist_ok=True)
+            with open(self.MOUSE_ON, "w") as f:
+                f.write("1" if on else "0")
+            return True
+        except OSError:
+            return False
+
     def volume(self):
         """Output volume, 0 to 100, or None when there is no mixer control."""
         out = self._sound()["out"]
@@ -1177,6 +1199,15 @@ class DemoSystem(System):
     def set_jack_reversed(self, on):
         self._snd = dict(self._snd, jack_reversed=on, jack=not self._snd["jack"])
         return self.set_sound_output(self._snd["mode"])
+
+    _mouse_on = True
+
+    def mouse_enabled(self):
+        return self._mouse_on
+
+    def set_mouse(self, on):
+        self._mouse_on = bool(on)
+        return True
 
     def recorder(self):
         rec = Recorder()

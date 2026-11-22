@@ -61,6 +61,13 @@ plugged-in adapter is ready — see [`docs/arsenal.md`](docs/arsenal.md).
 | START | confirm what you typed on the on-screen keyboard |
 | SELECT+START | quit an app, back to the dock |
 | Volume keys | volume |
+| Left stick | move the mouse pointer (when on) |
+
+The **left stick drives a mouse pointer** for GUI tools (the desktop itself is
+d-pad driven, so the stick is free for this). Turn it on or off in **Settings
+→ Left-stick mouse**; the triggers click, the shoulders are the wheel. It is a
+real virtual mouse (`rk-mouse`), so any X or SDL program sees a pointer. Speed,
+dead zone and the button map are in `/data/ark/rk-mouse.json`.
 
 In the **Terminal**, the D-pad is the arrow keys, A is Enter, Y is Ctrl+C,
 START is Tab, L1/R1 scroll back and X opens the keyboard (then: A types,
