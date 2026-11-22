@@ -70,9 +70,15 @@ class OsUpdatePage(Page):
 
     def handle(self, action):
         if self.view == "running":
-            if action == "b" and OsUpdatePage.job and OsUpdatePage.job.done:
-                OsUpdatePage.job, self.view = None, "info"
-                self.enter()
+            if action == "b":
+                if OsUpdatePage.job and OsUpdatePage.job.done:
+                    OsUpdatePage.job, self.view = None, "info"
+                    self.enter()
+                else:
+                    self.app.pop()          # hide; the update keeps running
+            return
+        if action == "b":
+            self.app.pop()
             return
         if action == "a":
             same = self.info.get("installed") and self.info.get("installed") == self.info.get("newest")
