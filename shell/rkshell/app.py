@@ -8,7 +8,8 @@ one first.
 
 The left stick moves a pointer (the rk-mouse service turns the stick into a
 mouse; a USB mouse works the same). It is one more way to choose: A presses
-what the pointer is on, and the d-pad works as before. The pointer goes away
+what the pointer is on, and the d-pad works as before. Over the dock the
+icon under the pointer is the selected one. The pointer goes away
 after a few seconds of rest or at the first d-pad press. The back ends put it
 on the screen, so moving it never redraws the desktop.
 
@@ -120,6 +121,8 @@ class App:
         self.pointer[0] = max(0, min(W - 1, self.pointer[0] + dx))
         self.pointer[1] = max(0, min(H - 1, self.pointer[1] + dy))
         self.pointer_until = time.time() + POINTER_REST
+        if self.window is None and (self.dock.hover or self.pointer[1] >= self.dock.top((W, H))):
+            self.dirty = True       # over the dock: the icon under the pointer grows
 
     def hide_pointer(self):
         self.pointer_until = 0
@@ -142,12 +145,14 @@ class App:
 
     def press(self, action):
         """A button of the pad. With the pointer showing, A presses what it is
-        on; on nothing, A does what it always does. The d-pad takes over from
-        the pointer."""
+        on, and on nothing it does nothing: it never opens what the d-pad had
+        chosen somewhere else. (Where nothing can be pressed at all, as in the
+        terminal, A stays A.) The d-pad takes over from the pointer."""
         if action in DPAD:
             self.hide_pointer()
-        if action == "a" and self.click():
-            return
+        if action == "a" and self.pointer_on:
+            if self.click() or len(G.spots) > (1 if self.window else 0):
+                return
         self.handle(action)
 
     # -------------------------------------------------------------- input
@@ -227,7 +232,10 @@ class App:
         G.spots.clear()
         self.wallpaper.draw(surf, time.time() - self.t0)
         if self.window is None:
+            self.dock.point(tuple(self.pointer) if self.pointer_on else None, (W, H))
             self.dock.step()
+            if self.dock.scrolling:             # resting at the edge is using the pointer
+                self.pointer_until = time.time() + POINTER_REST
             # the desktop: the time, the day, and where the handheld is on the network
             y = H // 8
             G.text(surf, f.clock, time.strftime("%H:%M"), (W // 2, y), T.TEXT, center=True)

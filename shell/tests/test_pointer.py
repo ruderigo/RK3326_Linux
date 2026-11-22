@@ -58,11 +58,10 @@ def test_press():
         assert app.window is None
         settle(app)
 
-        # on nothing, A does what it always does
+        # on nothing, A does nothing: it does not open what the d-pad had chosen
         app.move_pointer(-9000, -9000)
         app.press("a")
-        assert app.window is not None
-        app.handle("b")
+        assert app.window is None
 
         # the d-pad takes over: the pointer goes, and A is the d-pad's again
         settle(app)
@@ -90,6 +89,79 @@ def test_press():
     # it goes away by itself
     app.pointer_until = time.time() - 0.01
     assert not app.pointer_on and not app.click()
+
+
+def test_dock():
+    """Over the dock the icon under the pointer is the selected, grown one; the
+    row does not run away from the pointer; the edges bring in what did not fit."""
+    size = (720, 720)
+    app = A.App(DemoSystem(), pygame.Surface(size))
+    n = len(app.dock.items)
+    settle(app)
+    assert app.dock.drawn[-1][0] > size[0], "this test wants a dock with more icons than fit"
+
+    def under():
+        hit = [i for i, (x, s) in enumerate(app.dock.drawn) if x <= app.pointer[0] < x + s]
+        return hit[0] if hit else None
+
+    y = size[1] - 60
+    app.move_pointer(400 - app.pointer[0], y - app.pointer[1])
+    first = None
+    for _ in range(150):                                # resting there: the same icon, however long
+        time.sleep(0.005)
+        app.draw()
+        first = app.dock.sel if first is None else first
+        assert app.dock.hover and app.dock.sel == first
+    assert under() == first
+    assert app.dock.drawn[first][1] == max(s for _, s in app.dock.drawn) > size[0] // 10
+    assert not app.dock.moving                          # nothing to animate: the loop can sleep
+
+    on = 0
+    for _ in range(12):                                 # walking right, a few pixels at a time
+        app.move_pointer(9, 0)
+        assert app.dirty
+        app.draw()
+        assert under() in (app.dock.sel, None)          # None: in the gap between two icons
+        on += under() is not None
+    assert app.dock.sel > first and on >= 9
+    while under() is None:
+        app.move_pointer(3, 0)
+        app.draw()
+    app.press("a")                                      # A opens the one under the pointer
+    assert app.window is not None and app.window.title == app.dock.items[app.dock.sel]["name"]
+    app.handle("b")
+
+    # the right edge: the row comes in until the last icon, and the pointer does not go away
+    app.move_pointer(size[0], 0)
+    app.pointer_until = time.time() + 0.05
+    seen = set()
+    for _ in range(400):
+        time.sleep(0.005)
+        app.draw()
+        seen.add(app.dock.sel)
+        if app.dock.sel == n - 1 and not app.dock.scrolling:
+            break
+    assert app.dock.sel == n - 1 and app.pointer_on, (app.dock.sel, n)
+    assert len(seen) > 2                                # it passed over the ones in between
+    assert app.dock.drawn[-1][0] + app.dock.drawn[-1][1] <= size[0]
+    # and back to the first with the left edge
+    app.move_pointer(-size[0], 0)
+    for _ in range(600):
+        time.sleep(0.005)
+        app.draw()
+        if app.dock.sel == 0 and not app.dock.scrolling:
+            break
+    assert app.dock.sel == 0 and app.dock.drawn[0][0] >= 0
+
+    # off the dock: the last one stays selected, and the d-pad carries on from it
+    app.move_pointer(300, 0)
+    app.draw()
+    sel = app.dock.sel
+    app.move_pointer(0, -400)
+    settle(app)
+    assert not app.dock.hover and app.dock.sel == sel
+    app.press("right")
+    assert app.dock.sel == sel + 1
 
 
 def test_screen():

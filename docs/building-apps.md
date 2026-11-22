@@ -14,6 +14,7 @@ this particular screen and sharing this particular hardware.
 - [The dock entry](#the-dock-entry)
 - [Getting the screen (the GPU/SDL contract)](#getting-the-screen)
 - [Controls](#controls)
+- [The pointer (the left stick is a mouse)](#the-pointer)
 - [Sound](#sound)
 - [Two apps at once, and taking turns](#coexistence)
 - [Setup flows and "needs"](#setup-and-needs)
@@ -50,6 +51,7 @@ A minimal entry is a name and a program:
 | `group` | no | Groups and sorts the dock (`"Comms"`, `"Audio"`, …). |
 | `about` | no | One line, shown with the entry. |
 | `before` / `after` | no | A command (as a list) run just before the app starts and just after it exits. See [coexistence](#coexistence). |
+| `mouse` | no | `false`: the left stick is not a mouse while this app runs. See [the pointer](#the-pointer). |
 | `setup` / `needs` | no | A first-run setup flow. See [setup and "needs"](#setup-and-needs). |
 
 **Readiness.** If `exec[0]` is not found on the handheld, the icon is dimmed
@@ -117,6 +119,70 @@ Two conventions the desktop relies on:
   handle volume, and shouldn't grab those keys exclusively.
 
 A USB keyboard also works and is the easy way to develop and debug.
+
+<a name="the-pointer"></a>
+## The pointer (the left stick is a mouse)
+
+The handheld has no touchscreen, so the system gives every program a mouse:
+a service, `rk-mouse`, reads the left stick and presents a virtual mouse
+(a uinput device named **`rk-mouse`**). The desktop draws its own pointer from
+it. **Your app receives it too**, as an ordinary mouse, whether you asked for
+one or not. Know these four things:
+
+**1. What your app sees.** While the mouse is on (it is by default):
+
+| On the pad | As a mouse | In SDL |
+|---|---|---|
+| Left stick | relative movement (`REL_X`, `REL_Y`) | `SDL_MOUSEMOTION` |
+| R2 | left button (`BTN_LEFT`) | `SDL_MOUSEBUTTONDOWN/UP`, `SDL_BUTTON_LEFT` |
+| L2 | right button (`BTN_RIGHT`) | `SDL_BUTTON_RIGHT` |
+| R1 / L1 | wheel up / down (`REL_WHEEL`) | `SDL_MOUSEWHEEL` |
+
+A USB mouse plugged into the handheld arrives the same way, as a second
+mouse. The user can change the speed and the button map in
+`/data/ark/rk-mouse.json`, so don't assume R2 is the click; just handle the
+mouse events.
+
+**2. The pad still reports everything.** The mouse is *in addition to* the
+gamepad, not instead of it: a push on the left stick is both a
+`SDL_CONTROLLERAXISMOTION` and a `SDL_MOUSEMOTION`, and R2 is both a trigger
+and a left click. So an app must pick one meaning for each:
+
+- **An app that wants a pointer** (a map, a drawing tool, anything with
+  buttons to hit): use the mouse events, and ignore the left stick and the
+  triggers as controller input.
+- **An app that uses the left stick or the triggers itself** (Ember's pads, a
+  game): either ignore mouse events entirely, or put `"mouse": false` in the
+  dock entry. With that, the desktop switches the stick's mouse off before it
+  starts your app and back on when it quits, and you get the pad alone. This
+  is the right choice whenever a stray click could do something in your app.
+
+**3. Draw your own pointer.** Only the desktop's pointer is drawn by the
+system, and the desktop is paused while your app has the screen. Under
+`kmsdrm` do not count on SDL's cursor being visible on this panel: keep the
+position yourself (start from `SDL_GetMouseState`, or add up the `xrel`/`yrel`
+of each motion event), draw a small sprite there, and call
+`SDL_ShowCursor(SDL_DISABLE)` so a hardware cursor is never left behind on the
+screen when you quit. If your app has no use for a pointer, call
+`SDL_ShowCursor(SDL_DISABLE)` and ignore the events.
+
+**4. Follow the desktop's manners,** so the handheld feels like one system:
+hide the pointer after about three seconds without movement and as soon as
+the d-pad is used; keep everything reachable with the d-pad and A as well
+(the user may have the mouse switched off); and when the pointer is showing,
+act on what it points at, never on something selected elsewhere.
+
+**On or off.** The user switches the mouse in **Settings → Left-stick mouse**,
+or with SELECT + a click of the left stick, at any time, including while your
+app runs. The state is the file `/run/rk-mouse/on` (`1` or `0`; missing means
+on). Read it if you want to show a hint; off means the virtual mouse sends
+nothing. Don't write it from your app: use `"mouse": false`. Never grab the
+pad or the `rk-mouse` device exclusively (`EVIOCGRAB`), or the pointer and the
+volume keys stop working for everyone.
+
+Outside SDL, the mouse is a normal evdev device: find the `/dev/input/event*`
+whose name is `rk-mouse` (or read every device that reports `REL_X`), and
+under X it is picked up as any mouse is.
 
 <a name="sound"></a>
 ## Sound
@@ -283,6 +349,9 @@ a working `rk-apps install`.
 - [ ] Renders with SDL2; inherits `kmsdrm` and `LD_LIBRARY_PATH`; bundles no
       GPU/SDL libraries; draws for 720×720.
 - [ ] Quits on SELECT+START; doesn't grab the volume keys.
+- [ ] Knows the left stick is also a mouse: uses the mouse events and draws
+      its own pointer, or ignores them, or sets `"mouse": false`. Hides
+      SDL's cursor.
 - [ ] Opens the ALSA `default` device; no `hw:0,0`.
 - [ ] If it shares a single-owner resource, a `before`/`after` hook stops and
       restarts the other user.

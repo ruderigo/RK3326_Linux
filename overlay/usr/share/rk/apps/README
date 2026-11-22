@@ -18,6 +18,9 @@ about    one line, shown with the entry.
 before   a command (list) run just before the app starts.
 after    a command (list) run just after it exits. FireFly uses these to
          pause the Stump while it holds Reticulum's UDP port 29716.
+mouse    false: the left stick is not a mouse while this app runs. Without
+         it the app receives the stick as a mouse as well as a stick (R2 and
+         L2 click, R1 and L1 are the wheel) and should use that or ignore it.
 setup    a first-run setup screen built into the desktop (today: "stump").
 needs    a file (or list) that exists once setup has run; until then the
          dock shows the entry as needing setup.

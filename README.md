@@ -65,14 +65,19 @@ plugged-in adapter is ready — see [`docs/arsenal.md`](docs/arsenal.md).
 
 The **left stick moves a pointer** everywhere on the desktop: over the dock,
 in every window, on the on-screen keyboard. Point at something and press
-**A** to press it; the **×** at the top of a window is the same as B. The
-pointer goes away after three seconds of rest, or as soon as you use the
-d-pad, and then A is the d-pad's again. A USB mouse works too: left button
+**A** to press it; on nothing, A does nothing. The **×** at the top of a
+window is the same as B. On the dock the icon under the pointer grows as the
+selected one, and resting the pointer near the left or right edge of the
+screen brings in the icons that did not fit. The pointer goes away after
+three seconds of rest, or as soon as you use the d-pad, and then A is the
+d-pad's again. A USB mouse works too: left button
 presses, right button is B, the wheel is up and down.
 
 The stick is a real virtual mouse (`rk-mouse`), so apps opened from the dock
 and any X or SDL program see a mouse as well; there the triggers click and the
-shoulders are the wheel, since A belongs to the app. Turn it on or off in
+shoulders are the wheel, since A belongs to the app (what an app must do
+about it is in [`docs/building-apps.md`](docs/building-apps.md#the-pointer)).
+Turn it on or off in
 **Settings → Left-stick mouse**. Speed, dead zone and the button map are in
 `/data/ark/rk-mouse.json`.
 

@@ -31,16 +31,29 @@ def write_all(system, size, out_dir):
     shot("desktop")
     spot = next(r for r, _, _ in G.spots if r.x > size[0] // 2)       # an icon right of the middle
     app.move_pointer(spot.centerx - app.pointer[0], spot.centery - app.pointer[1])
+
+    def pointer_shot(name):
+        nonlocal n
+        end = time.time() + 0.6                     # the dock eases under the pointer by the clock
+        while time.time() < end:
+            app.draw()
+        app.pointer_until = time.time() + 60
+        surf.blit(app.cursor, app.pointer)
+        n += 1
+        pygame.image.save(surf, os.path.join(out_dir, f"{n:02d}-{name}.png"))
+
+    pointer_shot("pointer-dock")
+    app.draw()
     assert app.click() and app.window, "the pointer did not open what it was on"
-    for _ in range(30):
-        app.draw()
-    surf.blit(app.cursor, app.pointer)
-    n += 1
-    pygame.image.save(surf, os.path.join(out_dir, f"{n:02d}-pointer.png"))
+    close = G.spots[-1][0]
+    app.draw()
     close = G.spots[-1][0]                                             # the window's ×
     app.move_pointer(close.centerx - app.pointer[0], close.centery - app.pointer[1])
+    pointer_shot("pointer-window")
+    app.draw()
     assert app.click() and app.window is None, "the pointer did not close the window"
     app.hide_pointer()
+    app.draw()
     app.dock.sel = 0
     for _ in range(4):
         app.handle("right")

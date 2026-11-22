@@ -377,10 +377,16 @@ def run(system, fps=10):
                 # the console stays in graphics mode, as EmulationStation keeps it
                 # while a port runs: the app owns the screen until it quits
                 run_step(item.get("before"))
+                # "mouse": false in the dock entry: the stick is not a mouse while this app runs
+                no_mouse = item.get("mouse") is False and system.mouse_enabled()
+                if no_mouse:
+                    system.set_mouse(False)
                 try:
                     run_app(cmd, app_env(), inputs, system)
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
+                if no_mouse:
+                    system.set_mouse(True)
                 run_step(item.get("after"))
                 fb.unblank()
                 console.__init__()
