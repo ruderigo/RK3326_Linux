@@ -655,6 +655,82 @@ class Install:
         self.done = True
 
 
+def parse_monitor_modes(iw_phy_text):
+    """{phy index: supports monitor mode} from `iw phy` output."""
+    out, cur, in_modes = {}, None, False
+    for line in iw_phy_text.splitlines():
+        m = re.match(r"\s*Wiphy phy(\d+)", line)
+        if m:
+            cur, in_modes = int(m.group(1)), False
+            out[cur] = False
+            continue
+        if cur is None:
+            continue
+        if "Supported interface modes:" in line:
+            in_modes = True
+            continue
+        if in_modes:
+            t = line.strip()
+            if t.startswith("*"):
+                if "monitor" in t:
+                    out[cur] = True
+            elif t:
+                in_modes = False
+    return out
+
+
+def wifi_adapters(sys_root="/sys", iw_phy_text=None):
+    """Every wireless adapter: {"phy", "iface", "driver", "bus", "monitor"}.
+
+    bus is "usb" for a dongle, "sdio"/"mmc" for the board's own radio. monitor
+    is what the driver reports to `iw`, which is the capability the Wi-Fi tools
+    need; it says nothing about injection, which only a real test confirms.
+    """
+    import glob as _glob
+    if iw_phy_text is None:
+        ok, iw_phy_text = run(["iw", "phy"])
+        if not ok:
+            iw_phy_text = ""
+    monitor = parse_monitor_modes(iw_phy_text)
+    found = []
+    for d in sorted(_glob.glob(f"{sys_root}/class/ieee80211/phy*")):
+        try:
+            phy = int(re.search(r"phy(\d+)$", d).group(1))
+        except (AttributeError, ValueError):
+            continue
+        link = os.path.realpath(f"{d}/device")
+        bus = "usb" if "/usb" in link else "sdio" if ("mmc" in link or "sdio" in link) else "other"
+        driver = os.path.basename(os.path.realpath(f"{d}/device/driver")) if os.path.exists(f"{d}/device/driver") else ""
+        nets = _glob.glob(f"{d}/device/net/*")
+        iface = os.path.basename(nets[0]) if nets else ""
+        found.append({"phy": phy, "iface": iface, "driver": driver, "bus": bus,
+                      "monitor": monitor.get(phy, False)})
+    return found
+
+
+def wifi_audit_status(adapters, have_iw=True):
+    """A short readiness line for the Wi-Fi tools: {"line", "level", "ready"}.
+
+    level is "ok" (a USB adapter reports monitor mode), "warn" (an adapter is
+    there but does not), or "muted" (onboard radio only, or no check).
+    """
+    if not have_iw:
+        return {"line": "Adapter check needs the 'iw' tool.", "level": "muted", "ready": False}
+    usb = [a for a in adapters if a["bus"] == "usb"]
+    ready = [a for a in usb if a["monitor"]]
+    if ready:
+        a = ready[0]
+        name = a["driver"] or a["iface"] or "USB adapter"
+        return {"line": f"Ready: {name} reports monitor mode.", "level": "ok", "ready": True}
+    if usb:
+        a = usb[0]
+        name = a["driver"] or a["iface"] or "USB adapter"
+        return {"line": f"{name} is plugged in but does not report monitor mode.",
+                "level": "warn", "ready": False}
+    return {"line": "Onboard radio is client-only. Plug in a monitor-capable USB adapter for Wi-Fi testing.",
+            "level": "muted", "ready": False}
+
+
 class System:
     demo = False
 
@@ -798,6 +874,10 @@ class System:
     def install_heavy(self):
         """Fetch the heavy tools (Metasploit, exploitdb); returns an Install."""
         return Install()
+
+    def wifi_audit(self):
+        """Readiness of the Wi-Fi auditing path: {"line", "level", "ready"}."""
+        return wifi_audit_status(wifi_adapters(), have_iw=bool(shutil.which("iw")))
 
     def save_report(self, name, text):
         """Write a report where the Files window shows it; returns its path or None."""
@@ -1179,6 +1259,9 @@ class DemoSystem(System):
         from . import arsenal
         absent = {"ffuf", "wfuzz", "hcxdumptool", "msfconsole", "searchsploit", "termshark"}
         return {cmd: cmd not in absent for cmd, _, _, _ in arsenal.COMMANDS}
+
+    def wifi_audit(self):
+        return {"line": "Ready: rtl8812au reports monitor mode.", "level": "ok", "ready": True}
 
     def install_heavy(self):
         inst = Install.__new__(Install)

@@ -33,8 +33,13 @@ class ArsenalPage(Page):
     def refresh(self):
         status = self.app.system.tools_status()
         self.rows = []
+        audit = self.app.system.wifi_audit()
         for title, heavy, tools in A.CATALOGUE:
-            self.rows.append({"head": title, "heavy": heavy})
+            head = {"head": title, "heavy": heavy}
+            if title.startswith("Wi-Fi"):
+                head["note"] = audit["line"]
+                head["note_level"] = audit["level"]
+            self.rows.append(head)
             for cmd, label, about in tools:
                 self.rows.append({"cmd": cmd, "label": label, "about": about, "heavy": heavy, "on": status.get(cmd, False)})
         if not any(r.get("cmd") for r in self.rows[:self.sel + 1]):
@@ -128,7 +133,8 @@ class ArsenalPage(Page):
         # a simple scroller that keeps the selected row in view
         area_rows = pygame.Rect(area.x + 12, top_y, area.w - 24, area.bottom - top_y - 4)
         # measure a running offset for each row
-        heights = [head_h if r.get("head") else row_h for r in self.rows]
+        note_h = f.small_line + 2
+        heights = [(head_h + (note_h if r.get("note") else 0)) if r.get("head") else row_h for r in self.rows]
         offs, acc = [], 0
         for h in heights:
             offs.append(acc); acc += h
@@ -144,6 +150,10 @@ class ArsenalPage(Page):
                 continue
             if r.get("head"):
                 G.text(surf, f.small, r["head"].upper(), (area_rows.x + 2, ry + 6), T.EMBER)
+                if r.get("note"):
+                    colour = {"ok": T.OK, "warn": T.ERROR}.get(r.get("note_level"), T.MUTED)
+                    G.text(surf, f.small, G.fit(f.small, r["note"], area_rows.w - 8),
+                           (area_rows.x + 2, ry + 6 + f.small_line), colour)
             else:
                 rr = pygame.Rect(area_rows.x, ry, area_rows.w, row_h - 3)
                 sel = i == self.sel

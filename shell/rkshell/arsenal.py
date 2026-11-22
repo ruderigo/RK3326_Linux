@@ -48,7 +48,7 @@ CATALOGUE = [
         ("sqlmap", "sqlmap", "Test a web app for SQL-injection weaknesses."),
         ("http", "httpie", "A friendly command-line HTTP client."),
     ]),
-    ("Wi-Fi (needs a dongle with monitor mode)", False, [
+    ("Wi-Fi (needs a USB adapter; see the line below)", False, [
         ("aircrack-ng", "aircrack-ng", "The classic Wi-Fi assessment suite."),
         ("reaver", "reaver", "Test a router's WPS for the known weakness."),
         ("bully", "bully", "Another WPS testing tool."),
