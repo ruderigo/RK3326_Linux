@@ -58,10 +58,19 @@ Kali included on hardware with a client-only card. So Wi-Fi testing is done
 through a USB adapter whose chipset supports those modes, exactly as it is on
 a laptop whose built-in card cannot.
 
-Both kernels here already carry the common adapter drivers (ath9k_htc, mt76,
-the rt2x00 family, rtl8xxxu, and the out-of-tree Realtek set that covers
-8812au / 8814au / 8188eu), so a supported adapter works without building
-anything. The **Arsenal** window shows a readiness line above the Wi-Fi
+The kernels here already carry the common adapter drivers, so a supported
+adapter works without building anything, but the two kernels do not carry
+the same ones:
+
+- **5.10** (the one the image starts): ath9k_htc, carl9170, the mt76 USB set
+  (mt7601u, mt76x0u, mt76x2u), the rt2x00 family, rtl8xxxu, and Realtek's
+  8812au / 8814au / 8821au / 8821cu / 8822bu / 8188eu / 8852bu.
+- **4.4** (the fallback): the rt2x00 family, mt7601u, and Realtek's vendor
+  drivers (8812au, 8814au, 8821cu, 88x2bu, 8188eu, 8852bu). It has **no**
+  ath9k_htc (AR9271) and no mt76x0u / mt76x2u (MT7610U, MT7612U).
+
+The full list of chips, for ordinary Wi-Fi as well, is in the README under
+*Wi-Fi dongles and Ethernet*. The **Arsenal** window shows a readiness line above the Wi-Fi
 group:
 
 - *Onboard radio is client-only* — no adapter plugged in. Client Wi-Fi works;
@@ -74,7 +83,8 @@ group:
   test confirms it**, so verify injection on your own networks before relying
   on it.
 
-Known-good chipsets for monitor mode and injection on these kernels include
+Chipsets known for monitor mode and injection with these drivers (on kernel
+5.10; not each tested on a handheld) include
 the Atheros AR9271 (ath9k_htc), Ralink RT3070 / RT5370 (rt2800usb), MediaTek
 MT7601U / MT7612U (mt76), and the Realtek RTL8812AU. Check readiness on the
 device rather than trusting a label: the Arsenal line reads the adapter that
