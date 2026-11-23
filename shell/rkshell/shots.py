@@ -148,6 +148,21 @@ def write_all(system, size, out_dir):
             shot("apps-updating")
             AppsPage.job = None
             app.window.view = "list"
+        if item["name"] == "Video":
+            from .pages.video import VideoPage
+            VideoPage.words = "handheld linux"
+            app.window.search = app.system.video_search(VideoPage.words)
+            app.tick()
+            app.handle("down")
+            shot("video-results")
+            app.handle("y")
+            shot("video-setup")
+            VideoPage.setup, VideoPage.results, VideoPage.words = None, [], ""
+            app.window.view = "list"
+            app.system._video = {"mpv": False, "ytdlp": None, "js": None}
+            app.window.enter()
+            shot("video-not-set-up")
+            del app.system._video
         if item["name"] == "Survey":
             time.sleep(0.3)
             shot("survey-list")

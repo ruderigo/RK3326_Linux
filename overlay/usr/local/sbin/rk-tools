@@ -5,17 +5,23 @@
 #
 #   rk-tools status         whether online, and what heavy tool is installed
 #   rk-tools install-heavy   install Metasploit and exploitdb (needs network)
+#   rk-tools install-media   install what Video and Games need (mpv, QuickJS,
+#                            RetroArch and its cores), on a card flashed before
+#                            they were part of the image
 #
 # For testing machines that are yours, or that you have been asked to test.
 set -u
 say() { echo "rk-tools: $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+have_retroarch() { have retroarch || [ -x /usr/games/retroarch ]; }   # Debian keeps games in /usr/games
 online() { ip route 2>/dev/null | grep -q '^default'; }
 
 HEAVY_DIR=/data/opt
 
 status() {
     online && echo "online yes" || echo "online no"
+    have mpv && echo "mpv installed" || echo "mpv absent"
+    have_retroarch && echo "retroarch installed" || echo "retroarch absent"
     have msfconsole && echo "metasploit installed" || echo "metasploit absent"
     { have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; } &&
         echo "exploitdb installed" || echo "exploitdb absent"
@@ -59,8 +65,36 @@ install_exploitdb() {
     fi
 }
 
+# Video and Games: the same names as build/packages-media.txt, which a new
+# image installs when it is built.
+MEDIA_PKGS="mpv quickjs retroarch libretro-nestopia libretro-snes9x libretro-gambatte libretro-mgba libretro-genesisplusgx libretro-beetle-pce-fast"
+
+install_media() {
+    local p missing=
+    apt-get update -q || { say "could not reach Debian's package servers"; return 1; }
+    for p in $MEDIA_PKGS; do
+        if dpkg -s "$p" >/dev/null 2>&1; then
+            say "$p is already installed"
+        elif DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$p"; then
+            say "$p installed"
+        else
+            say "$p could not be installed"; missing="$missing $p"
+        fi
+    done
+    have mpv || { say "mpv is missing: Video cannot play."; return 1; }
+    have_retroarch || { say "RetroArch is missing: Games cannot start."; return 1; }
+    [ -z "$missing" ] || say "left out:$missing"
+}
+
 case "${1:-}" in
     status) status ;;
+    install-media)
+        online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
+        rc=0
+        install_media || rc=1
+        apt-get clean >/dev/null 2>&1 || true
+        [ "$rc" -eq 0 ] && say "done." || say "finished; something was not installed (see above)."
+        exit "$rc" ;;
     install-heavy)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         rc=0
@@ -69,5 +103,5 @@ case "${1:-}" in
         apt-get clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
         exit "$rc" ;;
-    *) echo "usage: rk-tools status | install-heavy" >&2; exit 2 ;;
+    *) echo "usage: rk-tools status | install-heavy | install-media" >&2; exit 2 ;;
 esac

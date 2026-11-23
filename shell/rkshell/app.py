@@ -35,8 +35,9 @@ from .pages.arsenal import ArsenalPage
 from .pages.survey import SurveyPage
 from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
+from .pages.video import VideoPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, AppsPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, VideoPage, AppsPage, SystemPage]
 
 
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists

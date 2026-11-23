@@ -1,0 +1,16 @@
+{
+ "name": "Games",
+ "icon": "games",
+ "group": "Play",
+ "about": "RetroArch, for your own game files",
+ "exec": [
+  "retroarch",
+  "--appendconfig",
+  "/usr/share/rk/retroarch/rk.cfg"
+ ],
+ "before": [
+  "/usr/local/bin/rk-games",
+  "prepare"
+ ],
+ "mouse": false
+}

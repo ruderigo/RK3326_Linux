@@ -4,6 +4,21 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## Unreleased
+
+Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
+
+- **Video.** A window on the dock that searches YouTube and plays the result
+  with mpv, driven by the pad. yt-dlp comes from its own releases and is
+  updated from the window.
+- **Games.** RetroArch on the dock with Debian's cores for the 8- and 16-bit
+  machines and the Game Boy Advance, for the owner's own game files in
+  `/data/ark/roms`.
+- `rk-tools install-media` installs both on a card flashed before they were
+  part of the image; the Video window runs it for you.
+- A dock entry's `exec` may be a bare name, looked for on PATH and in
+  `/usr/games`.
+
 ## 1.0.0 — 2026-11-22
 
 The first full release. Tested on an R36MAX (type 1 board); no other

@@ -126,6 +126,15 @@ for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-tools.txt"); do
 done
 [ -z "$TOOLS_MISSING" ] || echo "WARNING: security tools not installed:$TOOLS_MISSING"
 
+# Video and Games (packages-media.txt): the player, RetroArch and its cores.
+# Skipped one by one like the lists above; rk-tools install-media installs the
+# same set on a card that is already flashed.
+MEDIA_MISSING=
+for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-media.txt"); do
+    in_root apt-get install -y -q --no-install-recommends "$p" || MEDIA_MISSING="$MEDIA_MISSING $p"
+done
+[ -z "$MEDIA_MISSING" ] || echo "WARNING: Video and Games packages not installed:$MEDIA_MISSING"
+
 # A staple the Debian arm64 archive does not carry: nikto, a Perl web
 # scanner, pulled from its source on the runner. Non-fatal.
 say "Extra tools (from source)"

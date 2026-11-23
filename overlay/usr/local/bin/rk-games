@@ -1,0 +1,33 @@
+#!/bin/bash
+# Games on the dock: RetroArch, with the owner's own game files.
+#
+#   rk-games prepare    make the folders games are looked for in (run by the
+#                       dock just before RetroArch starts)
+#   rk-games where      print the games folder
+#
+# No game and no BIOS file comes with the system. Copy your own into the
+# folder for their machine (over SSH/SFTP, or from a USB stick in Files).
+set -u
+ROMS=/data/ark/roms
+[ -d /data/ark ] || ROMS="${HOME:-/home/ark}/roms"
+
+case "${1:-}" in
+    prepare)
+        for d in nes snes gb gbc gba megadrive mastersystem gamegear pcengine bios saves states; do
+            mkdir -p "$ROMS/$d"
+        done
+        [ -e "$ROMS/README.txt" ] || cat > "$ROMS/README.txt" <<TXT
+Your games go here, one folder per machine:
+
+  nes  snes  gb  gbc  gba  megadrive  mastersystem  gamegear  pcengine
+
+bios    files some machines need to start (yours to supply)
+saves   what games save;  states  save states made from RetroArch's menu
+
+In Games: Load Content, pick the file, then the core when asked.
+SELECT+START leaves. Both sticks pressed in open the menu.
+TXT
+        ;;
+    where) echo "$ROMS" ;;
+    *) echo "usage: rk-games prepare | where" >&2; exit 2 ;;
+esac

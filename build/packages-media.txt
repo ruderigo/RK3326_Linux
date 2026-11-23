@@ -1,0 +1,18 @@
+# Video and Games. Installed one at a time when the image is built; a name
+# Debian does not have is skipped with a warning. Keep in step with
+# MEDIA_PKGS in overlay/usr/local/sbin/rk-tools (the same set, for a card
+# flashed before these were part of the image).
+
+# Video: the player, and the JavaScript runtime yt-dlp needs for YouTube
+# (yt-dlp itself comes from its own releases: rk-video fetch)
+mpv
+quickjs
+
+# Games: RetroArch and cores light enough for this processor
+retroarch
+libretro-nestopia
+libretro-snes9x
+libretro-gambatte
+libretro-mgba
+libretro-genesisplusgx
+libretro-beetle-pce-fast

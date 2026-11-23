@@ -64,6 +64,10 @@ asks a few questions the first time you open it. Updating them, and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
 
+New and not yet tried on a handheld: **Video** (search YouTube and watch,
+with the pad) and **Games** (RetroArch, for your own game files). Both are in
+[`docs/media.md`](docs/media.md).
+
 **Wi-Fi auditing** (monitor mode, injection) needs a USB adapter: the onboard
 radio is client-only, as on any RK3326 device. Arsenal shows whether the
 plugged-in adapter is ready — see [`docs/arsenal.md`](docs/arsenal.md).

@@ -401,6 +401,78 @@ class StumpSetup:
 
 
 RK_APPS = "/usr/local/sbin/rk-apps"
+RK_VIDEO = "/usr/local/bin/rk-video"
+RK_TOOLS = "/usr/local/sbin/rk-tools"
+GAMES_DIRS = ("/usr/games", "/usr/local/games")     # where Debian puts RetroArch; not on a service's PATH
+
+
+def with_games(path=None):
+    """PATH with Debian's games folders at the end, for finding and starting dock apps."""
+    parts = [p for p in (os.environ.get("PATH", os.defpath) if path is None else path).split(":") if p]
+    return ":".join(parts + [d for d in GAMES_DIRS if d not in parts])
+
+
+def parse_video_status(out):
+    """`rk-video status` -> {"mpv": bool, "ytdlp": version or None, "js": name or None}."""
+    got = dict(line.split(None, 1) for line in out.splitlines() if len(line.split(None, 1)) == 2)
+    return {"mpv": got.get("mpv") == "yes",
+            "ytdlp": None if got.get("ytdlp", "absent") == "absent" else got["ytdlp"],
+            "js": None if got.get("js", "none") == "none" else got["js"]}
+
+
+def parse_video_results(out):
+    """`rk-video search` -> [{"id", "length", "channel", "title"}]; lines that are not results are left out."""
+    found = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 4 and re.fullmatch(r"[A-Za-z0-9_-]{6,20}", parts[0]) and parts[3].strip():
+            found.append(dict(zip(("id", "length", "channel", "title"), (p.strip() for p in parts))))
+    return found
+
+
+class VideoSearch:
+    """`rk-video search` in the background: `results` once `done`; `error` says why there are none."""
+
+    def __init__(self, words):
+        self.done, self.results, self.error = False, [], ""
+        threading.Thread(target=self._run, args=(words,), daemon=True).start()
+
+    def _run(self, words):
+        ok, out = run([RK_VIDEO, "search", words], timeout=130)
+        self.results = parse_video_results(out)
+        if not self.results:
+            said = [ln[len("rk-video: "):] for ln in out.splitlines() if ln.startswith("rk-video: ")]
+            self.error = said[-1] if said else ("Nothing found" if ok else "The search did not answer")
+        self.done = True
+
+
+class Steps:
+    """Commands run one after the other, as one job: `lines`, then `done` and
+    `ok` (every step ended well). A step that fails stops the rest."""
+
+    def __init__(self, cmds):
+        self.lines, self.done, self.ok = ["Starting..."], False, False
+        threading.Thread(target=self._run, args=(cmds,), daemon=True).start()
+
+    def _run(self, cmds):
+        ok = True
+        for cmd in cmds:
+            try:
+                p = subprocess.Popen(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     stdin=subprocess.DEVNULL, text=True, errors="replace", bufsize=1)
+            except OSError as e:
+                self.lines.append(str(e))
+                ok = False
+                break
+            for line in p.stdout:
+                line = ANSI.sub("", line.rstrip()).split("\r")[-1].strip()
+                if line:
+                    self.lines.append(line)
+                    del self.lines[:-400]
+            if p.wait() != 0:
+                ok = False
+                break
+        self.ok, self.done = ok, True
 RK_UPDATE = "/usr/local/sbin/rk-update"
 
 
@@ -1166,7 +1238,7 @@ class System:
                 try:
                     with open(f) as fh:
                         a = json.load(fh)
-                    a["ready"] = bool(a.get("exec")) and shutil.which(a["exec"][0]) is not None
+                    a["ready"] = bool(a.get("exec")) and shutil.which(a["exec"][0], path=with_games()) is not None
                     # "needs": a file (or several) that exists once the app's own setup has run;
                     # until then the dock opens the setup window named in "setup"
                     needs = a.get("needs") or []
@@ -1176,6 +1248,26 @@ class System:
                 except (OSError, ValueError, KeyError, IndexError):
                     continue
         return found
+
+    # --------------------------------------------------------------- video
+    def video_status(self):
+        """What Video has to work with (see parse_video_status)."""
+        return parse_video_status(run([RK_VIDEO, "status"], timeout=70)[1])
+
+    def video_search(self, words):
+        return VideoSearch(words)
+
+    def video_setup(self, packages=True):
+        """Install what is missing (mpv, RetroArch and their kin, as root) and
+        fetch the newest yt-dlp; with packages=False only the yt-dlp. Returns a Steps."""
+        cmds = [("sudo", "-n", RK_TOOLS, "install-media")] if packages else []
+        return Steps(cmds + [(RK_VIDEO, "fetch")])
+
+    def games_installed(self):
+        return shutil.which("retroarch", path=with_games()) is not None
+
+    def video_command(self, video_id):
+        return [RK_VIDEO, "play", "https://www.youtube.com/watch?v=" + video_id]
 
     def stump_setup(self, answers, password, replaces=None):
         """Run the Stump's installer with these answers; returns a StumpSetup."""
@@ -1326,7 +1418,28 @@ class DemoSystem(System):
                 {"name": "Stump", "icon": "stump", "group": "Comms", "about": "This handheld as a Stump mesh node", "ready": True,
                  "setup": "stump", "needs_setup": True},
                 {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
+                {"name": "Games", "icon": "games", "group": "Play", "about": "RetroArch, for your own game files", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False}]
+
+    def video_status(self): return dict(getattr(self, "_video", {"mpv": True, "ytdlp": "2026.11.18", "js": "quickjs"}))
+
+    def games_installed(self): return True
+
+    def video_search(self, words):
+        job = VideoSearch.__new__(VideoSearch)
+        job.done, job.error = True, ""
+        job.results = [{"id": "demo0000001", "length": "12:40", "channel": "Bench Notes", "title": "Reflowing a handheld's USB-C port"},
+                       {"id": "demo0000002", "length": "1:02:15", "channel": "Mesh Radio Club", "title": "LoRa antennas, measured: what the range tests showed"},
+                       {"id": "demo0000003", "length": "8:03", "channel": "Small Linux", "title": "Debian on an RK3326: the first boot"},
+                       {"id": "demo0000004", "length": "24:31", "channel": "Synth Corner", "title": "A vocoder from scratch"}]
+        return job
+
+    def video_setup(self, packages=True):
+        job = Steps.__new__(Steps)
+        job.done, job.ok = False, False
+        job.lines = ["rk-tools: mpv installed", "rk-tools: quickjs installed", "rk-tools: retroarch installed",
+                     "rk-tools: done.", "rk-video: fetching yt-dlp from its releases..."]
+        return job
 
     def password_expired(self): return True
 

@@ -1,0 +1,340 @@
+#!/usr/bin/python3
+"""Video on the handheld: search YouTube, and play a video or a file with mpv.
+
+    rk-video status          what is here: mpv, yt-dlp, a JavaScript runtime
+    rk-video fetch           get (or update) yt-dlp from its own releases
+    rk-video search WORDS    results, one per line: id TAB length TAB channel TAB title
+    rk-video play URL|FILE   play it, driven by the pad
+
+The player is mpv. It draws through SDL2 on dArkOS's Mali driver, the same
+road as the other dock apps, and is told what to do over its control socket,
+so the pad works whatever mpv was built with:
+
+    A        pause / play            LEFT RIGHT   10 seconds back / on
+    X        where am I              UP DOWN      1 minute on / back
+    B        stop                    L1 R1        5 minutes back / on
+    SELECT+START   stop (as every dock app)
+
+yt-dlp is not taken from Debian: YouTube changes often and only a recent
+yt-dlp keeps up, so `fetch` puts the official one in ~/.local/share/rk-video
+(checked against the release's SHA-256 list). YouTube also needs a JavaScript
+runtime next to it: deno when it is installed, else QuickJS (`qjs`).
+
+Settings, optional, in ~/.config/rk-video (KEY=VALUE lines):
+    VO=sdl          mpv's video output (sdl, drm, gpu)
+    HEIGHT=480      the tallest picture asked from YouTube
+"""
+import glob
+import hashlib
+import json
+import os
+import select
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+HOME = os.path.expanduser("~")
+SHARE = os.path.join(HOME, ".local/share/rk-video")
+YTDLP_OWN = os.path.join(SHARE, "yt-dlp")
+CONF = os.path.join(HOME, ".config/rk-video")
+LOG = os.path.join(HOME, ".cache/rk-video/last.log")
+RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+GPU_DIR = "/usr/lib/rk-gpu"
+RESULTS = 15
+
+# the pad's buttons by where they are printed on the handheld (as the desktop reads them)
+PAD = {305: "a", 304: "b", 307: "x", 308: "y", 310: "l1", 311: "r1",
+       704: "select", 705: "start", 544: "up", 545: "down", 546: "left", 547: "right"}
+# a USB keyboard: space, q/Esc, the arrows
+KEYS = {57: "a", 16: "b", 1: "b", 103: "up", 108: "down", 105: "left", 106: "right", 23: "x"}
+COMMANDS = {"a": ["cycle", "pause"], "x": ["show-progress"], "b": ["quit"],
+            "left": ["seek", -10], "right": ["seek", 10], "up": ["seek", 60], "down": ["seek", -60],
+            "l1": ["seek", -300], "r1": ["seek", 300]}
+EVENT = struct.Struct("qqHHi")          # struct input_event on a 64-bit kernel
+EV_KEY = 1
+
+
+def say(*a):
+    print("rk-video:", *a, flush=True)
+
+
+def settings(path=CONF):
+    out = {}
+    try:
+        for line in open(path):
+            k, sep, v = line.strip().partition("=")
+            if sep and not k.startswith("#"):
+                out[k.strip().upper()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def ytdlp():
+    """The yt-dlp to run, as a command list; None when there is none."""
+    if os.path.isfile(YTDLP_OWN):
+        return [sys.executable, YTDLP_OWN]
+    found = shutil.which("yt-dlp")
+    return [found] if found else None
+
+
+def js_runtime():
+    """The JavaScript runtime yt-dlp can use for YouTube: its name, or None."""
+    if shutil.which("deno"):
+        return "deno"
+    if shutil.which("qjs"):
+        return "quickjs"
+    return None
+
+
+def clean_env():
+    """yt-dlp is plain Python: it must not load the apps' graphics libraries."""
+    env = dict(os.environ)
+    env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def ytdlp_version():
+    cmd = ytdlp()
+    if not cmd:
+        return None
+    try:
+        out = subprocess.run(cmd + ["--version"], capture_output=True, text=True, timeout=60, env=clean_env())
+        return out.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+# ------------------------------------------------------------------- status
+def status():
+    print("mpv", "yes" if shutil.which("mpv") else "no")
+    print("ytdlp", ytdlp_version() or "absent")
+    print("js", js_runtime() or "none")
+    return 0
+
+
+# -------------------------------------------------------------------- fetch
+def sha_in(sums_text, name):
+    """The SHA-256 the release's list gives for the file `name`, or None."""
+    for line in sums_text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == name and len(parts[0]) == 64:
+            return parts[0].lower()
+    return None
+
+
+def fetch():
+    os.makedirs(SHARE, exist_ok=True)
+    before = ytdlp_version() if os.path.isfile(YTDLP_OWN) else None
+    say("fetching yt-dlp from its releases...")
+    try:
+        with urllib.request.urlopen(RELEASE + "SHA2-256SUMS", timeout=30) as r:
+            want = sha_in(r.read().decode("utf-8", "replace"), "yt-dlp")
+        if not want:
+            say("the release has no checksum for yt-dlp; nothing changed.")
+            return 1
+        fd, tmp = tempfile.mkstemp(dir=SHARE, prefix=".yt-dlp.")
+        digest = hashlib.sha256()
+        with os.fdopen(fd, "wb") as out, urllib.request.urlopen(RELEASE + "yt-dlp", timeout=60) as r:
+            for block in iter(lambda: r.read(1 << 16), b""):
+                digest.update(block)
+                out.write(block)
+    except OSError as e:
+        say(f"could not fetch it ({e}). Is the handheld online?")
+        return 1
+    if digest.hexdigest() != want:
+        os.unlink(tmp)
+        say("the download does not match its checksum; nothing changed.")
+        return 1
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, YTDLP_OWN)
+    now = ytdlp_version()
+    if not now:
+        say("yt-dlp was fetched but does not start (it needs python3).")
+        return 1
+    say(f"yt-dlp is now {now}" + (f" (was {before})" if before and before != now else ""))
+    if not js_runtime():
+        say("no JavaScript runtime (deno or qjs): YouTube may refuse to play. Install quickjs.")
+    return 0
+
+
+# ------------------------------------------------------------------- search
+def js_args():
+    js = js_runtime()
+    return ["--js-runtimes", js] if js and js != "deno" else []      # deno is yt-dlp's default
+
+
+def search(words):
+    cmd = ytdlp()
+    if not cmd:
+        say("yt-dlp is not here yet: run  rk-video fetch")
+        return 1
+    query = " ".join(words).strip()
+    if not query:
+        say("search for what?")
+        return 2
+    # the words follow "ytsearchN:", so they can never be read as an option
+    p = subprocess.run(cmd + ["--flat-playlist", "--no-warnings", "--print",
+                              "%(id)s\t%(duration_string|)s\t%(channel|)s\t%(title)s",
+                              f"ytsearch{RESULTS}:{query}"],
+                       capture_output=True, text=True, errors="replace", timeout=120, env=clean_env())
+    sys.stdout.write(p.stdout)
+    if p.returncode and not p.stdout.strip():
+        say((p.stderr.strip().splitlines() or ["the search failed"])[-1])
+        return 1
+    return 0
+
+
+# --------------------------------------------------------------------- play
+def panel_height():
+    try:
+        return int(open("/sys/class/graphics/fb0/virtual_size").read().split(",")[1])
+    except (OSError, ValueError, IndexError):
+        return 480
+
+
+def ytdl_format(height):
+    """H.264 first: this processor decodes it in software far faster than VP9 or AV1."""
+    h = f"[height<={height}]"
+    return f"bv*{h}[vcodec^=avc1]+ba[acodec^=mp4a]/bv*{h}[vcodec^=avc1]+ba/b{h}/bv*{h}+ba/b"
+
+
+def mpv_command(target, sock, conf, height=None):
+    vo = conf.get("VO") or "sdl"
+    try:
+        height = int(conf.get("HEIGHT") or 0) or height or (480 if panel_height() >= 600 else 360)
+    except ValueError:
+        height = 480
+    cmd = ["mpv", "--fullscreen", f"--vo={vo}", "--ao=alsa", "--hwdec=no", "--framedrop=vo",
+           "--vd-lavc-threads=4", "--vd-lavc-fast", "--vd-lavc-skiploopfilter=nonref",
+           "--cache=yes", "--demuxer-max-bytes=32MiB", "--demuxer-max-back-bytes=8MiB",
+           "--osd-font-size=42", "--sub-auto=no", "--idle=no", "--keep-open=no",
+           f"--input-ipc-server={sock}", f"--ytdl-format={ytdl_format(height)}"]
+    own = ytdlp()
+    if own and own[-1] == YTDLP_OWN:
+        cmd.append(f"--script-opts=ytdl_hook-ytdl_path={YTDLP_OWN}")
+    js = js_runtime()
+    if js and js != "deno":
+        cmd.append(f"--ytdl-raw-options=js-runtimes={js}")
+    return cmd + ["--", target]
+
+
+def pad_command(action, held):
+    """What a button press tells mpv; SELECT and START together stop it."""
+    if action in ("select", "start") and {"select", "start"} <= held:
+        return ["quit"]
+    return COMMANDS.get(action)
+
+
+def open_inputs():
+    fds = {}
+    for path in glob.glob("/dev/input/event*"):
+        try:
+            fds[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = path
+        except OSError:
+            pass
+    return fds
+
+
+def connect(sock, proc, secs=20):
+    end = time.time() + secs
+    while time.time() < end and proc.poll() is None:
+        try:
+            s = socket.socket(socket.AF_UNIX)
+            s.connect(sock)
+            return s
+        except OSError:
+            s.close()
+            time.sleep(0.2)
+    return None
+
+
+def play(target):
+    if not shutil.which("mpv"):
+        say("mpv is not installed:  sudo rk-tools install-media")
+        return 1
+    if not (target.startswith(("http://", "https://")) or os.path.isfile(target)):
+        say("play what? A web address (https://...) or a file.")
+        return 2
+    if os.path.isfile(target):
+        target = os.path.abspath(target)
+    env = dict(os.environ)
+    if os.path.isdir(GPU_DIR):                  # the same graphics as the dock gives its apps
+        paths = [GPU_DIR] + [p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and p != GPU_DIR]
+        env["LD_LIBRARY_PATH"] = ":".join(paths)
+        env.setdefault("SDL_VIDEODRIVER", "kmsdrm")
+    d = tempfile.mkdtemp(prefix="rk-video-")
+    sock = os.path.join(d, "mpv")
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    try:
+        with open(LOG, "w") as log:
+            proc = subprocess.Popen(mpv_command(target, sock, settings()), env=env, stdin=subprocess.DEVNULL,
+                                    stdout=log, stderr=subprocess.STDOUT)
+        ctl = connect(sock, proc)
+        fds, held = open_inputs(), set()
+        while proc.poll() is None:
+            try:
+                ready, _, _ = select.select(list(fds), [], [], 0.25)
+            except (OSError, ValueError):
+                ready = []
+            for fd in ready:
+                try:
+                    data = os.read(fd, EVENT.size * 64)
+                except BlockingIOError:
+                    continue
+                except OSError:                 # unplugged
+                    os.close(fd)
+                    del fds[fd]
+                    continue
+                for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
+                    _, _, etype, code, value = EVENT.unpack_from(data, off)
+                    action = PAD.get(code) or KEYS.get(code)
+                    if etype != EV_KEY or not action or value == 2:
+                        continue
+                    if not value:
+                        held.discard(action)
+                        continue
+                    held.add(action)
+                    cmd = pad_command(action, held)
+                    if cmd and ctl:
+                        try:
+                            ctl.sendall((json.dumps({"command": cmd}) + "\n").encode())
+                        except OSError:
+                            ctl = None
+                    elif cmd == ["quit"]:       # no control socket: stop it all the same
+                        proc.terminate()
+        rc = proc.returncode
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    if rc not in (0, 4):                        # 4: stopped by the user
+        try:
+            tail = [ln.strip() for ln in open(LOG, errors="replace").read().splitlines() if ln.strip()][-3:]
+        except OSError:
+            tail = []
+        for ln in tail:
+            say(ln)
+        return 1
+    return 0
+
+
+def main(argv):
+    cmd, rest = (argv[0] if argv else ""), argv[1:]
+    if cmd == "status":
+        return status()
+    if cmd == "fetch":
+        return fetch()
+    if cmd == "search":
+        return search(rest)
+    if cmd == "play" and len(rest) == 1:
+        return play(rest[0])
+    print("usage: rk-video status | fetch | search WORDS | play URL-or-FILE", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
