@@ -35,6 +35,7 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core >/dev/null
           cd shell
           python3 -m compileall -q rkshell
+          python3 tests/test_apps.py
           python3 tests/test_device.py
           python3 tests/test_sound.py
           python3 tests/test_mouse.py
