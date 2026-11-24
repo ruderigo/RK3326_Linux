@@ -45,6 +45,9 @@ runtime for YouTube; the image carries QuickJS (`qjs`) for that, and deno is
 used when you install it yourself. **When videos stop playing, press Y
 first.**
 
+Debian's own `yt-dlp` package is never used, even when it is installed: it is
+too old for YouTube. When a video does not start, the window says why.
+
 **On a card flashed before this was in the image**, open Video and press A:
 it installs the player and RetroArch from Debian and fetches yt-dlp. The
 same from a terminal:

@@ -43,6 +43,7 @@ SHARE = os.path.join(HOME, ".local/share/rk-video")
 YTDLP_OWN = os.path.join(SHARE, "yt-dlp")
 CONF = os.path.join(HOME, ".config/rk-video")
 LOG = os.path.join(HOME, ".cache/rk-video/last.log")
+ERR = os.path.join(HOME, ".cache/rk-video/last.error")      # one line for the Video window, when a play failed
 RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
 GPU_DIR = "/usr/lib/rk-gpu"
 RESULTS = 15
@@ -76,11 +77,10 @@ def settings(path=CONF):
 
 
 def ytdlp():
-    """The yt-dlp to run, as a command list; None when there is none."""
-    if os.path.isfile(YTDLP_OWN):
-        return [sys.executable, YTDLP_OWN]
-    found = shutil.which("yt-dlp")
-    return [found] if found else None
+    """The yt-dlp to run, as a command list; None until `fetch` has brought it.
+    Only our own counts: Debian's is too old for YouTube (and does not know
+    the options given to it here), so it is never used, even when installed."""
+    return [sys.executable, YTDLP_OWN] if os.path.isfile(YTDLP_OWN) else None
 
 
 def js_runtime():
@@ -215,13 +215,39 @@ def mpv_command(target, sock, conf, height=None):
            "--cache=yes", "--demuxer-max-bytes=32MiB", "--demuxer-max-back-bytes=8MiB",
            "--osd-font-size=42", "--sub-auto=no", "--idle=no", "--keep-open=no",
            f"--input-ipc-server={sock}", f"--ytdl-format={ytdl_format(height)}"]
-    own = ytdlp()
-    if own and own[-1] == YTDLP_OWN:
+    if ytdlp():
         cmd.append(f"--script-opts=ytdl_hook-ytdl_path={YTDLP_OWN}")
-    js = js_runtime()
-    if js and js != "deno":
-        cmd.append(f"--ytdl-raw-options=js-runtimes={js}")
+        js = js_runtime()
+        if js and js != "deno":
+            cmd.append(f"--ytdl-raw-options=js-runtimes={js}")
+    else:
+        cmd.append("--ytdl=no")                 # never Debian's yt-dlp (see ytdlp())
     return cmd + ["--", target]
+
+
+def why(log_text):
+    """One line a person can act on, from what mpv and yt-dlp said."""
+    lines = [ln.strip() for ln in log_text.splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        if "ERROR:" in ln:
+            return "YouTube refused: " + ln.split("ERROR:", 1)[1].strip()[:160] + "  (Y updates yt-dlp)"
+    if any("no such option" in ln for ln in lines):
+        return "yt-dlp is too old for this. Press Y to fetch the newest."
+    if any("Failed to recognize file format" in ln or "youtube-dl failed" in ln for ln in lines):
+        return "The video could not be opened. Press Y to update yt-dlp, then try again."
+    if any("vo/" in ln and ("failed" in ln.lower() or "error" in ln.lower()) for ln in lines):
+        return "The player could not use the screen (details in ~/.cache/rk-video/last.log)."
+    return "The video did not play (details in ~/.cache/rk-video/last.log)."
+
+
+def fail(text):
+    say(text)
+    try:
+        os.makedirs(os.path.dirname(ERR), exist_ok=True)
+        with open(ERR, "w") as f:
+            f.write(text + "\n")
+    except OSError:
+        pass
 
 
 def pad_command(action, held):
@@ -255,14 +281,21 @@ def connect(sock, proc, secs=20):
 
 
 def play(target):
+    try:
+        os.unlink(ERR)
+    except OSError:
+        pass
     if not shutil.which("mpv"):
-        say("mpv is not installed:  sudo rk-tools install-media")
+        fail("mpv is not installed:  sudo rk-tools install-media")
         return 1
     if not (target.startswith(("http://", "https://")) or os.path.isfile(target)):
         say("play what? A web address (https://...) or a file.")
         return 2
     if os.path.isfile(target):
         target = os.path.abspath(target)
+    elif not ytdlp():
+        fail("yt-dlp is not here yet. Press Y in Video (or run: rk-video fetch).")
+        return 1
     env = dict(os.environ)
     if os.path.isdir(GPU_DIR):                  # the same graphics as the dock gives its apps
         paths = [GPU_DIR] + [p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and p != GPU_DIR]
@@ -313,11 +346,10 @@ def play(target):
         shutil.rmtree(d, ignore_errors=True)
     if rc not in (0, 4):                        # 4: stopped by the user
         try:
-            tail = [ln.strip() for ln in open(LOG, errors="replace").read().splitlines() if ln.strip()][-3:]
+            text = open(LOG, errors="replace").read()
         except OSError:
-            tail = []
-        for ln in tail:
-            say(ln)
+            text = ""
+        fail(why(text))
         return 1
     return 0
 

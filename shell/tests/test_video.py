@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.join(HERE, "..", "..")
@@ -32,6 +33,21 @@ fmt = rv.ytdl_format(480)
 assert fmt.startswith("bv*[height<=480][vcodec^=avc1]") and fmt.endswith("/b")
 
 # mpv: our settings, the control socket, and the target after "--" so it is never an option
+# only our own yt-dlp counts: Debian's (on PATH) is never used, and without ours mpv is told not to look for one
+import shutil
+real_which = shutil.which
+shutil.which = lambda name, **k: "/usr/bin/" + name
+rv.YTDLP_OWN = "/nonexistent/yt-dlp"
+assert rv.ytdlp() is None
+cmd = rv.mpv_command("x", "/tmp/s", {}, height=360)
+assert "--ytdl=no" in cmd and not any("js-runtimes" in a or "ytdl_path" in a for a in cmd)
+shutil.which = real_which
+
+# what the window is told when a play fails
+assert "Press Y" in rv.why("[ytdl_hook] yt-dlp: error: no such option: --js-runtimes\nFailed to recognize file format.")
+assert rv.why("[ytdl_hook] ERROR: [youtube] abc: Sign in to confirm you are not a bot").startswith("YouTube refused: [youtube] abc")
+assert "last.log" in rv.why("") and "screen" in rv.why("[vo/sdl] SDL_CreateRenderer failed\n[vo/sdl] Error opening")
+
 rv.ytdlp = lambda: [sys.executable, rv.YTDLP_OWN]
 rv.js_runtime = lambda: "quickjs"
 cmd = rv.mpv_command("--not-an-option", "/tmp/s", {}, height=360)
@@ -55,13 +71,14 @@ assert rv.pad_command("left", {"left"}) == ["seek", -10]
 assert rv.pad_command("y", {"y"}) is None
 
 # play refuses what is neither a web address nor a file (before it would reach mpv)
-import shutil
 shutil_which, shutil.which = shutil.which, lambda name, **k: "/usr/bin/" + name
+rv.ERR = os.path.join(tempfile.mkdtemp(), "last.error")
 assert rv.play("--script=/tmp/evil.lua") == 2
+rv.ytdlp = lambda: None                         # a web address without our yt-dlp: said, and left for the window to show
+assert rv.play("https://example.org/v") == 1 and "Press Y" in open(rv.ERR).read()
 shutil.which = shutil_which
 
 # settings file
-import tempfile
 with tempfile.NamedTemporaryFile("w", suffix=".conf") as f:
     f.write("# mine\nvo = drm\nHEIGHT=360\nnonsense\n")
     f.flush()
@@ -116,7 +133,16 @@ app.window.search = demo.video_search("x")
 app.tick()
 assert len(app.window.list.items) == 4
 app.handle("down"); app.handle("a")
+assert app.launch is None and app.window.loading      # "Loading..." is drawn before the player takes the screen
+app.tick()
+assert app.launch is None
+app.draw()
+app.tick()
 assert app.launch == ["/usr/local/bin/rk-video", "play", "https://www.youtube.com/watch?v=demo0000002"]
 assert app.launch_item.get("mouse") is False
+app.launch = None                               # the back end ran it; back in the window
+demo.video_error = lambda since: "yt-dlp is too old for this. Press Y to fetch the newest."
+app.tick()
+assert app.window.loading is None and "Press Y" in app.toast_text and app.toast_error
 app.draw()
 print("video: ok")

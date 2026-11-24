@@ -155,6 +155,9 @@ def write_all(system, size, out_dir):
             app.tick()
             app.handle("down")
             shot("video-results")
+            app.window.loading = {"video": app.window.list.current, "shown": False, "started": 0}
+            shot("video-loading")
+            app.window.loading = None
             app.handle("y")
             shot("video-setup")
             VideoPage.setup, VideoPage.results, VideoPage.words = None, [], ""

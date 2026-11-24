@@ -1266,6 +1266,14 @@ class System:
     def games_installed(self):
         return shutil.which("retroarch", path=with_games()) is not None
 
+    def video_error(self, since):
+        """Why the last play failed, when it did so after `since` (a time); else ""."""
+        path = os.path.expanduser("~/.cache/rk-video/last.error")
+        try:
+            return read(path) if os.path.getmtime(path) >= since - 1 else ""
+        except OSError:
+            return ""
+
     def video_command(self, video_id):
         return [RK_VIDEO, "play", "https://www.youtube.com/watch?v=" + video_id]
 
@@ -1424,6 +1432,7 @@ class DemoSystem(System):
     def video_status(self): return dict(getattr(self, "_video", {"mpv": True, "ytdlp": "2026.11.18", "js": "quickjs"}))
 
     def games_installed(self): return True
+    def video_error(self, since): return ""
 
     def video_search(self, words):
         job = VideoSearch.__new__(VideoSearch)

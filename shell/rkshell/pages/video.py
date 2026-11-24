@@ -13,6 +13,8 @@ YouTube. Y fetches the newest yt-dlp at any time; that is the first thing to
 try when videos stop playing; it also installs RetroArch for Games when that
 is missing.
 """
+import time
+
 import pygame
 
 from .. import gfx as G
@@ -30,6 +32,7 @@ class VideoPage(Page):
         super().__init__(app)
         self.list = ListView(row_lines=2)
         self.status, self.search, self.told = None, None, False
+        self.loading = None             # the video being started: shown for one frame, then handed to the player
         self.view = "list"
 
     def enter(self):
@@ -44,7 +47,7 @@ class VideoPage(Page):
 
     @property
     def live(self):
-        return self.view == "setup" or self.search is not None
+        return self.view == "setup" or self.search is not None or self.loading is not None
 
     @property
     def hints(self):
@@ -86,8 +89,10 @@ class VideoPage(Page):
         self.app.push(Keyboard(self.app, "Search YouTube", go, initial=VideoPage.words))
 
     def play(self, video):
-        self.app.launch = self.app.system.video_command(video["id"])
-        self.app.launch_item = {"name": "Video", "mouse": False}
+        """Say so first: the screen keeps this frame while the player gets the
+        video's address, which can take a minute. poll() starts the player
+        once the frame is drawn."""
+        self.loading = {"video": video, "shown": False, "started": 0}
 
     def handle(self, action):
         if self.view == "setup":
@@ -99,8 +104,8 @@ class VideoPage(Page):
             if action == "a":
                 self.start_setup(packages=self.packages_missing())
             return
-        if self.search is not None:
-            return                              # one search at a time
+        if self.search is not None or self.loading is not None:
+            return                              # one thing at a time
         if self.list.move(action):
             return
         if action == "a" and self.list.current:
@@ -111,6 +116,17 @@ class VideoPage(Page):
             self.start_setup(packages=self.packages_missing())
 
     def poll(self):
+        if self.loading is not None:
+            self.app.dirty = True
+            if self.loading["started"]:         # back from the player
+                why = self.app.system.video_error(self.loading["started"])
+                self.loading = None
+                if why:
+                    self.app.toast(why, 8, error=True)
+            elif self.loading["shown"]:
+                self.loading["started"] = time.time()
+                self.app.launch = self.app.system.video_command(self.loading["video"]["id"])
+                self.app.launch_item = {"name": "Video", "mouse": False}
         if self.search is not None:
             self.app.dirty = True
             if self.search.done:
@@ -143,6 +159,18 @@ class VideoPage(Page):
             for ln in G.wrap(f.small, text, area.w - 32):
                 G.text(surf, f.small, ln, (x, y), T.TEXT)
                 y += f.small_line
+            return
+        if self.loading is not None:
+            self.loading["shown"] = True
+            G.text(surf, f.big, "Loading…", (x, y), T.EMBER_BRIGHT)
+            y += f.line + 8
+            for ln in G.wrap(f.mono, self.loading["video"]["title"], area.w - 32)[:3]:
+                G.text(surf, f.mono, ln, (x, y), T.TEXT)
+                y += f.line
+            for ln in G.wrap(f.small, "Getting the video from YouTube. This can take up to a minute; the screen "
+                                      "stays like this until it starts. SELECT+START gives up.", area.w - 32):
+                y += f.small_line
+                G.text(surf, f.small, ln, (x, y), T.DIM)
             return
         head = (f"Searching for “{VideoPage.words}”…" if self.search is not None
                 else f"“{VideoPage.words}”" if self.list.items else "X: search YouTube")
