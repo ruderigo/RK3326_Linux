@@ -4,6 +4,29 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## Unreleased
+
+Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
+
+- **Video.** A window on the dock that searches YouTube and plays the result
+  with mpv, driven by the pad. yt-dlp comes from its own releases and is
+  updated from the window.
+- **Games.** RetroArch on the dock, built for this GPU, with dArkOS's cores
+  for PlayStation, Nintendo 64, PSP, the 8- and 16-bit machines and the Game
+  Boys, for the owner's own game files in `/data/ark/roms`. It comes as the
+  emulator bundle (`build/build-emulators.sh`), in new images and fetched on
+  cards already flashed.
+- `rk-tools install-media` installs both on a card flashed before they were
+  part of the image; the Video window runs it for you.
+- `rk-tools` finishes an install that was cut short before starting a new
+  one, and no longer counts a half-installed package as installed.
+- `rk-tools` checks the room on the system partition before it installs, and
+  says how much is missing instead of failing half-way.
+- `rk-tools` waits for another install or update that is running (Debian's
+  own background refresh, for one) instead of failing on its lock.
+- A dock entry's `exec` may be a bare name, looked for on PATH and in
+  `/usr/games`.
+
 ## 1.0.0 — 2026-11-22
 
 The first full release. Tested on an R36MAX (type 1 board); no other

@@ -14,6 +14,7 @@
 #   VERSION   shown in /etc/os-release     (default "dev")
 #   ROOT_MB   size of the system partition (default 6144; empty space
 #             compresses away, so the download stays small)
+#   EMULATORS a bundle from build/build-emulators.sh to put in the image
 #   ROOTFS_DIR  a ready-made system folder: skips the Debian install, to test
 #               the image assembly on any machine
 #
@@ -126,6 +127,15 @@ for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-tools.txt"); do
 done
 [ -z "$TOOLS_MISSING" ] || echo "WARNING: security tools not installed:$TOOLS_MISSING"
 
+# Video (packages-media.txt): the player and its kin. Skipped one by one like
+# the lists above; rk-tools install-media installs the same set on a card
+# that is already flashed.
+MEDIA_MISSING=
+for p in $(grep -vE '^\s*(#|$)' "$HERE/packages-media.txt"); do
+    in_root apt-get install -y -q --no-install-recommends "$p" || MEDIA_MISSING="$MEDIA_MISSING $p"
+done
+[ -z "$MEDIA_MISSING" ] || echo "WARNING: Video packages not installed:$MEDIA_MISSING"
+
 # A staple the Debian arm64 archive does not carry: nikto, a Perl web
 # scanner, pulled from its source on the runner. Non-fatal.
 say "Extra tools (from source)"
@@ -182,6 +192,22 @@ for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n";
 mkdir -p "$ROOTFS/usr/share"
 install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
 ls -l "$GPU"
+
+# Games: the emulator bundle (build/build-emulators.sh), when the caller has
+# one. Without it the image still builds; Games is then fetched on the
+# handheld (rk-tools install-media).
+if [ -n "${EMULATORS:-}" ]; then
+    say "Emulators ($(basename "$EMULATORS"))"
+    [ -f "$EMULATORS" ] || die "no emulator bundle at $EMULATORS"
+    tar -xJf "$EMULATORS" -C "$ROOTFS" --no-same-owner
+    [ -x "$ROOTFS/opt/rk-emulators/bin/retroarch" ] || die "the emulator bundle has no RetroArch"
+    python3 -I -c "import sys; b=open(sys.argv[1],'rb').read(20); sys.exit(0 if b[:4]==b'\x7fELF' and b[18]==183 else 1)" \
+        "$ROOTFS/opt/rk-emulators/bin/retroarch" || die "the bundle's RetroArch is not an arm64 program"
+    chown -R 0:0 "$ROOTFS/opt/rk-emulators"
+    cat "$ROOTFS/opt/rk-emulators/VERSION"
+else
+    echo "WARNING: no emulator bundle given (EMULATORS=...): Games will be fetched on the handheld"
+fi
 
 say "System files"
 cp -a "$REPO/overlay/." "$ROOTFS/"

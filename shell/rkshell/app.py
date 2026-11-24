@@ -35,8 +35,9 @@ from .pages.arsenal import ArsenalPage
 from .pages.survey import SurveyPage
 from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
+from .pages.video import VideoPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, AppsPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, VideoPage, AppsPage, SystemPage]
 
 
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists
@@ -103,6 +104,12 @@ class App:
         elif item.get("needs_setup") and item.get("setup") in SETUPS:
             self.window = SETUPS[item["setup"]](self)        # its own setup first, asked here
             self.window.enter()
+        elif not item.get("ready") and not item.get("_rechecked"):
+            # it may have been installed since the dock was filled (from a
+            # terminal, or by another window's setup): look again before saying no
+            self.fill_dock()
+            fresh = next((i for i in self.dock.items if i.get("name") == item["name"] and "window" not in i), None)
+            self.open(dict(fresh or item, _rechecked=True))
         elif not item.get("ready"):
             self.toast(f"{item['name']} is not installed yet", error=True)
         elif item.get("exec"):

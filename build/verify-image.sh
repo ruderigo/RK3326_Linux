@@ -106,7 +106,9 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/sudoers.d/rkshell /etc/udev/rules.d/90-rk-backlight.rules /usr/share/rk/apps \
          /usr/lib/rk-gpu/libmali.so /usr/lib/rk-gpu/libSDL2-2.0.so.0 /usr/lib/rk-gpu/libEGL.so.1 \
          /usr/lib/rk-gpu/libGLESv2.so.2 /usr/lib/rk-gpu/libgbm.so.1 /usr/share/gamecontrollerdb.txt \
-         /etc/udev/rules.d/70-mali-dma-heap.rules /usr/local/bin/rk-stump-pause \
+         /etc/udev/rules.d/70-mali-dma-heap.rules /usr/local/bin/rk-stump-pause /usr/local/bin/rk-video /usr/local/bin/rk-games \
+         /usr/share/rk/apps/games.json /usr/share/rk/retroarch/rk.cfg /usr/share/rk/emulators.bundle \
+         /usr/share/rk/retroarch/autoconfig/udev /opt/rk-emulators/bin/retroarch /opt/rk-emulators/cores/mupen64plus_next_libretro.so \
          /home/ark/ports/Ember.sh /home/ark/ports/ember/ember /home/ark/firefly/deploy/FireFly.sh \
          /home/ark/firefly/venv/bin/python /home/ark/R36MAX-Stump/handheld/install.sh \
          /home/ark/SandBox_Stump_On/provisioner.py /roms/ports/stump_r36max/drop /usr/bin/gcc; do

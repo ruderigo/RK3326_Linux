@@ -5,17 +5,105 @@
 #
 #   rk-tools status         whether online, and what heavy tool is installed
 #   rk-tools install-heavy   install Metasploit and exploitdb (needs network)
+#   rk-tools install-media   install what Video and Games need (mpv, QuickJS,
+#                            and the emulator bundle: RetroArch and its cores),
+#                            on a card flashed before they were part of the image
 #
 # For testing machines that are yours, or that you have been asked to test.
 set -u
 say() { echo "rk-tools: $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+EMU_DIR="${RK_EMU_DIR:-/opt/rk-emulators}"          # RK_EMU_*: for the tests
+have_retroarch() { [ -x "$EMU_DIR/bin/retroarch" ]; }
 online() { ip route 2>/dev/null | grep -q '^default'; }
 
 HEAVY_DIR=/data/opt
 
+# Fully installed, not merely known to dpkg: a package whose install was cut
+# short (power, a restart) is unpacked but not set up, and does not count.
+installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ]; }
+
+# Only one program may install packages at a time. Debian itself refreshes
+# its package lists in the background (after a start, once a day), and the
+# desktop may be running another install: wait for it instead of failing.
+APT="apt-get -o DPkg::Lock::Timeout=600"
+lock_free() {
+    python3 -I -c "import fcntl,sys
+for p in ('/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock'):
+    try:
+        f = open(p, 'a')
+        fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except FileNotFoundError:
+        continue
+    except OSError:
+        sys.exit(1)"
+}
+wait_lock() {
+    local n=0
+    lock_free && return 0
+    say "another install or update is running; waiting for it (up to 10 minutes)..."
+    while ! lock_free; do
+        n=$((n + 1))
+        [ "$n" -lt 120 ] || { say "it is still running. Try again when it has finished."; return 1; }
+        sleep 5
+    done
+    say "it has finished."
+}
+
+# Room on the system partition, checked before anything is fetched: an
+# install that runs out of room half-way leaves packages half-installed.
+free_mb() { df -Pm "${1:-/}" 2>/dev/null | awk 'NR==2 {print $4}'; }
+need_space() {      # need_space MB WHAT
+    local have
+    $APT clean >/dev/null 2>&1 || true          # downloaded packages already installed: room for nothing
+    have=$(free_mb /)
+    [ -n "$have" ] || return 0
+    if [ "$have" -lt "$1" ]; then
+        say "not enough room on the system partition: $have MB free, $2 needs about $1 MB."
+        say "nothing was changed. Free some room (sudo apt autoremove; remove tools you do not use) and try again."
+        return 1
+    fi
+}
+
+# Debian's RetroArch was installed by an earlier version of this setup. It
+# cannot draw on this panel, and it brings the Qt desktop libraries and 100 MB
+# of menu pictures with it. Games uses the emulator bundle instead: take
+# Debian's away, whatever state it was left in, with what only it needed.
+drop_debian_retroarch() {
+    local st
+    st=$(dpkg-query -W -f='${db:Status-Abbrev}' retroarch 2>/dev/null | cut -c1-2)
+    case "$st" in ""|un|pn) return 0 ;; esac
+    say "removing Debian's RetroArch (not used here; Games has its own)..."
+    dpkg --purge --force-remove-reinstreq retroarch || { say "could not remove it (see above)."; return 1; }
+    DEBIAN_FRONTEND=noninteractive $APT purge -y -q retroarch-assets 'libretro-*' >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive $APT autoremove --purge -y -q || true
+    say "removed; $(free_mb /) MB free on the system partition."
+}
+
+# An install that was cut short leaves dpkg refusing every later one until it
+# is finished. Finish it first; nothing to do when the last one ended well.
+repair() {
+    wait_lock || return 1
+    if [ -n "$(ls /var/lib/dpkg/updates 2>/dev/null)" ] || dpkg --audit 2>/dev/null | grep -q .; then
+        say "an earlier install was interrupted: finishing it first..."
+        # Two steps, and the first may fail on its own: a package can be
+        # unpacked while one it depends on never arrived. The second step
+        # fetches what is missing and sets up the rest.
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a || say "some packages wait for others; fetching those..."
+        if ! DEBIAN_FRONTEND=noninteractive $APT install -f -y -q --no-install-recommends; then
+            say "could not finish the earlier install (see above)."; return 1
+        fi
+        if dpkg --audit 2>/dev/null | grep -q .; then
+            say "packages are still half-installed (see above)."; return 1
+        fi
+        say "the earlier install is finished."
+    fi
+}
+
 status() {
     online && echo "online yes" || echo "online no"
+    have mpv && echo "mpv installed" || echo "mpv absent"
+    have_retroarch && echo "retroarch installed" || echo "retroarch absent"
     have msfconsole && echo "metasploit installed" || echo "metasploit absent"
     { have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; } &&
         echo "exploitdb installed" || echo "exploitdb absent"
@@ -33,13 +121,13 @@ install_msf() {
     local arch; arch=$(dpkg --print-architecture)
     echo "deb [signed-by=/etc/apt/keyrings/metasploit.asc] https://apt.metasploit.com/ lucid main" \
         > /etc/apt/sources.list.d/metasploit.list
-    apt-get update -q || { say "could not reach the Metasploit repo"; return 1; }
-    if ! apt-get install -y -q metasploit-framework; then
+    $APT update -q || { say "could not reach the Metasploit repo"; return 1; }
+    if ! $APT install -y -q metasploit-framework; then
         say "the Metasploit repo has no build for $arch."
         say "On $arch, install it from the Kali repo by hand (see docs/arsenal.md)."
         say "Nothing was left half-installed."
         rm -f /etc/apt/sources.list.d/metasploit.list
-        apt-get update -q >/dev/null 2>&1 || true
+        $APT update -q >/dev/null 2>&1 || true
         return 1
     fi
     say "Metasploit installed."
@@ -59,15 +147,131 @@ install_exploitdb() {
     fi
 }
 
+# Video: the same names as build/packages-media.txt, which a new image
+# installs when it is built.
+MEDIA_PKGS="mpv quickjs"
+
+# Games: the emulator bundle (RetroArch built for this GPU, and its cores),
+# made by build/build-emulators.sh. It is inside every image, and each
+# release of the system also carries it as a file, rk-emulators-<n>.tar.xz;
+# a card flashed before Games existed takes it from there. Which <n> this
+# system wants is in /usr/share/rk/emulators.bundle.
+EMU_REPO=ruderigo/RK3326_Linux
+
+# The address of a release file by its name: the newest release (pre-releases
+# count) of this repository that has it. Nothing printed when none has.
+release_asset() {
+    curl -fsSL -m 30 "https://api.github.com/repos/$EMU_REPO/releases?per_page=30" 2>/dev/null |
+        python3 -I -c "import json,sys
+try: rels=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for r in rels if isinstance(rels, list) else []:
+    for a in r.get('assets', []):
+        if a.get('name') == sys.argv[1]:
+            print(a['browser_download_url']); sys.exit(0)" "$1"
+}
+
+install_emulators() {
+    local n have_n name url tmp want got
+    n=$(head -1 "${RK_EMU_WANT:-/usr/share/rk/emulators.bundle}" 2>/dev/null | tr -cd '0-9')
+    [ -n "$n" ] || { say "this system does not say which emulator bundle it wants."; return 1; }
+    have_n=$(sed -n 's/^bundle //p' "$EMU_DIR/VERSION" 2>/dev/null | head -1)
+    if have_retroarch && [ "$have_n" = "$n" ]; then
+        say "the emulators are already installed (bundle $n)"; return 0
+    fi
+    name="rk-emulators-$n.tar.xz"
+    if [ -n "${RK_EMU_BASE:-}" ]; then
+        url="$RK_EMU_BASE/$name"
+    else
+        url=$(release_asset "$name")
+        [ -n "$url" ] || { say "no release of the system carries $name yet."; return 1; }
+    fi
+    tmp=$(mktemp -d /var/tmp/rk-emu.XXXXXX) || return 1
+    say "fetching the emulators (bundle $n, about 15 MB)..."
+    if ! curl -fsSL "$url.sha256" -o "$tmp/sum" || ! curl -fsSL "$url" -o "$tmp/$name"; then
+        say "could not fetch $name."; rm -rf "$tmp"; return 1
+    fi
+    want=$(awk '{print $1; exit}' "$tmp/sum"); got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
+    if [ -z "$want" ] || [ "$want" != "$got" ]; then
+        say "the download does not match its checksum; nothing changed."; rm -rf "$tmp"; return 1
+    fi
+    # only what belongs under /opt/rk-emulators is taken from the archive
+    if tar -tJf "$tmp/$name" | grep -qvE '^opt(/|/rk-emulators(/.*)?)?$'; then
+        say "the archive holds files outside /opt/rk-emulators; nothing changed."; rm -rf "$tmp"; return 1
+    fi
+    # On a handheld the bundle lives on the data partition, which has the
+    # room (the system partition of an older card is small), and
+    # /opt/rk-emulators points to it.
+    local target="$EMU_DIR" have
+    if [ -z "${RK_EMU_DIR:-}" ] && mountpoint -q /data 2>/dev/null; then
+        target="$HEAVY_DIR/rk-emulators"
+    fi
+    install -d -m 0755 "$(dirname "$target")"
+    have=$(free_mb "$(dirname "$target")")
+    if [ -n "$have" ] && [ "$have" -lt 200 ]; then
+        say "not enough room for the emulators: $have MB free in $(dirname "$target"), about 200 MB needed."
+        rm -rf "$tmp"; return 1
+    fi
+    rm -rf "$target.new" && mkdir -p "$target.new" &&
+        tar -xJf "$tmp/$name" -C "$target.new" --strip-components=2 --no-same-owner || {
+            say "could not unpack the emulators."; rm -rf "$tmp" "$target.new"; return 1; }
+    rm -rf "$tmp" "$target.old"
+    [ ! -d "$target" ] || mv "$target" "$target.old"
+    mv "$target.new" "$target" && rm -rf "$target.old"
+    chown -R 0:0 "$target"
+    if [ "$target" != "$EMU_DIR" ]; then
+        [ -L "$EMU_DIR" ] || rm -rf "$EMU_DIR"
+        ln -sfn "$target" "$EMU_DIR"
+    fi
+    say "the emulators are installed (bundle $n)."
+}
+
+install_media() {
+    local p rc=0
+    wait_lock || return 1
+    drop_debian_retroarch || return 1
+    repair || return 1
+    local todo=
+    for p in $MEDIA_PKGS; do installed "$p" || todo="$todo $p"; done
+    if [ -n "$todo" ]; then
+        need_space 200 "the video player" || return 1
+        $APT update -q || { say "could not reach Debian's package servers"; return 1; }
+    fi
+    for p in $MEDIA_PKGS; do
+        if installed "$p"; then
+            say "$p is already installed"
+        elif DEBIAN_FRONTEND=noninteractive $APT install -y -q --no-install-recommends "$p"; then
+            say "$p installed"
+        else
+            say "$p could not be installed"; rc=1
+        fi
+    done
+    have mpv || { say "mpv is missing: Video cannot play."; rc=1; }
+    # Games does not hold Video back: say so, and carry on
+    install_emulators || { say "Games is not ready yet (see above); Video does not need it."; }
+    return "$rc"
+}
+
 case "${1:-}" in
     status) status ;;
+    install-emulators)
+        install_emulators; exit $? ;;
+    install-media)
+        online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
+        rc=0
+        install_media || rc=1
+        $APT clean >/dev/null 2>&1 || true
+        [ "$rc" -eq 0 ] && say "done." || say "finished; something was not installed (see above)."
+        exit "$rc" ;;
     install-heavy)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
+        repair || exit 1
+        need_space 1500 "Metasploit" || exit 1
         rc=0
         install_msf || rc=1
         install_exploitdb || rc=1
-        apt-get clean >/dev/null 2>&1 || true
+        $APT clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
         exit "$rc" ;;
-    *) echo "usage: rk-tools status | install-heavy" >&2; exit 2 ;;
+    *) echo "usage: rk-tools status | install-heavy | install-media | install-emulators" >&2; exit 2 ;;
 esac

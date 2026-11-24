@@ -7,10 +7,11 @@ An app adds itself by putting one JSON file here (or in /data/ark/apps):
    "exec": ["/home/ark/firefly/deploy/FireFly.sh"]}
 
 name     shown on the dock (required)
-exec     the program to start, with its arguments (required). While it runs,
+exec     the program to start, with its arguments (required). A bare name
+         is looked for on PATH and in /usr/games. While it runs,
          the desktop steps aside and comes back when the program ends. If the
          program is not there, the icon is dimmed ("not installed").
-icon     one of: firefly stump ember sound chip  (app glyphs), or a window
+icon     one of: firefly stump ember sound chip video games  (app glyphs), or a window
          glyph (radar survey files network devices settings terminal update).
          Anything else: the first letter of the name.
 group    groups and sorts the dock ("Comms", "Audio", ...).

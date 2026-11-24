@@ -1,0 +1,457 @@
+#!/usr/bin/python3
+"""Video on the handheld: search YouTube, and play a video or a file with mpv.
+
+    rk-video status          what is here: mpv, yt-dlp, a JavaScript runtime
+    rk-video fetch           get (or update) yt-dlp from its own releases
+    rk-video search WORDS    results, one per line: id TAB length TAB channel TAB title
+    rk-video play URL|FILE   play it, driven by the pad
+
+The player is mpv. It draws through SDL2 on dArkOS's Mali driver, the same
+road as the other dock apps, and is told what to do over its control socket,
+so the pad works whatever mpv was built with:
+
+    A        pause / play            LEFT RIGHT   10 seconds back / on
+    X        where am I              UP DOWN      1 minute on / back
+    B        stop                    L1 R1        5 minutes back / on
+    SELECT+START   stop (as every dock app)
+
+yt-dlp is not taken from Debian: YouTube changes often and only a recent
+yt-dlp keeps up, so `fetch` puts the official one in ~/.local/share/rk-video
+(checked against the release's SHA-256 list), unpacked, so Python keeps its
+compiled form and does not rebuild it at every start. YouTube also needs a
+JavaScript runtime next to it. `fetch` brings Deno, which is quick; where
+Deno does not run on this kernel, QuickJS (`qjs`) is used, which is slow to
+get a video started.
+
+Settings, optional, in ~/.config/rk-video (KEY=VALUE lines):
+    VO=sdl          mpv's video output (sdl, drm, gpu)
+    HEIGHT=480      the tallest picture asked from YouTube
+"""
+import glob
+import hashlib
+import json
+import os
+import select
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+import zipfile
+
+HOME = os.path.expanduser("~")
+SHARE = os.path.join(HOME, ".local/share/rk-video")
+YTDLP_OWN = os.path.join(SHARE, "yt-dlp")           # what is run: a two-line launcher for YTDLP_APP
+YTDLP_APP = os.path.join(SHARE, "yt-dlp.app")       # yt-dlp itself, unpacked
+DENO_OWN = os.path.join(SHARE, "deno")
+DENO_RELEASE = "https://github.com/denoland/deno/releases/latest/download/"
+DENO_BUILDS = {"aarch64": "deno-aarch64-unknown-linux-gnu.zip", "x86_64": "deno-x86_64-unknown-linux-gnu.zip"}
+CONF = os.path.join(HOME, ".config/rk-video")
+LOG = os.path.join(HOME, ".cache/rk-video/last.log")
+ERR = os.path.join(HOME, ".cache/rk-video/last.error")      # one line for the Video window, when a play failed
+RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+GPU_DIR = "/usr/lib/rk-gpu"
+RESULTS = 15
+
+# the pad's buttons by where they are printed on the handheld (as the desktop reads them)
+PAD = {305: "a", 304: "b", 307: "x", 308: "y", 310: "l1", 311: "r1",
+       704: "select", 705: "start", 544: "up", 545: "down", 546: "left", 547: "right"}
+# a USB keyboard: space, q/Esc, the arrows
+KEYS = {57: "a", 16: "b", 1: "b", 103: "up", 108: "down", 105: "left", 106: "right", 23: "x"}
+COMMANDS = {"a": ["cycle", "pause"], "x": ["show-progress"], "b": ["quit"],
+            "left": ["seek", -10], "right": ["seek", 10], "up": ["seek", 60], "down": ["seek", -60],
+            "l1": ["seek", -300], "r1": ["seek", 300]}
+EVENT = struct.Struct("qqHHi")          # struct input_event on a 64-bit kernel
+EV_KEY = 1
+
+
+def say(*a):
+    print("rk-video:", *a, flush=True)
+
+
+def settings(path=CONF):
+    out = {}
+    try:
+        for line in open(path):
+            k, sep, v = line.strip().partition("=")
+            if sep and not k.startswith("#"):
+                out[k.strip().upper()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def ytdlp():
+    """The yt-dlp to run, as a command list; None until `fetch` has brought it.
+    Only our own counts: Debian's is too old for YouTube (and does not know
+    the options given to it here), so it is never used, even when installed."""
+    return [YTDLP_OWN] if os.access(YTDLP_OWN, os.X_OK) else None
+
+
+def js_runtime():
+    """The JavaScript runtime for YouTube, as yt-dlp's --js-runtimes value
+    (a name, or name:path); None when there is none."""
+    if os.access(DENO_OWN, os.X_OK):
+        return "deno:" + DENO_OWN
+    if shutil.which("deno"):
+        return "deno"
+    if shutil.which("qjs"):
+        return "quickjs"
+    return None
+
+
+def clean_env():
+    """yt-dlp is plain Python: it must not load the apps' graphics libraries."""
+    env = dict(os.environ)
+    env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def ytdlp_version():
+    cmd = ytdlp()
+    if not cmd:
+        return None
+    try:
+        out = subprocess.run(cmd + ["--version"], capture_output=True, text=True, timeout=60, env=clean_env())
+        return out.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+# ------------------------------------------------------------------- status
+def status():
+    print("mpv", "yes" if shutil.which("mpv") else "no")
+    print("ytdlp", ytdlp_version() or "absent")
+    print("js", (js_runtime() or "none").split(":")[0])
+    return 0
+
+
+# -------------------------------------------------------------------- fetch
+def sha_in(sums_text, name):
+    """The SHA-256 the release's list gives for the file `name`, or None."""
+    for line in sums_text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == name and len(parts[0]) == 64:
+            return parts[0].lower()
+    return None
+
+
+def download(url, path, timeout=60):
+    """Fetch url into path; returns its SHA-256."""
+    digest = hashlib.sha256()
+    with open(path, "wb") as out, urllib.request.urlopen(url, timeout=timeout) as r:
+        for block in iter(lambda: r.read(1 << 16), b""):
+            digest.update(block)
+            out.write(block)
+    return digest.hexdigest()
+
+
+def fetch_ytdlp():
+    before = ytdlp_version()
+    say("fetching yt-dlp from its releases...")
+    tmp = tempfile.mkdtemp(dir=SHARE, prefix=".new.")
+    try:
+        try:
+            with urllib.request.urlopen(RELEASE + "SHA2-256SUMS", timeout=30) as r:
+                want = sha_in(r.read().decode("utf-8", "replace"), "yt-dlp")
+            if not want:
+                say("the release has no checksum for yt-dlp; nothing changed.")
+                return 1
+            got = download(RELEASE + "yt-dlp", os.path.join(tmp, "yt-dlp.zip"))
+        except OSError as e:
+            say(f"could not fetch it ({e}). Is the handheld online?")
+            return 1
+        if got != want:
+            say("the download does not match its checksum; nothing changed.")
+            return 1
+        # unpacked, Python keeps each module's compiled form beside it; run
+        # from the one file, it compiles everything again at every start
+        app = os.path.join(tmp, "app")
+        try:
+            with zipfile.ZipFile(os.path.join(tmp, "yt-dlp.zip")) as z:
+                z.extractall(app)
+        except (OSError, zipfile.BadZipFile) as e:
+            say(f"could not unpack yt-dlp ({e}); nothing changed.")
+            return 1
+        if not os.path.isfile(os.path.join(app, "__main__.py")):
+            say("that is not the yt-dlp expected; nothing changed.")
+            return 1
+        subprocess.run([sys.executable, "-m", "compileall", "-q", app], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, env=clean_env())
+        old = YTDLP_APP + ".old"
+        shutil.rmtree(old, ignore_errors=True)
+        if os.path.isdir(YTDLP_APP):
+            os.rename(YTDLP_APP, old)
+        os.rename(app, YTDLP_APP)
+        shutil.rmtree(old, ignore_errors=True)
+        launcher = os.path.join(tmp, "launcher")
+        with open(launcher, "w") as f:
+            f.write(f'#!/bin/sh\nexec python3 "{YTDLP_APP}" "$@"\n')
+        os.chmod(launcher, 0o755)
+        os.replace(launcher, YTDLP_OWN)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    now = ytdlp_version()
+    if not now:
+        say("yt-dlp was fetched but does not start (it needs python3).")
+        return 1
+    say(f"yt-dlp is now {now}" + (f" (was {before})" if before and before != now else ""))
+    return 0
+
+
+def deno_works(path):
+    try:
+        p = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=60, env=clean_env())
+        return p.returncode == 0 and p.stdout.startswith("deno ")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def fetch_deno():
+    """Deno, the JavaScript runtime that gets a video started quickly. Never
+    fatal: where it cannot be fetched or does not run, QuickJS stays in use."""
+    if deno_works(DENO_OWN):
+        say("Deno is here.")
+        return
+    name = DENO_BUILDS.get(os.uname().machine)
+    if not name:
+        return
+    say("fetching Deno (about 40 MB), so that videos start sooner...")
+    tmp = tempfile.mkdtemp(dir=SHARE, prefix=".new.")
+    try:
+        with urllib.request.urlopen(DENO_RELEASE + name + ".sha256sum", timeout=30) as r:
+            want = sha_in(r.read().decode("utf-8", "replace"), name)
+        if not want or download(DENO_RELEASE + name, os.path.join(tmp, name), timeout=120) != want:
+            say("Deno's download does not match its checksum; left out.")
+            return
+        with zipfile.ZipFile(os.path.join(tmp, name)) as z:
+            z.extract("deno", tmp)
+        new = os.path.join(tmp, "deno")
+        os.chmod(new, 0o755)
+        if not deno_works(new):
+            say("Deno does not run on this handheld's kernel; staying with QuickJS (slower to start a video).")
+            return
+        os.replace(new, DENO_OWN)
+        say("Deno is in place.")
+    except (OSError, KeyError, zipfile.BadZipFile) as e:
+        say(f"could not fetch Deno ({e}); staying with QuickJS.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fetch():
+    os.makedirs(SHARE, exist_ok=True)
+    rc = fetch_ytdlp()
+    if rc:
+        return rc
+    fetch_deno()
+    if not js_runtime():
+        say("no JavaScript runtime (Deno or qjs): YouTube may refuse to play. Install quickjs.")
+    return 0
+
+
+# ------------------------------------------------------------------- search
+def search(words):
+    cmd = ytdlp()
+    if not cmd:
+        say("yt-dlp is not here yet: run  rk-video fetch")
+        return 1
+    query = " ".join(words).strip()
+    if not query:
+        say("search for what?")
+        return 2
+    # the words follow "ytsearchN:", so they can never be read as an option
+    p = subprocess.run(cmd + ["--flat-playlist", "--no-warnings", "--print",
+                              "%(id)s\t%(duration_string|)s\t%(channel|)s\t%(title)s",
+                              f"ytsearch{RESULTS}:{query}"],
+                       capture_output=True, text=True, errors="replace", timeout=120, env=clean_env())
+    sys.stdout.write(p.stdout)
+    if p.returncode and not p.stdout.strip():
+        say((p.stderr.strip().splitlines() or ["the search failed"])[-1])
+        return 1
+    return 0
+
+
+# --------------------------------------------------------------------- play
+def panel_height():
+    try:
+        return int(open("/sys/class/graphics/fb0/virtual_size").read().split(",")[1])
+    except (OSError, ValueError, IndexError):
+        return 480
+
+
+def ytdl_format(height):
+    """H.264 first: this processor decodes it in software far faster than VP9 or AV1."""
+    h = f"[height<={height}]"
+    return f"bv*{h}[vcodec^=avc1]+ba[acodec^=mp4a]/bv*{h}[vcodec^=avc1]+ba/b{h}/bv*{h}+ba/b"
+
+
+def mpv_command(target, sock, conf, height=None):
+    vo = conf.get("VO") or "sdl"
+    try:
+        height = int(conf.get("HEIGHT") or 0) or height or (480 if panel_height() >= 600 else 360)
+    except ValueError:
+        height = 480
+    cmd = ["mpv", "--fullscreen", f"--vo={vo}", "--ao=alsa", "--hwdec=no", "--framedrop=vo",
+           "--vd-lavc-threads=4", "--vd-lavc-fast", "--vd-lavc-skiploopfilter=nonref",
+           "--cache=yes", "--demuxer-max-bytes=32MiB", "--demuxer-max-back-bytes=8MiB",
+           "--osd-font-size=42", "--sub-auto=no", "--idle=no", "--keep-open=no",
+           f"--input-ipc-server={sock}", f"--ytdl-format={ytdl_format(height)}"]
+    if ytdlp():
+        cmd.append(f"--script-opts=ytdl_hook-ytdl_path={YTDLP_OWN}")
+        js = js_runtime()
+        if js and js != "deno":                 # plain "deno" on PATH is yt-dlp's own default
+            cmd.append(f"--ytdl-raw-options=js-runtimes={js}")
+    else:
+        cmd.append("--ytdl=no")                 # never Debian's yt-dlp (see ytdlp())
+    return cmd + ["--", target]
+
+
+def why(log_text):
+    """One line a person can act on, from what mpv and yt-dlp said."""
+    lines = [ln.strip() for ln in log_text.splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        if "ERROR:" in ln:
+            return "YouTube refused: " + ln.split("ERROR:", 1)[1].strip()[:160] + "  (Y updates yt-dlp)"
+    if any("no such option" in ln for ln in lines):
+        return "yt-dlp is too old for this. Press Y to fetch the newest."
+    if any("Failed to recognize file format" in ln or "youtube-dl failed" in ln for ln in lines):
+        return "The video could not be opened. Press Y to update yt-dlp, then try again."
+    if any("vo/" in ln and ("failed" in ln.lower() or "error" in ln.lower()) for ln in lines):
+        return "The player could not use the screen (details in ~/.cache/rk-video/last.log)."
+    return "The video did not play (details in ~/.cache/rk-video/last.log)."
+
+
+def fail(text):
+    say(text)
+    try:
+        os.makedirs(os.path.dirname(ERR), exist_ok=True)
+        with open(ERR, "w") as f:
+            f.write(text + "\n")
+    except OSError:
+        pass
+
+
+def pad_command(action, held):
+    """What a button press tells mpv; SELECT and START together stop it."""
+    if action in ("select", "start") and {"select", "start"} <= held:
+        return ["quit"]
+    return COMMANDS.get(action)
+
+
+def open_inputs():
+    fds = {}
+    for path in glob.glob("/dev/input/event*"):
+        try:
+            fds[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = path
+        except OSError:
+            pass
+    return fds
+
+
+def connect(sock, proc, secs=20):
+    end = time.time() + secs
+    while time.time() < end and proc.poll() is None:
+        try:
+            s = socket.socket(socket.AF_UNIX)
+            s.connect(sock)
+            return s
+        except OSError:
+            s.close()
+            time.sleep(0.2)
+    return None
+
+
+def play(target):
+    try:
+        os.unlink(ERR)
+    except OSError:
+        pass
+    if not shutil.which("mpv"):
+        fail("mpv is not installed:  sudo rk-tools install-media")
+        return 1
+    if not (target.startswith(("http://", "https://")) or os.path.isfile(target)):
+        say("play what? A web address (https://...) or a file.")
+        return 2
+    if os.path.isfile(target):
+        target = os.path.abspath(target)
+    elif not ytdlp():
+        fail("yt-dlp is not here yet. Press Y in Video (or run: rk-video fetch).")
+        return 1
+    env = dict(os.environ)
+    if os.path.isdir(GPU_DIR):                  # the same graphics as the dock gives its apps
+        paths = [GPU_DIR] + [p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and p != GPU_DIR]
+        env["LD_LIBRARY_PATH"] = ":".join(paths)
+        env.setdefault("SDL_VIDEODRIVER", "kmsdrm")
+    d = tempfile.mkdtemp(prefix="rk-video-")
+    sock = os.path.join(d, "mpv")
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    try:
+        with open(LOG, "w") as log:
+            proc = subprocess.Popen(mpv_command(target, sock, settings()), env=env, stdin=subprocess.DEVNULL,
+                                    stdout=log, stderr=subprocess.STDOUT)
+        ctl = connect(sock, proc)
+        fds, held = open_inputs(), set()
+        while proc.poll() is None:
+            try:
+                ready, _, _ = select.select(list(fds), [], [], 0.25)
+            except (OSError, ValueError):
+                ready = []
+            for fd in ready:
+                try:
+                    data = os.read(fd, EVENT.size * 64)
+                except BlockingIOError:
+                    continue
+                except OSError:                 # unplugged
+                    os.close(fd)
+                    del fds[fd]
+                    continue
+                for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
+                    _, _, etype, code, value = EVENT.unpack_from(data, off)
+                    action = PAD.get(code) or KEYS.get(code)
+                    if etype != EV_KEY or not action or value == 2:
+                        continue
+                    if not value:
+                        held.discard(action)
+                        continue
+                    held.add(action)
+                    cmd = pad_command(action, held)
+                    if cmd and ctl:
+                        try:
+                            ctl.sendall((json.dumps({"command": cmd}) + "\n").encode())
+                        except OSError:
+                            ctl = None
+                    elif cmd == ["quit"]:       # no control socket: stop it all the same
+                        proc.terminate()
+        rc = proc.returncode
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    if rc not in (0, 4):                        # 4: stopped by the user
+        try:
+            text = open(LOG, errors="replace").read()
+        except OSError:
+            text = ""
+        fail(why(text))
+        return 1
+    return 0
+
+
+def main(argv):
+    cmd, rest = (argv[0] if argv else ""), argv[1:]
+    if cmd == "status":
+        return status()
+    if cmd == "fetch":
+        return fetch()
+    if cmd == "search":
+        return search(rest)
+    if cmd == "play" and len(rest) == 1:
+        return play(rest[0])
+    print("usage: rk-video status | fetch | search WORDS | play URL-or-FILE", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

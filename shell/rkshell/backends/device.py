@@ -30,6 +30,7 @@ import time
 
 import pygame
 
+from .. import system as system_mod
 from ..app import App
 
 # ---------------------------------------------------------------- key codes
@@ -72,6 +73,7 @@ def app_env():
         env["SDL_VIDEODRIVER"] = "kmsdrm"
     if os.path.isfile(PAD_DB):
         env["SDL_GAMECONTROLLERCONFIG_FILE"] = PAD_DB
+    env["PATH"] = system_mod.with_games(env.get("PATH"))
     return env
 
 

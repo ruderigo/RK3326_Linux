@@ -41,6 +41,7 @@ jobs:
           python3 tests/test_pointer.py
           python3 tests/test_wifi.py
           python3 tests/test_update.py
+          python3 tests/test_video.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
@@ -54,8 +55,37 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  emulators:
+    name: Emulators (RetroArch and its cores)
+    runs-on: ubuntu-24.04-arm        # arm64: RetroArch is compiled for the handheld's processor
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: The bundle number is the same everywhere
+        run: |
+          . build/emulators.env
+          [ "$(head -1 overlay/usr/share/rk/emulators.bundle)" = "$BUNDLE" ] || { echo "overlay/usr/share/rk/emulators.bundle does not say $BUNDLE (build/emulators.env)"; exit 1; }
+      - name: Build the bundle
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkg-config unzip xz-utils \
+              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev >/dev/null
+            build/build-emulators.sh emu-out
+          '
+          sudo chown -R "$(id -u):$(id -g)" emu-out
+          ls -la emu-out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rk-emulators
+          path: emu-out/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
   image:
     name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
+    needs: emulators
     runs-on: ubuntu-24.04-arm        # arm64, like the handhelds: Debian installs natively
     timeout-minutes: 60
     env:
@@ -88,12 +118,19 @@ jobs:
           git checkout --quiet "$UPSTREAM_COMMIT"
           du -sh uboot boot/dArkOS/consoles rootfs/dArkOS/usr/lib/modules rootfs/dArkOS/usr/lib/firmware
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-emulators
+          path: emu
+
       # Debian trixie builds Debian trixie: the same debootstrap, keys and
       # filesystem tools as the system that ends up on the card.
       - name: Build and verify the image
         run: |
+          . build/emulators.env
+          export EMULATORS="/src/emu/rk-emulators-$BUNDLE.tar.xz"
           docker run --rm --privileged -v "$PWD:/src" -w /src \
-            -e CONSOLE -e KERNEL -e VERSION debian:trixie bash -euo pipefail -c '
+            -e CONSOLE -e KERNEL -e VERSION -e EMULATORS debian:trixie bash -euo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates device-tree-compiler >/dev/null
               build/build-image.sh upstream out
@@ -112,7 +149,7 @@ jobs:
   release:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: image
+    needs: [image, emulators]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -123,6 +160,13 @@ jobs:
           pattern: rk3326-linux-*
           path: out
           merge-multiple: true
+      # and the emulator bundle that is inside the image, as a file of its own:
+      # a handheld flashed before Games existed fetches it from the release
+      # (rk-tools install-media looks through this repository's releases for it)
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-emulators
+          path: out
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,5 +174,7 @@ jobs:
           ls -la out
           # a run that failed half-way leaves a draft behind; start clean (the tag stays)
           gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" \
+          # v1.2.0-rc.1 and the like are pre-releases: never "the latest release"
+          pre=; case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" $pre \
             --title "RK3326 Linux ${GITHUB_REF_NAME#v}" --generate-notes

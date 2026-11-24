@@ -174,7 +174,23 @@ def _sound(s, c):
     pygame.draw.arc(s, c, (88, 44, 76, 104), -1.0, 1.0, 9)
 
 
-GLYPHS = {"radar": _radar, "sound": _sound, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
+def _video(s, c):
+    """A screen with a play triangle."""
+    pygame.draw.rect(s, c, (42, 52, 108, 82), width=9, border_radius=12)
+    pygame.draw.polygon(s, c, [(84, 74), (84, 112), (116, 93)])
+    pygame.draw.rect(s, c, (72, 142, 48, 9), border_radius=4)
+
+
+def _games(s, c):
+    """A pad: a cross on the left, two buttons on the right."""
+    pygame.draw.rect(s, c, (36, 62, 120, 68), border_radius=30)
+    pygame.draw.rect(s, T.PANEL, (56, 91, 34, 10))
+    pygame.draw.rect(s, T.PANEL, (68, 79, 10, 34))
+    pygame.draw.circle(s, T.PANEL, (116, 104), 8)
+    pygame.draw.circle(s, T.PANEL, (134, 88), 8)
+
+
+GLYPHS = {"radar": _radar, "video": _video, "games": _games, "sound": _sound, "survey": _survey, "files": _files, "network": _network, "devices": _devices, "settings": _settings, "terminal": _terminal, "ember": _ember, "update": _update,
           "firefly": _firefly, "stump": _stump, "chip": _chip}
 _icons, _scaled = {}, {}
 
