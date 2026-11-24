@@ -58,7 +58,11 @@ run() {
 }
 
 case "${1:-run}" in
-    run)    run ;;
+    run)    run; rc=$?
+            # every start: the tools on the data partition are reached through
+            # links on this one, which a reflash or a restored backup loses
+            [ -n "${RK_MIG_DIR:-}" ] || /usr/local/sbin/rk-tools links 2>/dev/null || true
+            exit "$rc" ;;
     to)     run "${2:?usage: rk-migrate to N}" ;;
     status)
         echo "schema recorded : $(current)"

@@ -5,6 +5,7 @@
 #
 #   rk-tools status         whether online, and what heavy tool is installed
 #   rk-tools install-heavy   install Metasploit and exploitdb (needs network)
+#   rk-tools links           put back missing links to the tools on the data partition (every start)
 #   rk-tools install-media   install what Video and Games need (mpv, QuickJS,
 #                            and the emulator bundle: RetroArch and its cores),
 #                            on a card flashed before they were part of the image
@@ -17,7 +18,8 @@ EMU_DIR="${RK_EMU_DIR:-/opt/rk-emulators}"          # RK_EMU_*: for the tests
 have_retroarch() { [ -x "$EMU_DIR/bin/retroarch" ]; }
 online() { ip route 2>/dev/null | grep -q '^default'; }
 
-HEAVY_DIR=/data/opt
+HEAVY_DIR="${RK_HEAVY_DIR:-/data/opt}"            # RK_HEAVY_DIR, RK_BIN_DIR: for the tests
+BIN_DIR="${RK_BIN_DIR:-/usr/local/bin}"
 
 # the checks made before anything is fetched: room, memory (see the file)
 RK_WHO=rk-tools
@@ -97,7 +99,7 @@ status() {
     have mpv && echo "mpv installed" || echo "mpv absent"
     have_retroarch && echo "retroarch installed" || echo "retroarch absent"
     have msfconsole && echo "metasploit installed" || echo "metasploit absent"
-    { have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; } &&
+    { have searchsploit || [ -x "$BIN_DIR/searchsploit" ]; } &&
         echo "exploitdb installed" || echo "exploitdb absent"
 }
 
@@ -150,15 +152,35 @@ install_msf() {
     say "Metasploit installed."
 }
 
+# The heavy tools live on the data partition, and are reached through links
+# on the system partition. The data partition outlives the system (a reflash,
+# a restored backup); the links do not. This puts back any that is missing:
+# without it the tool was on the card, "already installed" to this script,
+# and absent to the Arsenal and the Terminal, which look for the command.
+relink() {
+    local changed=0
+    if [ -x "$HEAVY_DIR/exploitdb/searchsploit" ] &&
+            [ "$(readlink "$BIN_DIR/searchsploit" 2>/dev/null)" != "$HEAVY_DIR/exploitdb/searchsploit" ]; then
+        mkdir -p "$BIN_DIR" && ln -sfn "$HEAVY_DIR/exploitdb/searchsploit" "$BIN_DIR/searchsploit" && changed=1
+    fi
+    if [ -z "${RK_EMU_DIR:-}" ] && [ -x "$HEAVY_DIR/rk-emulators/bin/retroarch" ] && [ ! -e "$EMU_DIR" ]; then
+        ln -sfn "$HEAVY_DIR/rk-emulators" "$EMU_DIR" && changed=1
+    fi
+    [ "$changed" -eq 0 ] || say "put back the links to the tools on the data partition."
+    return 0
+}
+
 install_exploitdb() {
-    if have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; then
+    relink
+    if have searchsploit || [ -x "$BIN_DIR/searchsploit" ]; then
         say "exploitdb is already installed"; return 0
     fi
     install -d -m 0755 "$HEAVY_DIR"
     rk_need_space 500 "$HEAVY_DIR" "exploitdb" || return 1
     say "Fetching exploitdb..."
+    rm -rf "$HEAVY_DIR/exploitdb"               # a fetch that was cut short: start again
     if git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git "$HEAVY_DIR/exploitdb"; then
-        ln -sf "$HEAVY_DIR/exploitdb/searchsploit" /usr/local/bin/searchsploit
+        relink
         say "exploitdb installed in $HEAVY_DIR/exploitdb."
     else
         say "could not fetch exploitdb (needs network)."; return 1
@@ -300,6 +322,7 @@ install_media() {
 
 case "${1:-}" in
     status) status ;;
+    links)  [ "$(id -u)" -eq 0 ] || { echo "rk-tools: run as root" >&2; exit 1; }; relink ;;
     install-emulators)
         install_emulators; exit $? ;;
     install-media)

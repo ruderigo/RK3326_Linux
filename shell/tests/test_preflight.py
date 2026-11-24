@@ -126,6 +126,19 @@ with tempfile.TemporaryDirectory() as root:
                        env=dict(os.environ, RK_ROOT=root, RK_PREFLIGHT_FREE_MB="900", RK_PREFLIGHT_MEM_MB="300"))
     assert p.returncode == 0, p.stdout
 
+# ---- exploitdb on the data partition, its link on the system partition gone (as on the R36MAX)
+with tempfile.TemporaryDirectory() as d:
+    os.makedirs(f"{d}/data/exploitdb"); os.makedirs(f"{d}/bin")
+    open(f"{d}/data/exploitdb/searchsploit", "w").write("#!/bin/sh\n")
+    os.chmod(f"{d}/data/exploitdb/searchsploit", 0o755)
+    env = dict(os.environ, RK_HEAVY_DIR=f"{d}/data", RK_BIN_DIR=f"{d}/bin", RK_EMU_DIR=f"{d}/emu")
+    body = f'set -- status; source "{os.path.join(SBIN, "rk-tools")}" >/dev/null\ninstall_exploitdb'
+    p = subprocess.run(["bash", "-c", body], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+    assert os.readlink(f"{d}/bin/searchsploit") == f"{d}/data/exploitdb/searchsploit", p.stdout
+    assert "put back the links" in p.stdout and "already installed" in p.stdout, p.stdout
+    p = subprocess.run(["bash", "-c", body], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+    assert "put back the links" not in p.stdout, "a link that is right was made again"
+
 # ---- an update never writes over a script that is running (the updater itself is one of them)
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 with tempfile.TemporaryDirectory() as root:
