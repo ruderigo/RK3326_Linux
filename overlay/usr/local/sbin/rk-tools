@@ -50,6 +50,36 @@ wait_lock() {
     say "it has finished."
 }
 
+# Room on the system partition, checked before anything is fetched: an
+# install that runs out of room half-way leaves packages half-installed.
+free_mb() { df -Pm "${1:-/}" 2>/dev/null | awk 'NR==2 {print $4}'; }
+need_space() {      # need_space MB WHAT
+    local have
+    $APT clean >/dev/null 2>&1 || true          # downloaded packages already installed: room for nothing
+    have=$(free_mb /)
+    [ -n "$have" ] || return 0
+    if [ "$have" -lt "$1" ]; then
+        say "not enough room on the system partition: $have MB free, $2 needs about $1 MB."
+        say "nothing was changed. Free some room (sudo apt autoremove; remove tools you do not use) and try again."
+        return 1
+    fi
+}
+
+# Debian's RetroArch was installed by an earlier version of this setup. It
+# cannot draw on this panel, and it brings the Qt desktop libraries and 100 MB
+# of menu pictures with it. Games uses the emulator bundle instead: take
+# Debian's away, whatever state it was left in, with what only it needed.
+drop_debian_retroarch() {
+    local st
+    st=$(dpkg-query -W -f='${db:Status-Abbrev}' retroarch 2>/dev/null | cut -c1-2)
+    case "$st" in ""|un|pn) return 0 ;; esac
+    say "removing Debian's RetroArch (not used here; Games has its own)..."
+    dpkg --purge --force-remove-reinstreq retroarch || { say "could not remove it (see above)."; return 1; }
+    DEBIAN_FRONTEND=noninteractive $APT purge -y -q retroarch-assets 'libretro-*' >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive $APT autoremove --purge -y -q || true
+    say "removed; $(free_mb /) MB free on the system partition."
+}
+
 # An install that was cut short leaves dpkg refusing every later one until it
 # is finished. Finish it first; nothing to do when the last one ended well.
 repair() {
@@ -181,7 +211,10 @@ install_emulators() {
 
 install_media() {
     local p rc=0
+    wait_lock || return 1
+    drop_debian_retroarch || return 1
     repair || return 1
+    need_space 250 "Video and Games" || return 1
     $APT update -q || { say "could not reach Debian's package servers"; return 1; }
     for p in $MEDIA_PKGS; do
         if installed "$p"; then
@@ -212,6 +245,7 @@ case "${1:-}" in
     install-heavy)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         repair || exit 1
+        need_space 1500 "Metasploit" || exit 1
         rc=0
         install_msf || rc=1
         install_exploitdb || rc=1
