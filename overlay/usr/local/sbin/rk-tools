@@ -23,16 +23,44 @@ HEAVY_DIR=/data/opt
 # short (power, a restart) is unpacked but not set up, and does not count.
 installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ]; }
 
+# Only one program may install packages at a time. Debian itself refreshes
+# its package lists in the background (after a start, once a day), and the
+# desktop may be running another install: wait for it instead of failing.
+APT="apt-get -o DPkg::Lock::Timeout=600"
+lock_free() {
+    python3 -I -c "import fcntl,sys
+for p in ('/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock'):
+    try:
+        f = open(p, 'a')
+        fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except FileNotFoundError:
+        continue
+    except OSError:
+        sys.exit(1)"
+}
+wait_lock() {
+    local n=0
+    lock_free && return 0
+    say "another install or update is running; waiting for it (up to 10 minutes)..."
+    while ! lock_free; do
+        n=$((n + 1))
+        [ "$n" -lt 120 ] || { say "it is still running. Try again when it has finished."; return 1; }
+        sleep 5
+    done
+    say "it has finished."
+}
+
 # An install that was cut short leaves dpkg refusing every later one until it
 # is finished. Finish it first; nothing to do when the last one ended well.
 repair() {
+    wait_lock || return 1
     if [ -n "$(ls /var/lib/dpkg/updates 2>/dev/null)" ] || dpkg --audit 2>/dev/null | grep -q .; then
         say "an earlier install was interrupted: finishing it first..."
         # Two steps, and the first may fail on its own: a package can be
         # unpacked while one it depends on never arrived. The second step
         # fetches what is missing and sets up the rest.
         DEBIAN_FRONTEND=noninteractive dpkg --configure -a || say "some packages wait for others; fetching those..."
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -f -y -q --no-install-recommends; then
+        if ! DEBIAN_FRONTEND=noninteractive $APT install -f -y -q --no-install-recommends; then
             say "could not finish the earlier install (see above)."; return 1
         fi
         if dpkg --audit 2>/dev/null | grep -q .; then
@@ -63,13 +91,13 @@ install_msf() {
     local arch; arch=$(dpkg --print-architecture)
     echo "deb [signed-by=/etc/apt/keyrings/metasploit.asc] https://apt.metasploit.com/ lucid main" \
         > /etc/apt/sources.list.d/metasploit.list
-    apt-get update -q || { say "could not reach the Metasploit repo"; return 1; }
-    if ! apt-get install -y -q metasploit-framework; then
+    $APT update -q || { say "could not reach the Metasploit repo"; return 1; }
+    if ! $APT install -y -q metasploit-framework; then
         say "the Metasploit repo has no build for $arch."
         say "On $arch, install it from the Kali repo by hand (see docs/arsenal.md)."
         say "Nothing was left half-installed."
         rm -f /etc/apt/sources.list.d/metasploit.list
-        apt-get update -q >/dev/null 2>&1 || true
+        $APT update -q >/dev/null 2>&1 || true
         return 1
     fi
     say "Metasploit installed."
@@ -154,11 +182,11 @@ install_emulators() {
 install_media() {
     local p rc=0
     repair || return 1
-    apt-get update -q || { say "could not reach Debian's package servers"; return 1; }
+    $APT update -q || { say "could not reach Debian's package servers"; return 1; }
     for p in $MEDIA_PKGS; do
         if installed "$p"; then
             say "$p is already installed"
-        elif DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$p"; then
+        elif DEBIAN_FRONTEND=noninteractive $APT install -y -q --no-install-recommends "$p"; then
             say "$p installed"
         else
             say "$p could not be installed"; rc=1
@@ -178,7 +206,7 @@ case "${1:-}" in
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         rc=0
         install_media || rc=1
-        apt-get clean >/dev/null 2>&1 || true
+        $APT clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; something was not installed (see above)."
         exit "$rc" ;;
     install-heavy)
@@ -187,7 +215,7 @@ case "${1:-}" in
         rc=0
         install_msf || rc=1
         install_exploitdb || rc=1
-        apt-get clean >/dev/null 2>&1 || true
+        $APT clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
         exit "$rc" ;;
     *) echo "usage: rk-tools status | install-heavy | install-media | install-emulators" >&2; exit 2 ;;
