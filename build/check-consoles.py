@@ -197,8 +197,10 @@ def table(rows, commit):
             "a file `rotate.txt` on the boot partition holding 0, 1, 2 or 3 sets it by hand.",
             "- **Buttons**: every handheld in the list reports the same pad with the same button codes. The RG351P and RG351V "
             "send their direction pad as a hat; the desktop reads both.",
-            "- **Video and Games** draw through the GPU, not through the desktop. On the handhelds marked \"turned\" they have "
-            "not been tried and may come out sideways.",
+            "- **Dock apps, Video and Games** draw through the GPU, not through the desktop, and are turned there, the way "
+            "arkos4clone and dArkOS do it: SDL programs (the dock apps, Video's player) load the SDL2 built for the panel's "
+            "turn, and Games uses RetroArch's driver for turned RK3326 panels. Both turn the picture with the Rockchip 2D "
+            "chip (librga). `rotate.txt` sets these too.",
             "- **Sound, charging, brightness**: the fixes in `build/dtb-fixes.txt` are for the R36MAX (type 1) only, found on "
             "one. Other handhelds run arkos4clone's device tree as it is.",
             "- **Left-stick pointer**: needs a left stick. Without one the direction pad does everything.", ""]

@@ -70,7 +70,9 @@ FIRMWARE="$UP/rootfs/dArkOS/usr/lib/firmware"     # only what build/firmware-ups
 MALI="$UP/rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so"
 SDLRK="$UP/rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate"
 PADDB="$UP/rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt"
-for f in "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
+# the same SDL2 built for panels mounted a quarter turn, upside down, or three quarters
+SDLTURN=("" "${SDLRK%.norotate}.rotate90" "${SDLRK%.norotate}.rotate180" "${SDLRK%.norotate}.rotate270")
+for f in "${SDLTURN[@]:1}" "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
          "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image" \
          "$MALI" "$SDLRK" "$PADDB"; do
     [ -f "$f" ] || die "missing in the upstream checkout: $f"
@@ -198,6 +200,11 @@ mkdir -p "$GPU"
 install -m 0644 "$MALI" "$GPU/libmali.so"
 install -m 0644 "$SDLRK" "$GPU/libSDL2-2.0.so.0"
 for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n"; done
+# Panels mounted on their side or upside down: arkos4clone's SDL2 for each
+# turn, in a folder of its own. The desktop puts the right one first for the
+# apps it opens (rkshell/panel.py). They turn the picture with librga.
+for n in 1 2 3; do install -D -m 0644 "${SDLTURN[$n]}" "$GPU/turn$n/libSDL2-2.0.so.0"; done
+ls "$ROOTFS"/usr/lib/aarch64-linux-gnu/librga.so.2 >/dev/null || die "no librga in the system: turned panels and Games need it"
 mkdir -p "$ROOTFS/usr/share"
 install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
 ls -l "$GPU"

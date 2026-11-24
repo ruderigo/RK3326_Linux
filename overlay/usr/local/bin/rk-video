@@ -383,8 +383,12 @@ def play(target):
         return 1
     env = dict(os.environ)
     if os.path.isdir(GPU_DIR):                  # the same graphics as the dock gives its apps
-        paths = [GPU_DIR] + [p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and p != GPU_DIR]
-        env["LD_LIBRARY_PATH"] = ":".join(paths)
+        try:                                    # with the SDL2 for the way this panel is mounted
+            from rkshell import panel
+            panel.app_environment(env)
+        except ImportError:                     # run from a checkout, without the desktop
+            paths = [GPU_DIR] + [p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and p != GPU_DIR]
+            env["LD_LIBRARY_PATH"] = ":".join(paths)
         env.setdefault("SDL_VIDEODRIVER", "kmsdrm")
     d = tempfile.mkdtemp(prefix="rk-video-")
     sock = os.path.join(d, "mpv")

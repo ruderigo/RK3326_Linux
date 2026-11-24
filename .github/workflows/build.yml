@@ -111,7 +111,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkg-config unzip xz-utils \
-              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev >/dev/null
+              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev librga-dev libpng-dev patch >/dev/null
             build/build-emulators.sh emu-out
           '
           sudo chown -R "$(id -u):$(id -g)" emu-out
@@ -153,6 +153,9 @@ jobs:
           git sparse-checkout set /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/ \
             /rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so \
             /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate90 \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate180 \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate270 \
             /rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt \
             $(grep -vE '^\s*(#|$)' ../build/firmware-upstream.txt | sed 's#^#/rootfs/dArkOS/usr/lib/firmware/#')
           set +f

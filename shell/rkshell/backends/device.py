@@ -34,6 +34,7 @@ import time
 
 import pygame
 
+from .. import panel
 from .. import system as system_mod
 from ..app import App
 
@@ -71,11 +72,12 @@ PAD_DB = "/usr/share/gamecontrollerdb.txt"      # dArkOS's controller database
 def app_env():
     """The environment for an app the dock opens. None of the desktop's own SDL
     settings (its "dummy" driver would give the app a black screen); dArkOS's
-    Mali driver and SDL2, which is what this panel shows; and the controller
-    database that puts SELECT and START where they are on this pad."""
+    Mali driver and the SDL2 for the way this panel is mounted (panel.py),
+    which is what this panel shows; and the controller database that puts
+    SELECT and START where they are on this pad."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
+    panel.app_environment(env)
     if os.path.isdir(GPU_DIR):
-        env["LD_LIBRARY_PATH"] = ":".join(p for p in (GPU_DIR, env.get("LD_LIBRARY_PATH")) if p)
         env["SDL_VIDEODRIVER"] = "kmsdrm"
     if os.path.isfile(PAD_DB):
         env["SDL_GAMECONTROLLERCONFIG_FILE"] = PAD_DB
@@ -108,28 +110,15 @@ def run_step(cmd):
 
 
 # -------------------------------------------------------------- framebuffer
-ROTATE_FILE = "/boot/rotate.txt"        # the owner's own answer, when the kernel's is wrong for a panel
 TURN = {1: -90, 2: 180, 3: 90}          # quarter turns clockwise -> pygame's angle (counterclockwise)
-
-
-def screen_rotation(cmdline, override=""):
-    """Quarter turns clockwise the picture needs (0 to 3), as the text console
-    is told: fbcon=rotate:N on the kernel command line. A digit in `override`
-    (the text of /boot/rotate.txt) comes first."""
-    for word in override.split()[:1]:
-        if word in ("0", "1", "2", "3"):
-            return int(word)
-    for word in cmdline.split():
-        if word.startswith("fbcon=rotate:") and word[13:14] in ("0", "1", "2", "3"):
-            return int(word[13])
-    return 0
+screen_rotation = panel.screen_rotation
 
 
 class Framebuffer:
     def __init__(self, path="/dev/fb0", sys_dir=None, rotate=None):
         sys_dir = sys_dir or "/sys/class/graphics/" + os.path.basename(path)
         if rotate is None:
-            rotate = screen_rotation(system_mod.read("/proc/cmdline"), system_mod.read(ROTATE_FILE))
+            rotate = panel.turn()
         self.rotate = rotate % 4
         # pw x ph: the panel as the driver has it. w x h: the picture as it is looked at.
         self.pw, self.ph = (int(x) for x in open(sys_dir + "/virtual_size").read().split(","))

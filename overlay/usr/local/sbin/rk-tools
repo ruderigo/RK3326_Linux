@@ -167,7 +167,7 @@ install_exploitdb() {
 
 # Video: the same names as build/packages-media.txt, which a new image
 # installs when it is built.
-MEDIA_PKGS="mpv quickjs"
+MEDIA_PKGS="mpv quickjs librga2 libpng16-16t64"
 
 # Games: the emulator bundle (RetroArch built for this GPU, and its cores),
 # made by build/build-emulators.sh. It is inside every image, and each
@@ -202,6 +202,10 @@ install_emulators() {
         url="$RK_EMU_BASE/$name"
     else
         url=$(release_asset "$name")
+        if [ -z "$url" ] && have_retroarch; then
+            say "bundle $n of the emulators is not published yet; keeping bundle ${have_n:-?}, which works as before."
+            return 0
+        fi
         [ -n "$url" ] || { say "no release of the system carries $name yet."; return 1; }
     fi
     tmp=$(rk_tmpdir rk-emu) || return 1

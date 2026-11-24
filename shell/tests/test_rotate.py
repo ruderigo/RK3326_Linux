@@ -66,6 +66,29 @@ for bpp in (32, 16):
             fb.show()
             assert gone == open(path, "rb").read(), f"rotate {rotate}, {bpp} bits: the pointer left a mark"
 
+# ------------------------------------------- programs that draw through the GPU
+from rkshell import panel
+
+with tempfile.TemporaryDirectory() as d:
+    gpu, rga = os.path.join(d, "rk-gpu"), os.path.join(d, "librga.so.2")
+    for n in (1, 2, 3):
+        os.makedirs(os.path.join(gpu, f"turn{n}"))
+        open(os.path.join(gpu, f"turn{n}", "libSDL2-2.0.so.0"), "w").close()
+    # a panel that is not turned: dArkOS's own SDL2, and RetroArch told so
+    env = panel.app_environment({"LD_LIBRARY_PATH": "/opt/x"}, 0, gpu, rga)
+    assert env["LD_LIBRARY_PATH"] == f"{gpu}:/opt/x" and env["RK_ROTATE"] == "0", env
+    # turned, but nothing to turn the picture with: the SDL2 that starts, not the one that cannot load
+    env = panel.app_environment({}, 3, gpu, rga)
+    assert env["LD_LIBRARY_PATH"] == gpu and env["RK_ROTATE"] == "3", env
+    open(rga, "w").close()
+    for n in (1, 2, 3):
+        env = panel.app_environment({"LD_LIBRARY_PATH": f"{gpu}:/opt/x"}, n, gpu, rga)
+        assert env["LD_LIBRARY_PATH"] == f"{gpu}/turn{n}:{gpu}:/opt/x" and env["RK_ROTATE"] == str(n), env
+    # asked twice (the dock, then rk-video inside it): the same answer
+    again = panel.app_environment(dict(env), 3, gpu, rga)
+    assert again["LD_LIBRARY_PATH"] == env["LD_LIBRARY_PATH"], again
+    assert panel.app_environment({}, 2, os.path.join(d, "nothing"), rga) == {"RK_ROTATE": "2"}
+
 # ------------------------------------------------------------------ the hat
 inputs = device.Inputs()
 inputs.next_scan = float("inf")         # no real devices in this test

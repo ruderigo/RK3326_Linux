@@ -10,7 +10,10 @@ replace is in [`docs/updates.md`](docs/updates.md).
   listed in [`docs/devices.md`](docs/devices.md). The card holds the boot
   files of all of them; `Choose handheld.command` on the boot partition (Mac,
   Linux), three files copied by hand, or `rk-boot-select` on the handheld
-  picks one. Panels mounted on their side are turned, and a direction pad
+  picks one. Panels mounted on their side or upside down are turned: the
+  desktop turns its own picture, dock apps and Video load arkos4clone's SDL2
+  for that turn, and Games (emulator bundle 2) is built with RetroArch's
+  driver for turned RK3326 panels. A direction pad
   that reports as a hat (RG351P, RG351V, USB pads) is read. Only the R36MAX
   has been started by a person: the others are checked by the build, from
   their device trees, and drawn at their screen sizes.

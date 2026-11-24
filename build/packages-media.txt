@@ -11,3 +11,7 @@
 # (yt-dlp itself and Deno come from their own releases: rk-video fetch)
 mpv
 quickjs
+
+# what the emulator bundle's RetroArch loads (in packages.txt for new images)
+librga2
+libpng16-16t64

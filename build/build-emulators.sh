@@ -19,8 +19,12 @@
 # which is how the recipe is checked.
 #
 # RetroArch is built the way dArkOS builds it, without its handheld-specific
-# patches and without the odroidgo2 display driver (that one needs libgo2 and
-# is for rotated panels; this panel is not rotated).
+# patches, and with RetroArch's own driver for RK3326 panels mounted on their
+# side (--enable-odroidgo2: it turns the picture with the Rockchip 2D chip,
+# librga). As it comes it knows one turn, the ODROID-GO Advance's;
+# build/patches/retroarch-0001 lets it take any, from RK_ROTATE, which the
+# desktop sets for what it opens. On a panel that is not turned the driver
+# steps aside and the plain KMS one draws, as before.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,12 +35,14 @@ WORK=${WORK:-$(mktemp -d /var/tmp/rkemu.XXXXXX)}
 say() { printf '\n=== %s\n' "$*"; }
 die() { echo "build-emulators: $*" >&2; exit 1; }
 
-for t in git make gcc g++ pkg-config unzip xz sha256sum; do
+for t in git make gcc g++ pkg-config unzip xz sha256sum patch; do
     command -v $t >/dev/null || die "missing tool: $t"
 done
-for lib in libdrm gbm egl glesv2 alsa libudev freetype2 zlib; do
+for lib in libdrm gbm egl glesv2 alsa libudev freetype2 zlib libpng; do
     pkg-config --exists "$lib" || die "missing development files: $lib"
 done
+
+echo '#include <rga/RgaApi.h>' | gcc -E -x c - >/dev/null 2>&1 || die "missing development files: librga (rga/RgaApi.h)"
 
 fetch_at() {    # fetch_at REPO COMMIT DIR [PATH...]: only the named paths of one commit
     local repo="$1" commit="$2" dir="$3"; shift 3
@@ -51,6 +57,12 @@ fetch_at() {    # fetch_at REPO COMMIT DIR [PATH...]: only the named paths of on
 say "RetroArch $RETROARCH_TAG"
 [ -d "$WORK/retroarch/.git" ] || git clone -q --depth 1 --branch "$RETROARCH_TAG" "$RETROARCH_REPO" "$WORK/retroarch"
 cd "$WORK/retroarch"
+for p in "$HERE"/patches/retroarch-*.patch; do
+    # a work folder used again already has them
+    if patch -Np1 --dry-run -s < "$p" >/dev/null 2>&1; then patch -Np1 -s < "$p"; echo "applied $(basename "$p")"
+    elif patch -Rp1 --dry-run -s < "$p" >/dev/null 2>&1; then echo "already applied: $(basename "$p")"
+    else die "$(basename "$p") does not apply to RetroArch $RETROARCH_TAG"; fi
+done
 FLAGS="-O2 -fomit-frame-pointer -DNDEBUG"
 [ "$(uname -m)" != aarch64 ] || FLAGS="-Ofast -march=armv8-a -mtune=cortex-a35 -fomit-frame-pointer -DNDEBUG"
 CFLAGS="$FLAGS" ./configure \
@@ -58,13 +70,14 @@ CFLAGS="$FLAGS" ./configure \
     --disable-qt --disable-sdl --disable-sdl2 --disable-vg --disable-vulkan --disable-vulkan_display \
     --disable-wayland --disable-x11 --disable-xrandr --disable-jack --disable-pulse --disable-oss \
     --disable-microphone --disable-ffmpeg --disable-discord --disable-v4l2 --disable-systemd \
-    --enable-alsa --enable-egl --enable-freetype --enable-kms --enable-networking \
+    --enable-alsa --enable-egl --enable-freetype --enable-kms --enable-networking --enable-odroidgo2 \
     --enable-opengles --enable-opengles3 --enable-opengles3_1 --enable-opengles3_2 \
     --enable-udev --enable-zlib
 make -j"$(nproc)"
 strip retroarch
 ./retroarch --features > "$WORK/features.txt" 2>&1 || true
 grep -qiE "kms.*yes|KMS" "$WORK/features.txt" || echo "WARNING: could not confirm KMS in --features"
+grep -q "GO2 DRM\] RK_ROTATE" retroarch || die "the driver for turned panels is not in this RetroArch"
 
 ROOT="$WORK/root/opt/rk-emulators"
 rm -rf "$WORK/root"; mkdir -p "$ROOT/bin" "$ROOT/cores"
