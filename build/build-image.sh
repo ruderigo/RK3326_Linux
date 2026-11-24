@@ -161,7 +161,7 @@ rm -rf "$ROOTFS"/var/lib/apt/lists/*
 
 # the languages most often sent along by a computer that logs in over SSH
 if [ -x "$ROOTFS/usr/sbin/locale-gen" ]; then
-    printf '%s UTF-8\n' en_US.UTF-8 en_CA.UTF-8 en_GB.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 > "$ROOTFS/etc/locale.gen"
+    printf '%s UTF-8\n' en_US.UTF-8 en_CA.UTF-8 en_GB.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 es_ES.UTF-8 es_MX.UTF-8 es_US.UTF-8 > "$ROOTFS/etc/locale.gen"
     in_root locale-gen
     echo 'LANG=C.UTF-8' > "$ROOTFS/etc/default/locale"
 fi
