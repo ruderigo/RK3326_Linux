@@ -27,10 +27,17 @@ installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok
 repair() {
     if [ -n "$(ls /var/lib/dpkg/updates 2>/dev/null)" ] || dpkg --audit 2>/dev/null | grep -q .; then
         say "an earlier install was interrupted: finishing it first..."
-        if ! DEBIAN_FRONTEND=noninteractive dpkg --configure -a; then
+        # Two steps, and the first may fail on its own: a package can be
+        # unpacked while one it depends on never arrived. The second step
+        # fetches what is missing and sets up the rest.
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a || say "some packages wait for others; fetching those..."
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -f -y -q --no-install-recommends; then
             say "could not finish the earlier install (see above)."; return 1
         fi
-        DEBIAN_FRONTEND=noninteractive apt-get install -f -y -q || true
+        if dpkg --audit 2>/dev/null | grep -q .; then
+            say "packages are still half-installed (see above)."; return 1
+        fi
+        say "the earlier install is finished."
     fi
 }
 

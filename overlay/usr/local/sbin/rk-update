@@ -206,7 +206,8 @@ apply() {
         [ "$to" != "$cur" ] && [ "v$to" != "$cur" ] && [ "$to" != "v$cur" ] || { say "already on $cur"; return 0; }
     fi
     dest=$(mktemp -d)
-    trap 'rm -rf "$dest" "$dest.tar"' EXIT
+    # expanded now: $dest is local, and gone by the time the script exits
+    trap "rm -rf '$dest' '$dest.tar'" EXIT
     fetch "${to:-main}" "$dest" || die "could not fetch the update"
     verify "$dest" || die "the update did not pass its checks; nothing changed"
     say "backing up the current system..."
