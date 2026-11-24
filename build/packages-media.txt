@@ -12,6 +12,5 @@
 mpv
 quickjs
 
-# what the emulator bundle's RetroArch loads (in packages.txt for new images)
-librga2
+# what the emulator bundle's RetroArch loads besides its own librga (in packages.txt for new images)
 libpng16-16t64

@@ -111,7 +111,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkg-config unzip xz-utils \
-              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev librga-dev libpng-dev patch >/dev/null
+              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev libpng-dev patch meson ninja-build patchelf >/dev/null
             build/build-emulators.sh emu-out
           '
           sudo chown -R "$(id -u):$(id -g)" emu-out

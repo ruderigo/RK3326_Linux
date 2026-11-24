@@ -47,8 +47,6 @@ python3-pyte
 # the first tools: Scan uses nmap through rk-scan
 nmap
 
-# Rockchip's 2D chip (RGA): what turns the picture on a panel mounted on its
-# side, for SDL programs and for Games; and PNG, which Games' driver for
-# those panels is built with. Games does not start without them.
-librga2
+# PNG: Games' driver for panels mounted on their side is built with it
+# (librga, which turns the picture, comes in the emulator bundle).
 libpng16-16t64

@@ -202,9 +202,9 @@ install -m 0644 "$SDLRK" "$GPU/libSDL2-2.0.so.0"
 for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n"; done
 # Panels mounted on their side or upside down: arkos4clone's SDL2 for each
 # turn, in a folder of its own. The desktop puts the right one first for the
-# apps it opens (rkshell/panel.py). They turn the picture with librga.
+# apps it opens (rkshell/panel.py). They turn the picture with librga, which
+# comes in the emulator bundle.
 for n in 1 2 3; do install -D -m 0644 "${SDLTURN[$n]}" "$GPU/turn$n/libSDL2-2.0.so.0"; done
-ls "$ROOTFS"/usr/lib/aarch64-linux-gnu/librga.so.2 >/dev/null || die "no librga in the system: turned panels and Games need it"
 mkdir -p "$ROOTFS/usr/share"
 install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
 ls -l "$GPU"
@@ -217,6 +217,7 @@ if [ -n "${EMULATORS:-}" ]; then
     [ -f "$EMULATORS" ] || die "no emulator bundle at $EMULATORS"
     tar -xJf "$EMULATORS" -C "$ROOTFS" --no-same-owner
     [ -x "$ROOTFS/opt/rk-emulators/bin/retroarch" ] || die "the emulator bundle has no RetroArch"
+    [ -f "$ROOTFS/opt/rk-emulators/lib/librga.so.2" ] || die "the emulator bundle has no librga (panels mounted on their side need it)"
     python3 -I -c "import sys; b=open(sys.argv[1],'rb').read(20); sys.exit(0 if b[:4]==b'\x7fELF' and b[18]==183 else 1)" \
         "$ROOTFS/opt/rk-emulators/bin/retroarch" || die "the bundle's RetroArch is not an arm64 program"
     chown -R 0:0 "$ROOTFS/opt/rk-emulators"

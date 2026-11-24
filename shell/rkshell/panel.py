@@ -18,7 +18,8 @@ import os
 
 ROTATE_FILE = "/boot/rotate.txt"        # the owner's own answer, when the kernel's is wrong for a panel
 GPU_DIR = "/usr/lib/rk-gpu"             # dArkOS's Mali driver and SDL2 (build-image.sh); turn1..3: the turned SDL2s
-RGA = "/usr/lib/*/librga.so.2"          # what the turned SDL2s and RetroArch's driver turn the picture with
+# what the turned SDL2s and RetroArch's driver turn the picture with: in the emulator bundle
+RGA = ("/opt/rk-emulators/lib/librga.so.2", "/usr/lib/rk-gpu/librga.so.2", "/usr/lib/*/librga.so.2")
 
 
 def _read(path):
@@ -56,8 +57,11 @@ def library_path(quarter_turns=None, gpu_dir=GPU_DIR, rga=RGA):
         return []
     n = turn() if quarter_turns is None else quarter_turns
     turned = os.path.join(gpu_dir, f"turn{n}")
-    if n and os.path.isfile(os.path.join(turned, "libSDL2-2.0.so.0")) and glob.glob(rga):
-        return [turned, gpu_dir]
+    found = [f for pattern in ((rga,) if isinstance(rga, str) else rga) for f in sorted(glob.glob(pattern))]
+    if n and os.path.isfile(os.path.join(turned, "libSDL2-2.0.so.0")) and found:
+        where = os.path.dirname(found[0])
+        # the system's own folders are searched anyway; any other has to be named
+        return [turned, gpu_dir] + ([] if where == gpu_dir or where.startswith("/usr/lib/") and "rk-gpu" not in where else [where])
     return [gpu_dir]
 
 

@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory() as d:
     open(rga, "w").close()
     for n in (1, 2, 3):
         env = panel.app_environment({"LD_LIBRARY_PATH": f"{gpu}:/opt/x"}, n, gpu, rga)
-        assert env["LD_LIBRARY_PATH"] == f"{gpu}/turn{n}:{gpu}:/opt/x" and env["RK_ROTATE"] == str(n), env
+        assert env["LD_LIBRARY_PATH"] == f"{gpu}/turn{n}:{gpu}:{d}:/opt/x" and env["RK_ROTATE"] == str(n), env
     # asked twice (the dock, then rk-video inside it): the same answer
     again = panel.app_environment(dict(env), 3, gpu, rga)
     assert again["LD_LIBRARY_PATH"] == env["LD_LIBRARY_PATH"], again
