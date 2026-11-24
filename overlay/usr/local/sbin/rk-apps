@@ -146,7 +146,13 @@ update_firefly() {
 update_stump() {
     [ -f "$H/Stump/stump_pc.py" ] || { say "the Stump is not set up yet: open Stump on the dock first."; return 1; }
     local inst="$H/R36MAX-Stump/handheld/install.sh" rc
-    say "Stump: running its installer (it fetches its own updates)..."
+    # The installer's files first, from the source chosen in Apps (stable or
+    # sandbox). The installer pulls too, but only from wherever its folder
+    # was first cloned, and quietly gives up when that pull cannot be a plain
+    # fast-forward: Apps then went on showing a new version that never came.
+    clone_stump || return 1
+    [ -f "$inst" ] || { say "the Stump's installer is missing from $STUMP_REPO."; return 1; }
+    say "Stump: running its installer..."
     if [ -n "${SUDO_ASKPASS:-}" ]; then
         # nobody at a keyboard: an update keeps everything (the RK3326 Provisioner's answers)
         local ans; ans=$(mktemp) && chmod 600 "$ans"
