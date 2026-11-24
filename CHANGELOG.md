@@ -49,6 +49,8 @@ Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
   one, and no longer counts a half-installed package as installed.
 - `rk-tools` checks the room on the system partition before it installs, and
   says how much is missing instead of failing half-way.
+- The emulator bundle is unpacked without the `xz` program, which the image
+  does not have.
 - `rk-tools` waits for another install or update that is running (Debian's
   own background refresh, for one) instead of failing on its lock.
 - A dock entry's `exec` may be a bare name, looked for on PATH and in
