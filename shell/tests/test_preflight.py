@@ -126,6 +126,22 @@ with tempfile.TemporaryDirectory() as root:
                        env=dict(os.environ, RK_ROOT=root, RK_PREFLIGHT_FREE_MB="900", RK_PREFLIGHT_MEM_MB="300"))
     assert p.returncode == 0, p.stdout
 
+# ---- an update never writes over a script that is running (the updater itself is one of them)
+REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
+with tempfile.TemporaryDirectory() as root:
+    os.makedirs(f"{root}/usr/lib/python3/dist-packages")
+    os.makedirs(f"{root}/usr/local/sbin")
+    old = f"{root}/usr/local/sbin/rk-update"
+    open(old, "w").write("# the version that is running\n")
+    held = open(old)                                # as bash holds the script it is reading
+    body = f'RK_UPDATE_SOURCE=1 RK_ROOT="{root}" source "{RK_UPDATE}"\ninstall_soft "{REPO}"'
+    p = subprocess.run(["bash", "-c", body], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=dict(os.environ, RK_ROOT=root))
+    assert p.returncode == 0, p.stdout
+    assert held.read() == "# the version that is running\n", "the running updater was written over"
+    assert open(old).read() == open(RK_UPDATE).read(), "the new updater is not in place"
+    held.close()
+assert open(RK_UPDATE).read().rstrip().splitlines()[-1].startswith("esac; exit"), "rk-update must not read on after its work"
+
 # ---- the settings files: put in place once, the same on a second run
 with tempfile.TemporaryDirectory() as root:
     os.makedirs(f"{root}/usr/share/rk")

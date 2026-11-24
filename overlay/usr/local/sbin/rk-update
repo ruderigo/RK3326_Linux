@@ -165,7 +165,11 @@ install_soft() {        # copy the new soft layer over the system
     find "$PYDIR/rkshell" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null
     for d in $SOFT_OVERLAY; do
         [ -d "$dest/overlay/$d" ] || continue
-        mkdir -p "$ROOT/$d"; cp -a "$dest/overlay/$d/." "$ROOT/$d/"
+        # each file is removed and written anew, never written over: this
+        # script and rk-migrate are among them and are running, and bash
+        # reads a script as it goes. Written over, it read on from the same
+        # place in the new text and ended a good update on a syntax error.
+        mkdir -p "$ROOT/$d"; cp -a --remove-destination "$dest/overlay/$d/." "$ROOT/$d/"
     done
     chmod 755 "$ROOT"/usr/local/sbin/rk-* "$ROOT"/usr/local/bin/rk-* 2>/dev/null || true
     [ -f "$ROOT/etc/sudoers.d/rkshell" ] && { chmod 440 "$ROOT/etc/sudoers.d/rkshell"; [ -n "$ROOT" ] || visudo -c -q || return 1; }
@@ -305,4 +309,4 @@ case "${1:-status}" in
             *)        die "usage: rk-update source official|fork OWNER/REPO|url URL [SHA256]" ;;
         esac ;;
     *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|rollback|source ..." >&2; exit 2 ;;
-esac
+esac; exit      # on one line: nothing is read from this file after the work is done
