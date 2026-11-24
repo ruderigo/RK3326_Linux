@@ -197,15 +197,32 @@ install_emulators() {
     fi
     # only what belongs under /opt/rk-emulators is taken from the archive
     if tar -tJf "$tmp/$name" | grep -qvE '^opt(/|/rk-emulators(/.*)?)?$'; then
-        say "the archive holds files outside $EMU_DIR; nothing changed."; rm -rf "$tmp"; return 1
+        say "the archive holds files outside /opt/rk-emulators; nothing changed."; rm -rf "$tmp"; return 1
     fi
-    rm -rf "$EMU_DIR.new" && mkdir -p "$EMU_DIR.new" &&
-        tar -xJf "$tmp/$name" -C "$EMU_DIR.new" --strip-components=2 --no-same-owner || {
-            say "could not unpack the emulators."; rm -rf "$tmp" "$EMU_DIR.new"; return 1; }
-    rm -rf "$tmp" "$EMU_DIR.old"
-    [ ! -d "$EMU_DIR" ] || mv "$EMU_DIR" "$EMU_DIR.old"
-    mv "$EMU_DIR.new" "$EMU_DIR" && rm -rf "$EMU_DIR.old"
-    chown -R 0:0 "$EMU_DIR"
+    # On a handheld the bundle lives on the data partition, which has the
+    # room (the system partition of an older card is small), and
+    # /opt/rk-emulators points to it.
+    local target="$EMU_DIR" have
+    if [ -z "${RK_EMU_DIR:-}" ] && mountpoint -q /data 2>/dev/null; then
+        target="$HEAVY_DIR/rk-emulators"
+    fi
+    install -d -m 0755 "$(dirname "$target")"
+    have=$(free_mb "$(dirname "$target")")
+    if [ -n "$have" ] && [ "$have" -lt 200 ]; then
+        say "not enough room for the emulators: $have MB free in $(dirname "$target"), about 200 MB needed."
+        rm -rf "$tmp"; return 1
+    fi
+    rm -rf "$target.new" && mkdir -p "$target.new" &&
+        tar -xJf "$tmp/$name" -C "$target.new" --strip-components=2 --no-same-owner || {
+            say "could not unpack the emulators."; rm -rf "$tmp" "$target.new"; return 1; }
+    rm -rf "$tmp" "$target.old"
+    [ ! -d "$target" ] || mv "$target" "$target.old"
+    mv "$target.new" "$target" && rm -rf "$target.old"
+    chown -R 0:0 "$target"
+    if [ "$target" != "$EMU_DIR" ]; then
+        [ -L "$EMU_DIR" ] || rm -rf "$EMU_DIR"
+        ln -sfn "$target" "$EMU_DIR"
+    fi
     say "the emulators are installed (bundle $n)."
 }
 
@@ -214,8 +231,12 @@ install_media() {
     wait_lock || return 1
     drop_debian_retroarch || return 1
     repair || return 1
-    need_space 250 "Video and Games" || return 1
-    $APT update -q || { say "could not reach Debian's package servers"; return 1; }
+    local todo=
+    for p in $MEDIA_PKGS; do installed "$p" || todo="$todo $p"; done
+    if [ -n "$todo" ]; then
+        need_space 200 "the video player" || return 1
+        $APT update -q || { say "could not reach Debian's package servers"; return 1; }
+    fi
     for p in $MEDIA_PKGS; do
         if installed "$p"; then
             say "$p is already installed"
