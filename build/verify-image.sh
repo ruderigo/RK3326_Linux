@@ -70,7 +70,7 @@ while IFS='|' read -r console action node prop value; do
         ok "$DTB: $prop is not in $node"
     fi
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
-for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt fallback-4.4/boot.ini fallback-4.4/Image; do
+for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt consoles/names.txt consoles/rk-boot-select fallback-4.4/boot.ini fallback-4.4/Image; do
     mdir -i "$T/boot.img" "::$f" >/dev/null 2>&1 || fail "missing on the boot partition: $f"
 done
 ok "settings files and the 4.4 fallback set are on the boot partition"

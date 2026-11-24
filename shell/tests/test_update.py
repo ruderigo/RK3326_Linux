@@ -89,7 +89,7 @@ def test_schema_runner_records_and_noops():
         schema = f"{t}/data/ark/.rk-schema"
         env.update(RK_MIG_DIR=MIG_DIR, RK_SCHEMA=schema)
         assert run(["bash", MIGRATE, "run"], env).returncode == 0
-        assert open(schema).read().strip() == "2"
+        assert open(schema).read().strip() == str(max(int(n[:4]) for n in os.listdir(MIG_DIR) if n[:4].isdigit()))
         # status shows nothing pending; a second run changes nothing
         out = run(["bash", MIGRATE, "status"], env).stdout
         assert "pending         : none" in out

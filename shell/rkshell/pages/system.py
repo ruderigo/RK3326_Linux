@@ -53,8 +53,14 @@ class SystemPage(Page):
                  f"Kernel     {s.kernel()}",
                  f"Memory     {used} of {total} MB in use",
                  f"Running    {up // 3600} h {up % 3600 // 60} min", ""]
+        spare = s.memory_spare()
+        if spare is not None:
+            lines.insert(-2, f"           {spare} MB to spare (with compressed swap)")
         for st in s.storage():
-            lines.append(f"{st['label']:<11}{G.size(st['used'])} of {G.size(st['total'])} used")
+            lines.append(f"{st['label']:<11}{G.size(st['used'])} of {G.size(st['total'])} used, "
+                         f"{G.size(st['total'] - st['used'])} free")
+        for _, text in s.health():
+            lines += ["", "! " + text]
         bat = s.battery()
         if bat and bat["percent"] >= 0:
             lines += ["", f"Battery    {bat['percent']}%, {bat['status'].lower()}"]

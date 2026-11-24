@@ -1,0 +1,8 @@
+// Packages are installed when the owner asks (rk-tools, apt), never behind
+// their back: no daily refresh or upgrade taking the processor and the lock.
+APT::Periodic::Enable "0";
+// Only what a package needs, as the image is built.
+APT::Install-Recommends "false";
+// Package lists: no translations, and kept compressed (tens of MB saved).
+Acquire::Languages "none";
+Acquire::GzipIndexes "true";

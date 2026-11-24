@@ -3,14 +3,18 @@
 Screen. SDL has no usable video driver on these kernels without the GPU's
 user-space libraries, so pygame draws into a surface in memory (SDL's
 "dummy" driver) and each finished frame is copied to /dev/fb0. Size, depth
-and colour order are read from the framebuffer, never assumed. The text
+and colour order are read from the framebuffer, never assumed. Some RK3326
+handhelds have a panel mounted on its side (RGB10, RG351P, R40S, U8...):
+the kernel is told so on its command line (fbcon=rotate:N), and the frame
+is turned the same way on its way to the screen. The text
 console on the same screen is switched to graphics mode while the shell
 runs, and nothing is drawn while another console (Alt+F2) is in front.
 
 Input. Every /dev/input/event* device is read directly: the built-in pad
 ("GO-Super Gamepad"), the volume keys, and any USB keyboard or pad, as soon
 as it is plugged in. Key codes, not device names, decide what a key does, so
-a second controller works without setup.
+a second controller works without setup. A direction pad that reports as a
+"hat" (the RG351P and RG351V, most USB pads) is read as the same four keys.
 
 Pointer. Anything that moves like a mouse moves the desktop's pointer: the
 left stick (the rk-mouse service presents it as a mouse) and any USB mouse.
@@ -53,7 +57,9 @@ PLAIN = {2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9"
          43: "\\", 44: "z", 45: "x", 46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: ",", 52: ".", 53: "/", 57: " "}
 SHIFTED = dict(zip("1234567890-=[];'`\\,./", "!@#$%^&*()_+{}:\"~|<>?"))
 EVENT = struct.Struct("qqHHi")          # struct input_event on a 64-bit kernel
-EV_KEY, EV_REL = 1, 2
+EV_KEY, EV_REL, EV_ABS = 1, 2, 3
+ABS_HAT0X, ABS_HAT0Y = 16, 17
+HAT_KEYS = {ABS_HAT0X: (546, 547), ABS_HAT0Y: (544, 545)}     # (negative, positive): left/right, up/down
 REL_X, REL_Y, REL_WHEEL = 0, 1, 8
 MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE = 272, 273, 274
 EVIOCGNAME = 0x81004506                 # the device's name, up to 256 bytes
@@ -102,15 +108,37 @@ def run_step(cmd):
 
 
 # -------------------------------------------------------------- framebuffer
+ROTATE_FILE = "/boot/rotate.txt"        # the owner's own answer, when the kernel's is wrong for a panel
+TURN = {1: -90, 2: 180, 3: 90}          # quarter turns clockwise -> pygame's angle (counterclockwise)
+
+
+def screen_rotation(cmdline, override=""):
+    """Quarter turns clockwise the picture needs (0 to 3), as the text console
+    is told: fbcon=rotate:N on the kernel command line. A digit in `override`
+    (the text of /boot/rotate.txt) comes first."""
+    for word in override.split()[:1]:
+        if word in ("0", "1", "2", "3"):
+            return int(word)
+    for word in cmdline.split():
+        if word.startswith("fbcon=rotate:") and word[13:14] in ("0", "1", "2", "3"):
+            return int(word[13])
+    return 0
+
+
 class Framebuffer:
-    def __init__(self, path="/dev/fb0", sys_dir=None):
+    def __init__(self, path="/dev/fb0", sys_dir=None, rotate=None):
         sys_dir = sys_dir or "/sys/class/graphics/" + os.path.basename(path)
-        self.w, self.h = (int(x) for x in open(sys_dir + "/virtual_size").read().split(","))
+        if rotate is None:
+            rotate = screen_rotation(system_mod.read("/proc/cmdline"), system_mod.read(ROTATE_FILE))
+        self.rotate = rotate % 4
+        # pw x ph: the panel as the driver has it. w x h: the picture as it is looked at.
+        self.pw, self.ph = (int(x) for x in open(sys_dir + "/virtual_size").read().split(","))
+        self.w, self.h = (self.ph, self.pw) if self.rotate in (1, 3) else (self.pw, self.ph)
         self.bpp = int(open(sys_dir + "/bits_per_pixel").read())
         try:
             self.stride = int(open(sys_dir + "/stride").read())
         except (OSError, ValueError):
-            self.stride = self.w * self.bpp // 8
+            self.stride = self.pw * self.bpp // 8
         self.fd = os.open(path, os.O_RDWR)
         # which byte is red: from the driver (FBIOGET_VSCREENINFO), red at bit 16 unless it says otherwise
         red_offset = 16
@@ -119,14 +147,14 @@ class Framebuffer:
             red_offset = struct.unpack_from("I", info, 32)[0]
         except OSError:
             pass
-        self.mm = mmap.mmap(self.fd, self.stride * self.h)
+        self.mm = mmap.mmap(self.fd, self.stride * self.ph)
         if self.bpp == 32:
             masks = (0xFF0000, 0xFF00, 0xFF, 0) if red_offset == 16 else (0xFF, 0xFF00, 0xFF0000, 0)
             self.out = None
             self.surf = pygame.Surface((self.w, self.h), 0, 32, masks)
         elif self.bpp == 16:
             self.surf = pygame.Surface((self.w, self.h), 0, 32)
-            self.out = pygame.Surface((self.w, self.h), 0, 16, (0xF800, 0x07E0, 0x001F, 0))
+            self.out = pygame.Surface((self.pw, self.ph), 0, 16, (0xF800, 0x07E0, 0x001F, 0))
         else:
             raise SystemExit(f"rkshell: a {self.bpp}-bit screen is not supported")
         self.pointer = None                     # where the pointer is on the screen now: a Rect, or None
@@ -170,6 +198,9 @@ class Framebuffer:
             patch = self.surf.subsurface(area).copy()
             if new is not None:
                 patch.blit(cursor, (at[0] - area.x, at[1] - area.y))
+            if self.rotate:                     # the same turn as the frame, and where that lands on the panel
+                patch = pygame.transform.rotate(patch, TURN[self.rotate])
+                area = self.on_panel(area)
             if self.out is not None:
                 small = pygame.Surface(area.size, 0, 16, (0xF800, 0x07E0, 0x001F, 0))
                 small.blit(patch, (0, 0))
@@ -179,19 +210,31 @@ class Framebuffer:
                 to = (area.y + y) * self.stride + area.x * size
                 self.mm[to:to + row] = raw[y * pitch:y * pitch + row]
 
+    def on_panel(self, r):
+        """Where a rectangle of the picture is on the panel itself."""
+        if self.rotate == 1:
+            return pygame.Rect(self.h - r.y - r.h, r.x, r.h, r.w)
+        if self.rotate == 2:
+            return pygame.Rect(self.w - r.x - r.w, self.h - r.y - r.h, r.w, r.h)
+        if self.rotate == 3:
+            return pygame.Rect(r.y, self.w - r.x - r.w, r.h, r.w)
+        return pygame.Rect(r)
+
     def write_frame(self):
         src = self.surf
+        if self.rotate:
+            src = pygame.transform.rotate(src, TURN[self.rotate])
         if self.out is not None:
-            self.out.blit(self.surf, (0, 0))
+            self.out.blit(src, (0, 0))
             src = self.out
-        row = self.w * self.bpp // 8
+        row = self.pw * self.bpp // 8
         if src.get_pitch() == self.stride:      # the usual case: one copy, straight from the surface
             self.mm.seek(0)
             self.mm.write(src.get_buffer())
         else:                                   # the driver pads each line: copy line by line
             raw = src.get_buffer().raw
             pitch = src.get_pitch()
-            for y in range(self.h):
+            for y in range(self.ph):
                 self.mm[y * self.stride:y * self.stride + row] = raw[y * pitch:y * pitch + row]
 
 
@@ -238,6 +281,7 @@ class Inputs:
         self.fds, self.next_scan, self.shift, self.ctrl = {}, 0, False, False
         self.stick = set()                      # the left stick's mouse: its buttons are the pad's own
         self.dx = self.dy = self.wheel = 0      # mouse movement since take_motion()
+        self.hat = {}                           # (fd, axis) -> the key code held through a direction pad's hat
 
     def scan(self):
         """Open input devices that appeared; called every couple of seconds."""
@@ -281,6 +325,8 @@ class Inputs:
                 os.close(fd)
                 del self.fds[fd]
                 self.stick.discard(fd)
+                for key in [k for k in self.hat if k[0] == fd]:     # held when it was pulled out: let go
+                    out.append((self.hat.pop(key), 0))
                 continue
             stick = fd in self.stick
             for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
@@ -292,6 +338,16 @@ class Inputs:
                         self.dy += value
                     elif code == REL_WHEEL and not stick:
                         self.wheel += value
+                elif etype == EV_ABS and code in HAT_KEYS:
+                    # a hat says where it points (-1, 0, 1): told on as the key going up, and the new one down
+                    was = self.hat.pop((fd, code), None)
+                    now = HAT_KEYS[code][value > 0] if value else None
+                    if was is not None and was != now:
+                        out.append((was, 0))
+                    if now is not None:
+                        self.hat[(fd, code)] = now
+                        if was != now:
+                            out.append((now, 1))
                 elif etype == EV_KEY and value in (0, 1, 2):
                     # the stick's mouse clicks with the triggers, for apps; here
                     # those are the pad's buttons, already read from the pad
@@ -315,7 +371,8 @@ def run(system, fps=10):
     signal.signal(signal.SIGTERM, lambda *a: stop.append(1))
     signal.signal(signal.SIGINT, lambda *a: stop.append(1))
     drawn, draw_time, last_frame = 0, 0.0, 0.0
-    print(f"rkshell: screen {fb.w}x{fb.h}, {fb.bpp} bits, line {fb.stride} bytes; console {console.name}", file=sys.stderr)
+    print(f"rkshell: screen {fb.w}x{fb.h}" + (f" (panel {fb.pw}x{fb.ph}, turned {fb.rotate * 90}°)" if fb.rotate else "") +
+          f", {fb.bpp} bits, line {fb.stride} bytes; console {console.name}", file=sys.stderr)
     try:
         while app.running and not stop:
             wait = 0.005 if app.dock.moving or held else (0.03 if app.live else (1 / fps if app.animating else 0.25))

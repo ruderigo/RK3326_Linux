@@ -22,6 +22,25 @@ say() { echo "rk-apps: $*"; }
 H="${HOME:-/home/ark}"
 online() { ip route 2>/dev/null | grep -q '^default'; }
 
+# the checks made before anything is fetched: room, memory (see the file)
+RK_WHO=rk-apps
+. "${RK_LIB:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../lib/rk}/preflight.sh"
+# Each app lives under the home folder (on the data partition once the card
+# has been started; rk-migrate moves the large parts there). MB an install or
+# update can take while old and new are both on the card, and the memory its
+# installer needs (FireFly's builds a Python environment).
+room_for() {        # room_for APP
+    local mb mem=0
+    case "$1" in
+        ember)   mb=60 ;;
+        firefly) mb=350; mem=100 ;;
+        stump)   mb=250; mem=60 ;;
+        *)       return 0 ;;
+    esac
+    rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
+    [ "$mem" -eq 0 ] || rk_need_mem "$mem" "installing $1" || return 1
+}
+
 api_asset() {   # print the browser_download_url of the first release asset matching $2 in repo $1
     curl -fsSL "https://api.github.com/repos/$1/releases/latest" |
         python3 -c "import json,sys,re
@@ -51,7 +70,7 @@ install_firefly() {
     say "Fetching FireFly..."
     local url; url=$(api_asset ruderigo/FireFly_RK3326_R36MAX_R36S 'FireFly-RK3326-.*\.zip')
     [ -n "$url" ] || { say "could not find a FireFly release asset."; return 1; }
-    local tmp; tmp=$(mktemp -d)
+    local tmp; tmp=$(rk_tmpdir rk-firefly)
     if ! curl -fsSL "$url" -o "$tmp/firefly.zip"; then say "download failed."; rm -rf "$tmp"; return 1; fi
     ( cd "$tmp" && python3 -m zipfile -e firefly.zip . ) || { say "could not unzip FireFly."; rm -rf "$tmp"; return 1; }
     local src; src=$(find "$tmp" -maxdepth 4 -name install.sh -path '*deploy*' | head -1)
@@ -176,10 +195,11 @@ case "$cmd" in
         online || { say "not online. Join Wi-Fi first."; exit 1; }
         rc=0
         case "$what" in
-            ember) install_ember || rc=1 ;;
-            firefly) install_firefly || rc=1 ;;
-            stump) clone_stump || rc=1 ;;
-            all) install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1 ;;
+            ember) room_for ember && install_ember || rc=1 ;;
+            firefly) room_for firefly && install_firefly || rc=1 ;;
+            stump) room_for stump && clone_stump || rc=1 ;;
+            all) for a in ember firefly stump; do room_for "$a" || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; } ;;
             *) echo "usage: rk-apps install ember|firefly|stump|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
@@ -196,10 +216,11 @@ case "$cmd" in
         online || { say "not online. Join Wi-Fi first."; exit 1; }
         rc=0
         case "$what" in
-            ember) install_ember || rc=1 ;;
-            firefly) update_firefly || rc=1 ;;
-            stump) update_stump || rc=1 ;;
-            all) install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1 ;;
+            ember) room_for ember && install_ember || rc=1 ;;
+            firefly) room_for firefly && update_firefly || rc=1 ;;
+            stump) room_for stump && update_stump || rc=1 ;;
+            all) for a in ember firefly stump; do room_for "$a" || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; } ;;
             *) echo "usage: rk-apps update ember|firefly|stump|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;

@@ -213,6 +213,22 @@ The desktop is the Python package in [`shell/rkshell`](shell/rkshell). It
 runs in a window on any computer (`python3 -m rkshell --window --demo`
 from `shell/`), and draws every screen to PNG files with `--shots DIR`.
 
+## Which handhelds
+
+One image for every RK3326 handheld
+[arkos4clone](https://github.com/lcdyk0517/arkos4clone) supports: the R36S
+and its clones, the R36MAX, R36 Plus/Pro/Ultra, the XiFan, GameConsole and
+Powkiddy RK3326 models, the RG351 family, the Odroid Go Advance and more; the
+full list is in [`docs/devices.md`](docs/devices.md). The image starts on the
+R36MAX (type 1) as downloaded; for another handheld, pick it on the card's
+boot partition before the first start (`Choose handheld.command`, or
+`README.txt` there for doing it by hand).
+
+Started and used by a person: the R36MAX only. Every other handheld is
+checked by the build from its device tree (boot files, screen size and
+turn, pad, power chip), which is a good reason to expect it to work and not
+the same as someone having held it. Reports are welcome.
+
 ## Flash it
 
 1. Download `rk3326-linux-r36max-<version>.img.xz` from the latest

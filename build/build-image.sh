@@ -8,7 +8,9 @@
 # needed; the workflow makes that checkout).
 #
 # Environment:
-#   CONSOLE   arkos4clone console folder   (default "r36max type1")
+#   CONSOLE   arkos4clone console folder the image starts on (default "r36max
+#             type1"). Every console's boot files are on the card: another
+#             handheld is chosen on the boot partition, without a rebuild.
 #   KERNEL    5.10 or 4.4                  (default 5.10)
 #   HOSTNAME_ the system's host name       (default from the console: r36max, r36s)
 #   VERSION   shown in /etc/os-release     (default "dev")
@@ -106,6 +108,13 @@ mount --bind /dev/pts "$ROOTFS/dev/pts"
 # no services start while packages install
 printf '#!/bin/sh\nexit 101\n' > "$ROOTFS/usr/sbin/policy-rc.d"; chmod +x "$ROOTFS/usr/sbin/policy-rc.d"
 in_root() { chroot "$ROOTFS" env DEBIAN_FRONTEND=noninteractive LC_ALL=C "$@"; }
+
+# Before the first package: what dpkg leaves out of every package (change
+# logs, unused translations) and how apt behaves, so the whole system is
+# installed under the same rules it keeps on the handheld.
+( cd "$REPO/overlay/usr/share/rk/sysconf" && find etc/apt etc/dpkg -type f ) | while read -r f; do
+    install -D -m 0644 "$REPO/overlay/usr/share/rk/sysconf/$f" "$ROOTFS/$f"
+done
 
 say "Packages"
 in_root apt-get update -q
@@ -217,6 +226,11 @@ chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
 chmod 755 "$ROOTFS"/usr/local/bin/rk-*
 chmod 440 "$ROOTFS/etc/sudoers.d/rkshell"
 in_root visudo -c -q -f /etc/sudoers.d/rkshell || die "the sudoers file for the desktop is not valid"
+# the settings files (a small log, no package work in the background, swap
+# tuned for compressed memory): the same step an updated card runs
+"$REPO/overlay/usr/local/sbin/rk-sysconf" "$ROOTFS"
+[ -L "$ROOTFS/etc/systemd/system/apt-daily.timer" ] && [ -f "$ROOTFS/etc/sysctl.d/30-rk-memory.conf" ] ||
+    die "the settings files are not in place"
 
 # the desktop: our Python package, where Debian keeps Python packages
 PYDIR="$ROOTFS/usr/lib/python3/dist-packages"
@@ -367,6 +381,16 @@ while IFS='|' read -r console action node prop value; do
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 
 SELECT="$REPO/overlay/usr/local/sbin/rk-boot-select"
+# every console's boot.ini made ready for this system, so that copying a
+# console's files by hand (README.txt) gives a card that starts; and each
+# handheld's own name beside its folder name, for the lists
+"$SELECT" -b "$BOOT" prepare
+for d in "$BOOT"/consoles/*/; do
+    [ -f "$d/boot.ini" ] || continue
+    dtb=$(find "$d" -maxdepth 1 -name '*.dtb' | sort | head -n 1)
+    echo "$(basename "$d")|$(fdtget -t s "$dtb" / model 2>/dev/null || true)"
+done > "$BOOT/consoles/names.txt"
+echo "$(wc -l < "$BOOT/consoles/names.txt") handhelds on the card"
 # the two ready-made sets a Mac or PC can copy over when one kernel does not start
 for k in 4.4 5.10; do
     [ "$k" = 5.10 ] && [ ! -d "$CONS/$CONSOLE/5.10" ] && continue
@@ -376,6 +400,10 @@ for k in 4.4 5.10; do
 done
 "$SELECT" -b "$BOOT" set "$CONSOLE" "$KERNEL"
 cp "$REPO/boot-files/wifi.txt" "$REPO/boot-files/README.txt" "$BOOT/"
+# the device chooser for a Mac or Linux computer: the same program the
+# handheld uses, beside a launcher that can be double-clicked
+cp "$SELECT" "$BOOT/consoles/rk-boot-select"
+cp "$REPO/boot-files/Choose handheld.command" "$BOOT/"
 printf '%s\r\n' "$HOSTNAME_" > "$BOOT/hostname.txt"
 ls -la "$BOOT"; cat "$BOOT/boot.ini"
 

@@ -6,6 +6,30 @@ replace is in [`docs/updates.md`](docs/updates.md).
 
 ## Unreleased
 
+- **Every RK3326 handheld arkos4clone supports, from one image**: 93 of them,
+  listed in [`docs/devices.md`](docs/devices.md). The card holds the boot
+  files of all of them; `Choose handheld.command` on the boot partition (Mac,
+  Linux), three files copied by hand, or `rk-boot-select` on the handheld
+  picks one. Panels mounted on their side are turned, and a direction pad
+  that reports as a hat (RG351P, RG351V, USB pads) is read. Only the R36MAX
+  has been started by a person: the others are checked by the build, from
+  their device trees, and drawn at their screen sizes.
+- **Nothing is installed without looking first.** The tools, the dock apps
+  and the OS update each check the room where their files go and the memory
+  to spare before anything is fetched, from the packages' own sizes where
+  apt knows them, and stop with what is short and by how much. The desktop
+  says so when the system partition, the data partition or memory runs low,
+  and Settings → About shows what is free.
+- **Lighter in the background.** No daily package refresh or upgrade behind
+  the owner's back, a log capped at 16 MB, swap tuned for compressed memory,
+  downloads kept on the card and off `/tmp` (which is memory), package
+  downloads on the data partition, package lists kept compressed, and no
+  change logs or unused translations unpacked from packages. Old update
+  backups no longer pile up: the newest three are kept. A card already
+  flashed gets these with the update (new packages only, for the last one).
+- Metasploit goes to the data partition when the system partition cannot
+  hold it (not yet tried on a handheld).
+
 Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
 
 - **Video.** A window on the dock that searches YouTube and plays the result

@@ -19,6 +19,10 @@ online() { ip route 2>/dev/null | grep -q '^default'; }
 
 HEAVY_DIR=/data/opt
 
+# the checks made before anything is fetched: room, memory (see the file)
+RK_WHO=rk-tools
+. "${RK_LIB:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../lib/rk}/preflight.sh"
+
 # Fully installed, not merely known to dpkg: a package whose install was cut
 # short (power, a restart) is unpacked but not set up, and does not count.
 installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ]; }
@@ -26,7 +30,8 @@ installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok
 # Only one program may install packages at a time. Debian itself refreshes
 # its package lists in the background (after a start, once a day), and the
 # desktop may be running another install: wait for it instead of failing.
-APT="apt-get -o DPkg::Lock::Timeout=600"
+RK_APT_CACHE=$(rk_apt_cache)                 # downloads go to the data partition when there is one
+APT="apt-get -o DPkg::Lock::Timeout=600 -o Dir::Cache::archives=$RK_APT_CACHE"
 lock_free() {
     python3 -I -c "import fcntl,sys
 for p in ('/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock'):
@@ -50,20 +55,7 @@ wait_lock() {
     say "it has finished."
 }
 
-# Room on the system partition, checked before anything is fetched: an
-# install that runs out of room half-way leaves packages half-installed.
-free_mb() { df -Pm "${1:-/}" 2>/dev/null | awk 'NR==2 {print $4}'; }
-need_space() {      # need_space MB WHAT
-    local have
-    $APT clean >/dev/null 2>&1 || true          # downloaded packages already installed: room for nothing
-    have=$(free_mb /)
-    [ -n "$have" ] || return 0
-    if [ "$have" -lt "$1" ]; then
-        say "not enough room on the system partition: $have MB free, $2 needs about $1 MB."
-        say "nothing was changed. Free some room (sudo apt autoremove; remove tools you do not use) and try again."
-        return 1
-    fi
-}
+free_mb() { rk_free_mb "${1:-/}"; }
 
 # Debian's RetroArch was installed by an earlier version of this setup. It
 # cannot draw on this panel, and it brings the Qt desktop libraries and 100 MB
@@ -111,6 +103,7 @@ status() {
 
 install_msf() {
     have msfconsole && { say "Metasploit is already installed"; return 0; }
+    local msf_on_data=
     say "Fetching Metasploit (large; this takes a while)..."
     install -d -m 0755 /etc/apt/keyrings
     # apt reads an armoured key straight from signed-by, so no gpg needed here
@@ -121,8 +114,32 @@ install_msf() {
     local arch; arch=$(dpkg --print-architecture)
     echo "deb [signed-by=/etc/apt/keyrings/metasploit.asc] https://apt.metasploit.com/ lucid main" \
         > /etc/apt/sources.list.d/metasploit.list
-    $APT update -q || { say "could not reach the Metasploit repo"; return 1; }
+    $APT update -q || { say "could not reach the Metasploit repo"; rm -f /etc/apt/sources.list.d/metasploit.list; return 1; }
+    # Room and memory, from the package's own sizes, before the download starts.
+    # Metasploit unpacks under /opt/metasploit-framework: when the system
+    # partition cannot hold it and the data partition can, it goes there
+    # (the folder is made a link first, and dpkg follows it).
+    if ! rk_need_apt "Metasploit" metasploit-framework >/dev/null 2>&1 && mountpoint -q /data 2>/dev/null &&
+            [ ! -e /opt/metasploit-framework ]; then
+        local cost inst
+        cost=$(rk_apt_cost metasploit-framework) && read -r _ inst <<<"$cost"
+        if [ -n "${inst:-}" ] && rk_need_space $(( inst + 64 )) "$HEAVY_DIR" "Metasploit"; then
+            install -d -m 0755 "$HEAVY_DIR/metasploit-framework" /opt
+            ln -s "$HEAVY_DIR/metasploit-framework" /opt/metasploit-framework
+            say "the system partition is too full for Metasploit: putting it on the data partition."
+            msf_on_data=1
+        fi
+    fi
+    if [ -z "${msf_on_data:-}" ] && ! rk_need_apt "Metasploit" metasploit-framework; then
+        rm -f /etc/apt/sources.list.d/metasploit.list; $APT update -q >/dev/null 2>&1 || true
+        return 1
+    fi
+    if ! rk_need_mem 120 "installing Metasploit"; then
+        rm -f /etc/apt/sources.list.d/metasploit.list; $APT update -q >/dev/null 2>&1 || true
+        return 1
+    fi
     if ! $APT install -y -q metasploit-framework; then
+        [ -z "${msf_on_data:-}" ] || { rm -f /opt/metasploit-framework; rm -rf "$HEAVY_DIR/metasploit-framework"; }
         say "the Metasploit repo has no build for $arch."
         say "On $arch, install it from the Kali repo by hand (see docs/arsenal.md)."
         say "Nothing was left half-installed."
@@ -137,8 +154,9 @@ install_exploitdb() {
     if have searchsploit || [ -x "$HEAVY_DIR/exploitdb/searchsploit" ]; then
         say "exploitdb is already installed"; return 0
     fi
-    say "Fetching exploitdb..."
     install -d -m 0755 "$HEAVY_DIR"
+    rk_need_space 500 "$HEAVY_DIR" "exploitdb" || return 1
+    say "Fetching exploitdb..."
     if git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git "$HEAVY_DIR/exploitdb"; then
         ln -sf "$HEAVY_DIR/exploitdb/searchsploit" /usr/local/bin/searchsploit
         say "exploitdb installed in $HEAVY_DIR/exploitdb."
@@ -186,7 +204,8 @@ install_emulators() {
         url=$(release_asset "$name")
         [ -n "$url" ] || { say "no release of the system carries $name yet."; return 1; }
     fi
-    tmp=$(mktemp -d /var/tmp/rk-emu.XXXXXX) || return 1
+    tmp=$(rk_tmpdir rk-emu) || return 1
+    rk_need_space 40 "$tmp" "the emulators' download" || { rm -rf "$tmp"; return 1; }
     say "fetching the emulators (bundle $n, about 15 MB)..."
     if ! curl -fsSL "$url.sha256" -o "$tmp/sum" || ! curl -fsSL "$url" -o "$tmp/$name"; then
         say "could not fetch $name."; rm -rf "$tmp"; return 1
@@ -202,16 +221,12 @@ install_emulators() {
     # On a handheld the bundle lives on the data partition, which has the
     # room (the system partition of an older card is small), and
     # /opt/rk-emulators points to it.
-    local target="$EMU_DIR" have
+    local target="$EMU_DIR"
     if [ -z "${RK_EMU_DIR:-}" ] && mountpoint -q /data 2>/dev/null; then
         target="$HEAVY_DIR/rk-emulators"
     fi
     install -d -m 0755 "$(dirname "$target")"
-    have=$(free_mb "$(dirname "$target")")
-    if [ -n "$have" ] && [ "$have" -lt 200 ]; then
-        say "not enough room for the emulators: $have MB free in $(dirname "$target"), about 200 MB needed."
-        rm -rf "$tmp"; return 1
-    fi
+    rk_need_space 200 "$(dirname "$target")" "the emulators" || { rm -rf "$tmp"; return 1; }
     rm -rf "$target.new" && mkdir -p "$target.new" &&
         tar -xJf "$tmp/$name" -C "$target.new" --strip-components=2 --no-same-owner || {
             say "could not unpack the emulators."; rm -rf "$tmp" "$target.new"; return 1; }
@@ -234,8 +249,10 @@ install_media() {
     local todo=
     for p in $MEDIA_PKGS; do installed "$p" || todo="$todo $p"; done
     if [ -n "$todo" ]; then
-        need_space 200 "the video player" || return 1
+        $APT clean >/dev/null 2>&1 || true          # packages already installed: room for nothing
         $APT update -q || { say "could not reach Debian's package servers"; return 1; }
+        rk_need_apt "the video player" $todo || return 1
+        rk_need_mem 60 "installing the video player" || return 1
     fi
     for p in $MEDIA_PKGS; do
         if installed "$p"; then
@@ -266,7 +283,7 @@ case "${1:-}" in
     install-heavy)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         repair || exit 1
-        need_space 1500 "Metasploit" || exit 1
+        $APT clean >/dev/null 2>&1 || true
         rc=0
         install_msf || rc=1
         install_exploitdb || rc=1
