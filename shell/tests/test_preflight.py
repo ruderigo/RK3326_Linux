@@ -73,6 +73,18 @@ for script, args in (("rk-apps", ["update", "firefly"]), ("rk-apps", ["install",
         assert p.returncode == 1 and "not enough room" in p.stdout, p.stdout
         assert not os.path.exists(f"{d}/FETCHED"), f"{script} {args} fetched before looking at the room"
 
+# ---- with room, every step of an install is there to run (a network that answers nothing: each app says so)
+with tempfile.TemporaryDirectory() as d:
+    open(f"{d}/ip", "w").write("#!/bin/sh\necho 'default via 10.0.0.1 dev wlan0'\n")
+    open(f"{d}/curl", "w").write("#!/bin/sh\nexit 22\n")
+    open(f"{d}/git", "w").write("#!/bin/sh\nexit 1\n")
+    for n in ("ip", "curl", "git"):
+        os.chmod(f"{d}/{n}", 0o755)
+    for args in (["install", "all"], ["update", "all"], ["versions"]):
+        p = subprocess.run(["bash", os.path.join(SBIN, "rk-apps")] + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                           env=dict(os.environ, PATH=d + ":" + os.environ["PATH"], HOME=d, RK_PREFLIGHT_FREE_MB="9000", RK_PREFLIGHT_MEM_MB="900"))
+        assert "command not found" not in p.stdout and "syntax error" not in p.stdout, f"rk-apps {args}:\n{p.stdout}"
+
 # ---- a Stump update takes the files from the source chosen in Apps, then runs the installer
 for source, repo in (("sandbox", "SandBox_RK3326_Stump"), ("stable", "R36MAX-Stump")):
     with tempfile.TemporaryDirectory() as d:

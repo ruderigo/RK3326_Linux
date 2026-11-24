@@ -43,6 +43,14 @@ room_for() {        # room_for APP [update]
     [ "$mem" -eq 0 ] || rk_need_mem "$mem" "installing $1" || return 1
 }
 
+api_asset() {   # print the browser_download_url of the first release asset matching $2 in repo $1
+    curl -fsSL "https://api.github.com/repos/$1/releases/latest" |
+        python3 -c "import json,sys,re
+d=json.load(sys.stdin)
+for a in d.get('assets',[]):
+    if re.search(sys.argv[1], a['name']): print(a['browser_download_url']); break" "$2"
+}
+
 install_ember() {
     say "Fetching Ember (prebuilt arm64)..."
     mkdir -p "$H/ports"
