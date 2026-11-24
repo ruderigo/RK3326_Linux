@@ -12,7 +12,7 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first desktop and FireFly, the Stump and Ember built in, for teaching
 and authorised testing on your own equipment.
 
-> **Status: 1.0.0 runs on an R36MAX (type 1 board), tested through 2026-11-22.**
+> **Status: 1.1.0 runs on an R36MAX (type 1 board), tested through 2026-11-24. Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
 > *Works on that handheld:* kernel 5.10, the screen, the desktop and its
 > pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data
