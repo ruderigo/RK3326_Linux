@@ -18,6 +18,22 @@ online() { ip route 2>/dev/null | grep -q '^default'; }
 
 HEAVY_DIR=/data/opt
 
+# Fully installed, not merely known to dpkg: a package whose install was cut
+# short (power, a restart) is unpacked but not set up, and does not count.
+installed() { [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ]; }
+
+# An install that was cut short leaves dpkg refusing every later one until it
+# is finished. Finish it first; nothing to do when the last one ended well.
+repair() {
+    if [ -n "$(ls /var/lib/dpkg/updates 2>/dev/null)" ] || dpkg --audit 2>/dev/null | grep -q .; then
+        say "an earlier install was interrupted: finishing it first..."
+        if ! DEBIAN_FRONTEND=noninteractive dpkg --configure -a; then
+            say "could not finish the earlier install (see above)."; return 1
+        fi
+        DEBIAN_FRONTEND=noninteractive apt-get install -f -y -q || true
+    fi
+}
+
 status() {
     online && echo "online yes" || echo "online no"
     have mpv && echo "mpv installed" || echo "mpv absent"
@@ -71,9 +87,10 @@ MEDIA_PKGS="mpv quickjs retroarch libretro-nestopia libretro-snes9x libretro-gam
 
 install_media() {
     local p missing=
+    repair || return 1
     apt-get update -q || { say "could not reach Debian's package servers"; return 1; }
     for p in $MEDIA_PKGS; do
-        if dpkg -s "$p" >/dev/null 2>&1; then
+        if installed "$p"; then
             say "$p is already installed"
         elif DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$p"; then
             say "$p installed"
@@ -97,6 +114,7 @@ case "${1:-}" in
         exit "$rc" ;;
     install-heavy)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
+        repair || exit 1
         rc=0
         install_msf || rc=1
         install_exploitdb || rc=1

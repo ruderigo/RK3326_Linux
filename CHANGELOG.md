@@ -16,6 +16,8 @@ Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
   `/data/ark/roms`.
 - `rk-tools install-media` installs both on a card flashed before they were
   part of the image; the Video window runs it for you.
+- `rk-tools` finishes an install that was cut short before starting a new
+  one, and no longer counts a half-installed package as installed.
 - A dock entry's `exec` may be a bare name, looked for on PATH and in
   `/usr/games`.
 
