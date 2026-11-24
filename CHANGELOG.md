@@ -4,7 +4,7 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
-## Unreleased
+## 1.1.0 — 2026-11-24
 
 - **Every RK3326 handheld arkos4clone supports, from one image**: 93 of them,
   listed in [`docs/devices.md`](docs/devices.md). The card holds the boot
