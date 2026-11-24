@@ -29,24 +29,18 @@ RK_WHO=rk-apps
 # has been started; rk-migrate moves the large parts there). MB an install or
 # update can take while old and new are both on the card, and the memory its
 # installer needs (FireFly's builds a Python environment).
-room_for() {        # room_for APP
+room_for() {        # room_for APP [update]
     local mb mem=0
-    case "$1" in
-        ember)   mb=60 ;;
-        firefly) mb=350; mem=100 ;;
-        stump)   mb=250; mem=60 ;;
-        *)       return 0 ;;
+    case "$1${2:+-$2}" in
+        ember|ember-update) mb=60 ;;
+        firefly)        mb=350; mem=100 ;;
+        firefly-update) mb=120; mem=100 ;;      # the new files beside the old; its Python environment is there already
+        stump)          mb=250; mem=60 ;;
+        stump-update)   mb=40;  mem=60 ;;       # a few MB of files, and room to work in
+        *)              return 0 ;;
     esac
     rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
     [ "$mem" -eq 0 ] || rk_need_mem "$mem" "installing $1" || return 1
-}
-
-api_asset() {   # print the browser_download_url of the first release asset matching $2 in repo $1
-    curl -fsSL "https://api.github.com/repos/$1/releases/latest" |
-        python3 -c "import json,sys,re
-d=json.load(sys.stdin)
-for a in d.get('assets',[]):
-    if re.search(sys.argv[1], a['name']): print(a['browser_download_url']); break" "$2"
 }
 
 install_ember() {
@@ -165,7 +159,13 @@ update_firefly() {
 update_stump() {
     [ -f "$H/Stump/stump_pc.py" ] || { say "the Stump is not set up yet: open Stump on the dock first."; return 1; }
     local inst="$H/R36MAX-Stump/handheld/install.sh" rc
-    say "Stump: running its installer (it fetches its own updates)..."
+    # The installer's files first, from the source chosen in Apps (stable or
+    # sandbox). The installer pulls too, but only from wherever its folder
+    # was first cloned, and quietly gives up when that pull cannot be a plain
+    # fast-forward: Apps then went on showing a new version that never came.
+    clone_stump || return 1
+    [ -f "$inst" ] || { say "the Stump's installer is missing from $STUMP_REPO."; return 1; }
+    say "Stump: running its installer..."
     if [ -n "${SUDO_ASKPASS:-}" ]; then
         # nobody at a keyboard: an update keeps everything (the RK3326 Provisioner's answers)
         local ans; ans=$(mktemp) && chmod 600 "$ans"
@@ -217,9 +217,9 @@ case "$cmd" in
         rc=0
         case "$what" in
             ember) room_for ember && install_ember || rc=1 ;;
-            firefly) room_for firefly && update_firefly || rc=1 ;;
-            stump) room_for stump && update_stump || rc=1 ;;
-            all) for a in ember firefly stump; do room_for "$a" || rc=1; done
+            firefly) room_for firefly update && update_firefly || rc=1 ;;
+            stump) room_for stump update && update_stump || rc=1 ;;
+            all) for a in ember firefly stump; do room_for "$a" update || rc=1; done
                  [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; } ;;
             *) echo "usage: rk-apps update ember|firefly|stump|all" >&2; exit 2 ;;
         esac

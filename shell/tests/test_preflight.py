@@ -73,6 +73,30 @@ for script, args in (("rk-apps", ["update", "firefly"]), ("rk-apps", ["install",
         assert p.returncode == 1 and "not enough room" in p.stdout, p.stdout
         assert not os.path.exists(f"{d}/FETCHED"), f"{script} {args} fetched before looking at the room"
 
+# ---- a Stump update takes the files from the source chosen in Apps, then runs the installer
+for source, repo in (("sandbox", "SandBox_RK3326_Stump"), ("stable", "R36MAX-Stump")):
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(f"{d}/R36MAX-Stump/.git"); os.makedirs(f"{d}/R36MAX-Stump/handheld"); os.makedirs(f"{d}/Stump"); os.makedirs(f"{d}/.config")
+        open(f"{d}/Stump/stump_pc.py", "w").close()
+        open(f"{d}/.config/rk-apps", "w").write(f"STUMP_SOURCE={source}\n")
+        open(f"{d}/R36MAX-Stump/handheld/VERSION", "w").write("2.7.4-b.87\n")
+        # the installer, as it is: its own pull has already happened (or quietly failed) by now
+        open(f"{d}/R36MAX-Stump/handheld/install.sh", "w").write(f'echo "installer $(cat {d}/R36MAX-Stump/handheld/VERSION)" >> {d}/LOG\n')
+        open(f"{d}/ip", "w").write("#!/bin/sh\necho 'default via 10.0.0.1 dev wlan0'\n")
+        # git: note what was asked; "reset" is the moment the new files are there
+        open(f"{d}/git", "w").write(f"""#!/bin/sh
+echo "git $*" >> {d}/LOG
+case "$*" in *reset*) echo 2.7.6-b.88 > {d}/R36MAX-Stump/handheld/VERSION ;; esac
+""")
+        os.chmod(f"{d}/ip", 0o755); os.chmod(f"{d}/git", 0o755)
+        p = subprocess.run(["bash", os.path.join(SBIN, "rk-apps"), "update", "stump"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                           env=dict(os.environ, PATH=d + ":" + os.environ["PATH"], HOME=d, RK_PREFLIGHT_FREE_MB="170", RK_PREFLIGHT_MEM_MB="300"))
+        log = open(f"{d}/LOG").read()
+        assert p.returncode == 0, p.stdout
+        assert f"git remote set-url origin https://github.com/ruderigo/{repo}" in log, log
+        assert log.index("reset --hard") < log.index("installer 2.7.6-b.88"), "the installer ran on the old files:\n" + log
+        assert "Stump is now 2.7.6-b.88" in p.stdout, p.stdout
+
 # ---- the updater: room first, and old backups do not pile up
 RK_UPDATE = os.path.join(SBIN, "rk-update")
 with tempfile.TemporaryDirectory() as root:
