@@ -58,6 +58,8 @@ assert "--ytdl-raw-options=js-runtimes=quickjs" in cmd
 assert any(a.startswith("--ytdl-format=bv*[height<=360]") for a in cmd)
 cmd = rv.mpv_command("x", "/tmp/s", {"VO": "drm", "HEIGHT": "240"})
 assert "--vo=drm" in cmd and any("height<=240" in a for a in cmd)
+rv.js_runtime = lambda: "deno:/home/ark/.local/share/rk-video/deno"     # the Deno that fetch brought: yt-dlp is told where
+assert "--ytdl-raw-options=js-runtimes=deno:/home/ark/.local/share/rk-video/deno" in rv.mpv_command("x", "/tmp/s", {}, height=360)
 rv.js_runtime = lambda: "deno"                  # yt-dlp's own default: nothing to say
 assert not any("js-runtimes" in a for a in rv.mpv_command("x", "/tmp/s", {}, height=360))
 

@@ -39,11 +39,16 @@ processor decodes video in software and H.264 is by far the lightest.
 
 **yt-dlp is not Debian's.** YouTube changes often and only a recent yt-dlp
 keeps up, so `rk-video fetch` (Y in the window) takes the official one from
-its releases, checks it against the release's SHA-256 list, and keeps it in
-`~/.local/share/rk-video`. Since late 2025 yt-dlp also needs a JavaScript
-runtime for YouTube; the image carries QuickJS (`qjs`) for that, and deno is
-used when you install it yourself. **When videos stop playing, press Y
+its releases, checks it against the release's SHA-256 list, and keeps it
+unpacked in `~/.local/share/rk-video`. **When videos stop playing, press Y
 first.**
+
+**Starting a video takes a while**, because yt-dlp has to run YouTube's own
+JavaScript to get the video's address. `fetch` brings
+[Deno](https://deno.com/) for that (about 100 MB once unpacked, checked
+against its release's checksum). Where Deno does not run on a handheld's
+kernel, QuickJS (`qjs`, in the image) does the job, noticeably slower.
+`rk-video status` says which one is in use.
 
 Debian's own `yt-dlp` package is never used, even when it is installed: it is
 too old for YouTube. When a video does not start, the window says why.
