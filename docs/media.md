@@ -119,12 +119,15 @@ bundle**, `/opt/rk-emulators` on the handheld. The versions are pinned in
 `build/emulators.env`.
 
 - A new image has the bundle in it.
-- A card that is already flashed fetches it: the Video window's setup, or
-  `sudo rk-tools install-media`. It comes from this repository's release
-  **emulators-&lt;n&gt;**, checked against its SHA-256.
-- To publish a bundle: raise `BUNDLE` in `build/emulators.env` and the number
-  in `overlay/usr/share/rk/emulators.bundle`, then push the tag
-  `emulators-<n>`. CI builds it on arm64 and attaches it to a pre-release.
+- Every release of the system also carries the bundle as a file of its own,
+  `rk-emulators-<n>.tar.xz`. A card that is already flashed fetches it from
+  there (the Video window's setup, or `sudo rk-tools install-media`), checked
+  against its SHA-256. There are no tags or releases for the bundle alone:
+  this repository's tags are the system's versions, `vX.Y.Z`.
+- To change the bundle: edit the pins, raise `BUNDLE` in
+  `build/emulators.env` and the number in
+  `overlay/usr/share/rk/emulators.bundle`. The next release carries it.
+- A tag with a hyphen (`v1.1.0-rc.1`) is published as a pre-release.
 
 The cores are dArkOS's builds, used as they are. dArkOS's licence notes say
 its distribution includes parts licensed for non-commercial use only; keep

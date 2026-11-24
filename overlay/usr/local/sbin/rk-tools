@@ -94,9 +94,25 @@ install_exploitdb() {
 MEDIA_PKGS="mpv quickjs"
 
 # Games: the emulator bundle (RetroArch built for this GPU, and its cores),
-# made by build/build-emulators.sh and published with the tag emulators-<n>.
-# Which <n> this system wants is in /usr/share/rk/emulators.bundle.
+# made by build/build-emulators.sh. It is inside every image, and each
+# release of the system also carries it as a file, rk-emulators-<n>.tar.xz;
+# a card flashed before Games existed takes it from there. Which <n> this
+# system wants is in /usr/share/rk/emulators.bundle.
 EMU_REPO=ruderigo/RK3326_Linux
+
+# The address of a release file by its name: the newest release (pre-releases
+# count) of this repository that has it. Nothing printed when none has.
+release_asset() {
+    curl -fsSL -m 30 "https://api.github.com/repos/$EMU_REPO/releases?per_page=30" 2>/dev/null |
+        python3 -I -c "import json,sys
+try: rels=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for r in rels if isinstance(rels, list) else []:
+    for a in r.get('assets', []):
+        if a.get('name') == sys.argv[1]:
+            print(a['browser_download_url']); sys.exit(0)" "$1"
+}
+
 install_emulators() {
     local n have_n name url tmp want got
     n=$(head -1 "${RK_EMU_WANT:-/usr/share/rk/emulators.bundle}" 2>/dev/null | tr -cd '0-9')
@@ -106,11 +122,16 @@ install_emulators() {
         say "the emulators are already installed (bundle $n)"; return 0
     fi
     name="rk-emulators-$n.tar.xz"
-    url="${RK_EMU_BASE:-https://github.com/$EMU_REPO/releases/download/emulators-$n}/$name"
+    if [ -n "${RK_EMU_BASE:-}" ]; then
+        url="$RK_EMU_BASE/$name"
+    else
+        url=$(release_asset "$name")
+        [ -n "$url" ] || { say "no release of the system carries $name yet."; return 1; }
+    fi
     tmp=$(mktemp -d /var/tmp/rk-emu.XXXXXX) || return 1
-    say "fetching the emulators (bundle $n, about 20 MB)..."
+    say "fetching the emulators (bundle $n, about 15 MB)..."
     if ! curl -fsSL "$url.sha256" -o "$tmp/sum" || ! curl -fsSL "$url" -o "$tmp/$name"; then
-        say "could not fetch $name. Is bundle $n published yet?"; rm -rf "$tmp"; return 1
+        say "could not fetch $name."; rm -rf "$tmp"; return 1
     fi
     want=$(awk '{print $1; exit}' "$tmp/sum"); got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
     if [ -z "$want" ] || [ "$want" != "$got" ]; then

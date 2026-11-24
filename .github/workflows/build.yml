@@ -5,7 +5,7 @@ name: Build image
 on:
   push:
     branches: [main]
-    tags: ['v*', 'emulators-*']     # emulators-<n> publishes the emulator bundle (build/emulators.env)
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -61,12 +61,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - name: A tag emulators-<n> must match the bundle number in build/emulators.env
-        if: startsWith(github.ref, 'refs/tags/emulators-')
+      - name: The bundle number is the same everywhere
         run: |
           . build/emulators.env
-          [ "$GITHUB_REF_NAME" = "emulators-$BUNDLE" ] || { echo "the tag is $GITHUB_REF_NAME but build/emulators.env says BUNDLE=$BUNDLE"; exit 1; }
-          [ "$(head -1 overlay/usr/share/rk/emulators.bundle)" = "$BUNDLE" ] || { echo "overlay/usr/share/rk/emulators.bundle does not say $BUNDLE"; exit 1; }
+          [ "$(head -1 overlay/usr/share/rk/emulators.bundle)" = "$BUNDLE" ] || { echo "overlay/usr/share/rk/emulators.bundle does not say $BUNDLE (build/emulators.env)"; exit 1; }
       - name: Build the bundle
         run: |
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
@@ -85,34 +83,8 @@ jobs:
           retention-days: 30
           compression-level: 0
 
-  # A tag emulators-<n>, pushed by hand, publishes the bundle where handhelds
-  # fetch it (rk-tools install-media). A pre-release, so it is never taken for
-  # the newest version of the system.
-  emulators-release:
-    name: Publish the emulator bundle
-    if: startsWith(github.ref, 'refs/tags/emulators-')
-    needs: emulators
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v7
-        with:
-          name: rk-emulators
-          path: out
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls -la out
-          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --prerelease \
-            --title "Emulator bundle ${GITHUB_REF_NAME#emulators-}" \
-            --notes "RetroArch built for the RK3326's Mali GPU, and cores from the dArkOS project. Fetched by handhelds through rk-tools install-media; what is inside is in the archive's /opt/rk-emulators/VERSION."
-
   image:
     name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
-    if: ${{ !startsWith(github.ref, 'refs/tags/emulators-') }}
     needs: emulators
     runs-on: ubuntu-24.04-arm        # arm64, like the handhelds: Debian installs natively
     timeout-minutes: 60
@@ -177,7 +149,7 @@ jobs:
   release:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: image
+    needs: [image, emulators]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -188,6 +160,13 @@ jobs:
           pattern: rk3326-linux-*
           path: out
           merge-multiple: true
+      # and the emulator bundle that is inside the image, as a file of its own:
+      # a handheld flashed before Games existed fetches it from the release
+      # (rk-tools install-media looks through this repository's releases for it)
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-emulators
+          path: out
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -195,5 +174,7 @@ jobs:
           ls -la out
           # a run that failed half-way leaves a draft behind; start clean (the tag stays)
           gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" \
+          # v1.2.0-rc.1 and the like are pre-releases: never "the latest release"
+          pre=; case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" $pre \
             --title "RK3326 Linux ${GITHUB_REF_NAME#v}" --generate-notes
