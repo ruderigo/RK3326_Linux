@@ -1264,7 +1264,7 @@ class System:
         return Steps(cmds + [(RK_VIDEO, "fetch")])
 
     def games_installed(self):
-        return shutil.which("retroarch", path=with_games()) is not None
+        return os.access("/opt/rk-emulators/bin/retroarch", os.X_OK)
 
     def video_error(self, since):
         """Why the last play failed, when it did so after `since` (a time); else ""."""

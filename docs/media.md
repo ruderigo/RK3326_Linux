@@ -76,11 +76,15 @@ What mpv said the last time is in `~/.cache/rk-video/last.log`.
 
 ## Games
 
-**Games** on the dock is [RetroArch](https://www.retroarch.com/) with the
-cores Debian packages that this processor can carry:
+**Games** on the dock is [RetroArch](https://www.retroarch.com/), built for
+this handheld's GPU, with cores built for its processor by the
+[dArkOS](https://github.com/christianhaitian/dArkOS) project:
 
 | Machine | Core | Folder |
 |---|---|---|
+| PlayStation | PCSX ReARMed | `psx` |
+| Nintendo 64 | Mupen64Plus-Next, ParaLLEl N64 | `n64` |
+| PSP | PPSSPP | `psp` |
 | NES | Nestopia | `nes` |
 | Super NES | Snes9x | `snes` |
 | Game Boy, Game Boy Color | Gambatte | `gb`, `gbc` |
@@ -88,20 +92,45 @@ cores Debian packages that this processor can carry:
 | Mega Drive, Master System, Game Gear | Genesis Plus GX | `megadrive`, `mastersystem`, `gamegear` |
 | PC Engine | Beetle PCE Fast | `pcengine` |
 
+Two cores for the Nintendo 64 because neither runs every game: when one
+stutters or shows a game wrongly, try the other.
+
 **No game and no BIOS file comes with the system.** Copy your own into
 `/data/ark/roms/<folder>` (over SFTP, or from a USB stick with Files). The
 folders are made the first time Games is opened, and they are on the data
-partition, so a reflash keeps them along with saves and save states.
+partition, so a reflash keeps them along with saves and save states. The
+PlayStation core plays better with a BIOS file in `/data/ark/roms/bios`.
 
 In RetroArch: **Load Content**, pick the file, then the core when asked.
-**SELECT+START leaves. Both sticks pressed in open the menu** (save states,
-options).
+**SELECT+START leaves. SELECT+X opens the menu** (save states, options).
 
 The handheld's own settings are in `/usr/share/rk/retroarch/rk.cfg` and are
-applied over yours at every start (the SDL2 picture and pad, ALSA sound, the
-folders, the two button combinations). Everything else you change in
-RetroArch is kept in `~/.config/retroarch/retroarch.cfg`.
+applied over yours at every start (the picture, the pad, sound, the folders,
+the hotkeys). Everything else you change in RetroArch is kept in
+`~/.config/retroarch/retroarch.cfg`.
 
-**Not there yet:** Nintendo 64, Dreamcast, PSP and PlayStation. Those need a
-RetroArch and cores built for this GPU's driver, which Debian's are not;
-that is a build of our own, for a later release.
+### Where RetroArch comes from
+
+Debian's RetroArch shows nothing on this panel: it draws with desktop OpenGL,
+and the panel is only reached through the Mali driver's OpenGL ES. So
+`build/build-emulators.sh` compiles RetroArch the way dArkOS does (OpenGL ES
+straight to the panel) and packs it with the cores into the **emulator
+bundle**, `/opt/rk-emulators` on the handheld. The versions are pinned in
+`build/emulators.env`.
+
+- A new image has the bundle in it.
+- A card that is already flashed fetches it: the Video window's setup, or
+  `sudo rk-tools install-media`. It comes from this repository's release
+  **emulators-&lt;n&gt;**, checked against its SHA-256.
+- To publish a bundle: raise `BUNDLE` in `build/emulators.env` and the number
+  in `overlay/usr/share/rk/emulators.bundle`, then push the tag
+  `emulators-<n>`. CI builds it on arm64 and attaches it to a pre-release.
+
+The cores are dArkOS's builds, used as they are. dArkOS's licence notes say
+its distribution includes parts licensed for non-commercial use only; keep
+that in mind before selling handhelds with this image.
+
+**Not yet proven on a handheld:** that this RetroArch lights the panel, the
+pad layout (`autoconfig/udev/GO-Super Gamepad.cfg`, written from the pad's
+kernel button order), and how well each core runs. PSP in particular may
+need PPSSPP's own asset files beside the core.

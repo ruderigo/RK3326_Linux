@@ -7,7 +7,8 @@ up and down a minute, L1 and R1 five minutes, B stops, and SELECT+START
 stops as in every dock app.
 
 The first time, and on a card flashed before Video was part of the image,
-the window offers to set itself up: the player and its kin from Debian, and
+the window offers to set itself up: the player from Debian, the emulators
+for Games, and
 yt-dlp from its own releases, because only a recent one keeps up with
 YouTube. Y fetches the newest yt-dlp at any time; that is the first thing to
 try when videos stop playing; it also installs RetroArch for Games when that
@@ -155,7 +156,7 @@ class VideoPage(Page):
             G.text(surf, f.big, "Video is not set up yet", (x, y), T.EMBER_BRIGHT)
             y += f.line + 8
             text = ("Missing: " + " and ".join(missing) + ". A fetches what is missing over Wi-Fi: the player and "
-                    "RetroArch from Debian (a few minutes), and yt-dlp from its own releases.")
+                    "the emulators for Games (a few minutes), and yt-dlp from its own releases.")
             for ln in G.wrap(f.small, text, area.w - 32):
                 G.text(surf, f.small, ln, (x, y), T.TEXT)
                 y += f.small_line

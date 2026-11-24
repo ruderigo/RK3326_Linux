@@ -6,14 +6,15 @@
 #   rk-tools status         whether online, and what heavy tool is installed
 #   rk-tools install-heavy   install Metasploit and exploitdb (needs network)
 #   rk-tools install-media   install what Video and Games need (mpv, QuickJS,
-#                            RetroArch and its cores), on a card flashed before
-#                            they were part of the image
+#                            and the emulator bundle: RetroArch and its cores),
+#                            on a card flashed before they were part of the image
 #
 # For testing machines that are yours, or that you have been asked to test.
 set -u
 say() { echo "rk-tools: $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-have_retroarch() { have retroarch || [ -x /usr/games/retroarch ]; }   # Debian keeps games in /usr/games
+EMU_DIR="${RK_EMU_DIR:-/opt/rk-emulators}"          # RK_EMU_*: for the tests
+have_retroarch() { [ -x "$EMU_DIR/bin/retroarch" ]; }
 online() { ip route 2>/dev/null | grep -q '^default'; }
 
 HEAVY_DIR=/data/opt
@@ -88,12 +89,49 @@ install_exploitdb() {
     fi
 }
 
-# Video and Games: the same names as build/packages-media.txt, which a new
-# image installs when it is built.
-MEDIA_PKGS="mpv quickjs retroarch libretro-nestopia libretro-snes9x libretro-gambatte libretro-mgba libretro-genesisplusgx libretro-beetle-pce-fast"
+# Video: the same names as build/packages-media.txt, which a new image
+# installs when it is built.
+MEDIA_PKGS="mpv quickjs"
+
+# Games: the emulator bundle (RetroArch built for this GPU, and its cores),
+# made by build/build-emulators.sh and published with the tag emulators-<n>.
+# Which <n> this system wants is in /usr/share/rk/emulators.bundle.
+EMU_REPO=ruderigo/RK3326_Linux
+install_emulators() {
+    local n have_n name url tmp want got
+    n=$(head -1 "${RK_EMU_WANT:-/usr/share/rk/emulators.bundle}" 2>/dev/null | tr -cd '0-9')
+    [ -n "$n" ] || { say "this system does not say which emulator bundle it wants."; return 1; }
+    have_n=$(sed -n 's/^bundle //p' "$EMU_DIR/VERSION" 2>/dev/null | head -1)
+    if have_retroarch && [ "$have_n" = "$n" ]; then
+        say "the emulators are already installed (bundle $n)"; return 0
+    fi
+    name="rk-emulators-$n.tar.xz"
+    url="${RK_EMU_BASE:-https://github.com/$EMU_REPO/releases/download/emulators-$n}/$name"
+    tmp=$(mktemp -d /var/tmp/rk-emu.XXXXXX) || return 1
+    say "fetching the emulators (bundle $n, about 20 MB)..."
+    if ! curl -fsSL "$url.sha256" -o "$tmp/sum" || ! curl -fsSL "$url" -o "$tmp/$name"; then
+        say "could not fetch $name. Is bundle $n published yet?"; rm -rf "$tmp"; return 1
+    fi
+    want=$(awk '{print $1; exit}' "$tmp/sum"); got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
+    if [ -z "$want" ] || [ "$want" != "$got" ]; then
+        say "the download does not match its checksum; nothing changed."; rm -rf "$tmp"; return 1
+    fi
+    # only what belongs under /opt/rk-emulators is taken from the archive
+    if tar -tJf "$tmp/$name" | grep -qvE '^opt(/|/rk-emulators(/.*)?)?$'; then
+        say "the archive holds files outside $EMU_DIR; nothing changed."; rm -rf "$tmp"; return 1
+    fi
+    rm -rf "$EMU_DIR.new" && mkdir -p "$EMU_DIR.new" &&
+        tar -xJf "$tmp/$name" -C "$EMU_DIR.new" --strip-components=2 --no-same-owner || {
+            say "could not unpack the emulators."; rm -rf "$tmp" "$EMU_DIR.new"; return 1; }
+    rm -rf "$tmp" "$EMU_DIR.old"
+    [ ! -d "$EMU_DIR" ] || mv "$EMU_DIR" "$EMU_DIR.old"
+    mv "$EMU_DIR.new" "$EMU_DIR" && rm -rf "$EMU_DIR.old"
+    chown -R 0:0 "$EMU_DIR"
+    say "the emulators are installed (bundle $n)."
+}
 
 install_media() {
-    local p missing=
+    local p rc=0
     repair || return 1
     apt-get update -q || { say "could not reach Debian's package servers"; return 1; }
     for p in $MEDIA_PKGS; do
@@ -102,16 +140,19 @@ install_media() {
         elif DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$p"; then
             say "$p installed"
         else
-            say "$p could not be installed"; missing="$missing $p"
+            say "$p could not be installed"; rc=1
         fi
     done
-    have mpv || { say "mpv is missing: Video cannot play."; return 1; }
-    have_retroarch || { say "RetroArch is missing: Games cannot start."; return 1; }
-    [ -z "$missing" ] || say "left out:$missing"
+    have mpv || { say "mpv is missing: Video cannot play."; rc=1; }
+    # Games does not hold Video back: say so, and carry on
+    install_emulators || { say "Games is not ready yet (see above); Video does not need it."; }
+    return "$rc"
 }
 
 case "${1:-}" in
     status) status ;;
+    install-emulators)
+        install_emulators; exit $? ;;
     install-media)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         rc=0
@@ -128,5 +169,5 @@ case "${1:-}" in
         apt-get clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
         exit "$rc" ;;
-    *) echo "usage: rk-tools status | install-heavy | install-media" >&2; exit 2 ;;
+    *) echo "usage: rk-tools status | install-heavy | install-media | install-emulators" >&2; exit 2 ;;
 esac

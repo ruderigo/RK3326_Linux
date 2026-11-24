@@ -95,18 +95,34 @@ got = system.parse_video_results(out)
 assert got == [{"id": "abcdefghijk", "length": "", "channel": "", "title": "Live now"}], got
 assert system.System().video_command("abcdefghijk") == ["/usr/local/bin/rk-video", "play", "https://www.youtube.com/watch?v=abcdefghijk"]
 
-# Debian keeps RetroArch in /usr/games: the dock looks there too, once
+# a bare name in a dock entry is looked for in /usr/games too
 assert system.with_games("/usr/bin:/bin") == "/usr/bin:/bin:/usr/games:/usr/local/games"
 assert system.with_games("/usr/games:/bin").count("/usr/games") == 1
 
-# Games: the dock entry starts RetroArch with our settings, and those keep the dock's rule (SELECT+START leaves)
+# Games: the dock entry starts the bundle's RetroArch with our settings, and those keep the dock's rule (SELECT+START leaves)
 entry = json.load(open(os.path.join(REPO, "overlay/usr/share/rk/apps/games.json")))
-assert entry["exec"][0] == "retroarch" and entry["exec"][1] == "--appendconfig"
-cfg = dict((k.strip(), v.strip().strip('"')) for k, _, v in
-           (ln.partition("=") for ln in open(os.path.join(REPO, "overlay" + entry["exec"][2])) if "=" in ln and not ln.startswith("#")))
-assert cfg["video_driver"] == "sdl2" and cfg["input_joypad_driver"] == "sdl2"
-assert cfg["input_quit_gamepad_combo"] == "4"          # INPUT_COMBO_START_SELECT
-assert cfg["input_menu_toggle_gamepad_combo"] != cfg["input_quit_gamepad_combo"]
+assert entry["exec"][0] == "/opt/rk-emulators/bin/retroarch" and entry["exec"][1] == "--appendconfig"
+def cfg_of(path):
+    return dict((k.strip(), v.strip().strip('"')) for k, _, v in
+                (ln.partition("=") for ln in open(path) if "=" in ln and not ln.startswith("#")))
+cfg = cfg_of(os.path.join(REPO, "overlay" + entry["exec"][2]))
+assert cfg["video_driver"] == "gl" and cfg["input_joypad_driver"] == "udev"
+assert cfg["libretro_directory"] == "/opt/rk-emulators/cores"
+pad_dir = os.path.join(REPO, "overlay" + cfg["joypad_autoconfig_dir"], "udev")
+pad = cfg_of(os.path.join(pad_dir, "GO-Super Gamepad.cfg"))
+# the pad's buttons in the kernel's order: 304 B, 305 A, 307 X, 308 Y ... 704 SELECT, 705 START
+assert (pad["input_b_btn"], pad["input_a_btn"], pad["input_x_btn"], pad["input_y_btn"]) == ("0", "1", "2", "3")
+assert cfg["input_enable_hotkey_btn"] == pad["input_select_btn"]        # SELECT held...
+assert cfg["input_exit_emulator_btn"] == pad["input_start_btn"]         # ...and START leaves
+assert cfg["input_menu_toggle_btn"] == pad["input_x_btn"] and cfg["quit_press_twice"] == "false"
+buttons = [v for k, v in pad.items() if k.endswith("_btn")]
+assert len(buttons) == len(set(buttons)), "two buttons share a number"
+
+# one bundle number everywhere: what CI builds, and what the handheld asks for
+env = dict(ln.strip().split("=", 1) for ln in open(os.path.join(REPO, "build/emulators.env")) if "=" in ln and not ln.startswith("#"))
+assert open(os.path.join(REPO, "overlay/usr/share/rk/emulators.bundle")).read().strip() == env["BUNDLE"]
+for core in ("pcsx_rearmed", "mupen64plus_next", "parallel_n64", "ppsspp"):
+    assert core in env["CORES"].strip('"').split(), core
 
 # the two package lists name the same set
 want = [ln.strip() for ln in open(os.path.join(REPO, "build/packages-media.txt")) if ln.strip() and not ln.startswith("#")]

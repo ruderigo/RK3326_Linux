@@ -13,19 +13,19 @@ ROMS=/data/ark/roms
 
 case "${1:-}" in
     prepare)
-        for d in nes snes gb gbc gba megadrive mastersystem gamegear pcengine bios saves states; do
+        for d in psx n64 psp nes snes gb gbc gba megadrive mastersystem gamegear pcengine bios saves states; do
             mkdir -p "$ROMS/$d"
         done
         [ -e "$ROMS/README.txt" ] || cat > "$ROMS/README.txt" <<TXT
 Your games go here, one folder per machine:
 
-  nes  snes  gb  gbc  gba  megadrive  mastersystem  gamegear  pcengine
+  psx  n64  psp  nes  snes  gb  gbc  gba  megadrive  mastersystem  gamegear  pcengine
 
 bios    files some machines need to start (yours to supply)
 saves   what games save;  states  save states made from RetroArch's menu
 
 In Games: Load Content, pick the file, then the core when asked.
-SELECT+START leaves. Both sticks pressed in open the menu.
+SELECT+START leaves. SELECT+X opens the menu.
 TXT
         ;;
     where) echo "$ROMS" ;;

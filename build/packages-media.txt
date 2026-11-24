@@ -1,18 +1,13 @@
-# Video and Games. Installed one at a time when the image is built; a name
-# Debian does not have is skipped with a warning. Keep in step with
-# MEDIA_PKGS in overlay/usr/local/sbin/rk-tools (the same set, for a card
-# flashed before these were part of the image).
+# Video. Installed one at a time when the image is built; a name Debian does
+# not have is skipped with a warning. Keep in step with MEDIA_PKGS in
+# overlay/usr/local/sbin/rk-tools (the same set, for a card flashed before
+# these were part of the image).
+#
+# Games is not here: Debian's RetroArch shows nothing on this panel (and
+# brings the Qt desktop libraries with it). RetroArch and its cores come from
+# the emulator bundle, build/build-emulators.sh.
 
-# Video: the player, and the JavaScript runtime yt-dlp needs for YouTube
-# (yt-dlp itself comes from its own releases: rk-video fetch)
+# the player, and the JavaScript runtime yt-dlp falls back on for YouTube
+# (yt-dlp itself and Deno come from their own releases: rk-video fetch)
 mpv
 quickjs
-
-# Games: RetroArch and cores light enough for this processor
-retroarch
-libretro-nestopia
-libretro-snes9x
-libretro-gambatte
-libretro-mgba
-libretro-genesisplusgx
-libretro-beetle-pce-fast

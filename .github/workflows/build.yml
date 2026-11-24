@@ -5,7 +5,7 @@ name: Build image
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ['v*', 'emulators-*']     # emulators-<n> publishes the emulator bundle (build/emulators.env)
   pull_request:
   workflow_dispatch:
     inputs:
@@ -55,8 +55,65 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  emulators:
+    name: Emulators (RetroArch and its cores)
+    runs-on: ubuntu-24.04-arm        # arm64: RetroArch is compiled for the handheld's processor
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: A tag emulators-<n> must match the bundle number in build/emulators.env
+        if: startsWith(github.ref, 'refs/tags/emulators-')
+        run: |
+          . build/emulators.env
+          [ "$GITHUB_REF_NAME" = "emulators-$BUNDLE" ] || { echo "the tag is $GITHUB_REF_NAME but build/emulators.env says BUNDLE=$BUNDLE"; exit 1; }
+          [ "$(head -1 overlay/usr/share/rk/emulators.bundle)" = "$BUNDLE" ] || { echo "overlay/usr/share/rk/emulators.bundle does not say $BUNDLE"; exit 1; }
+      - name: Build the bundle
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkg-config unzip xz-utils \
+              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev >/dev/null
+            build/build-emulators.sh emu-out
+          '
+          sudo chown -R "$(id -u):$(id -g)" emu-out
+          ls -la emu-out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rk-emulators
+          path: emu-out/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  # A tag emulators-<n>, pushed by hand, publishes the bundle where handhelds
+  # fetch it (rk-tools install-media). A pre-release, so it is never taken for
+  # the newest version of the system.
+  emulators-release:
+    name: Publish the emulator bundle
+    if: startsWith(github.ref, 'refs/tags/emulators-')
+    needs: emulators
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-emulators
+          path: out
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out
+          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --prerelease \
+            --title "Emulator bundle ${GITHUB_REF_NAME#emulators-}" \
+            --notes "RetroArch built for the RK3326's Mali GPU, and cores from the dArkOS project. Fetched by handhelds through rk-tools install-media; what is inside is in the archive's /opt/rk-emulators/VERSION."
+
   image:
     name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
+    if: ${{ !startsWith(github.ref, 'refs/tags/emulators-') }}
+    needs: emulators
     runs-on: ubuntu-24.04-arm        # arm64, like the handhelds: Debian installs natively
     timeout-minutes: 60
     env:
@@ -89,12 +146,19 @@ jobs:
           git checkout --quiet "$UPSTREAM_COMMIT"
           du -sh uboot boot/dArkOS/consoles rootfs/dArkOS/usr/lib/modules rootfs/dArkOS/usr/lib/firmware
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-emulators
+          path: emu
+
       # Debian trixie builds Debian trixie: the same debootstrap, keys and
       # filesystem tools as the system that ends up on the card.
       - name: Build and verify the image
         run: |
+          . build/emulators.env
+          export EMULATORS="/src/emu/rk-emulators-$BUNDLE.tar.xz"
           docker run --rm --privileged -v "$PWD:/src" -w /src \
-            -e CONSOLE -e KERNEL -e VERSION debian:trixie bash -euo pipefail -c '
+            -e CONSOLE -e KERNEL -e VERSION -e EMULATORS debian:trixie bash -euo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates device-tree-compiler >/dev/null
               build/build-image.sh upstream out

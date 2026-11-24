@@ -11,9 +11,11 @@ Not yet tried on a handheld; see [`docs/media.md`](docs/media.md).
 - **Video.** A window on the dock that searches YouTube and plays the result
   with mpv, driven by the pad. yt-dlp comes from its own releases and is
   updated from the window.
-- **Games.** RetroArch on the dock with Debian's cores for the 8- and 16-bit
-  machines and the Game Boy Advance, for the owner's own game files in
-  `/data/ark/roms`.
+- **Games.** RetroArch on the dock, built for this GPU, with dArkOS's cores
+  for PlayStation, Nintendo 64, PSP, the 8- and 16-bit machines and the Game
+  Boys, for the owner's own game files in `/data/ark/roms`. It comes as the
+  emulator bundle (`build/build-emulators.sh`), in new images and fetched on
+  cards already flashed.
 - `rk-tools install-media` installs both on a card flashed before they were
   part of the image; the Video window runs it for you.
 - `rk-tools` finishes an install that was cut short before starting a new

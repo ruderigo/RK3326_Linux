@@ -4,7 +4,7 @@
  "group": "Play",
  "about": "RetroArch, for your own game files",
  "exec": [
-  "retroarch",
+  "/opt/rk-emulators/bin/retroarch",
   "--appendconfig",
   "/usr/share/rk/retroarch/rk.cfg"
  ],
