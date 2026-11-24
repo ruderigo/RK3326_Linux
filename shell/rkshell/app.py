@@ -92,6 +92,17 @@ class App:
         self.toast_text, self.toast_until, self.toast_error = text, time.time() + secs, error
         self.dirty = True
 
+    def check_health(self):
+        """Say so once when room or memory runs short (and again only after it
+        has been fine in between): before an install fails, not after."""
+        now = {k: text for k, text in self.system.health()}
+        seen = getattr(self, "_health_seen", set())
+        for key, text in now.items():
+            if key not in seen and not self.toast_text:
+                self.toast(text, 8, error=True)
+                seen.add(key)
+        self._health_seen = seen & set(now)
+
     def confirm(self, title, detail, label, on_yes):
         """Cancel comes first, so a double press of A never confirms."""
         from .widgets import Menu
@@ -199,6 +210,7 @@ class App:
             elif int(now) % 5 == 0:
                 self.fill_dock()        # an app installed or removed shows up on the dock
             self.dirty = True           # the clock, the battery
+            self.check_health()
         if self.toast_text and now > self.toast_until:
             self.toast_text = ""
             self.dirty = True

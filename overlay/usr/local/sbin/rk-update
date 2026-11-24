@@ -39,6 +39,11 @@ SOFT_OVERLAY="usr/local usr/lib/rk usr/share/rk etc/systemd/system etc/udev/rule
 PYDIR="$ROOT/usr/lib/python3/dist-packages"
 CHANNEL_FILE="$ROOT/usr/share/rk/channel"   # a tiny stamp that proves which content is installed
 
+# the checks made before anything is fetched: room, memory (see the file)
+RK_WHO=rk-update
+. "${RK_LIB:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../lib/rk}/preflight.sh"
+KEEP_BACKUPS=3                              # older ones are removed after a good update
+
 online() { ip route 2>/dev/null | grep -q '^default'; }
 need_root() { [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run it with sudo (it writes system files)"; }
 
@@ -160,11 +165,40 @@ install_soft() {        # copy the new soft layer over the system
     find "$PYDIR/rkshell" -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null
     for d in $SOFT_OVERLAY; do
         [ -d "$dest/overlay/$d" ] || continue
-        mkdir -p "$ROOT/$d"; cp -a "$dest/overlay/$d/." "$ROOT/$d/"
+        # each file is removed and written anew, never written over: this
+        # script and rk-migrate are among them and are running, and bash
+        # reads a script as it goes. Written over, it read on from the same
+        # place in the new text and ended a good update on a syntax error.
+        mkdir -p "$ROOT/$d"; cp -a --remove-destination "$dest/overlay/$d/." "$ROOT/$d/"
     done
     chmod 755 "$ROOT"/usr/local/sbin/rk-* "$ROOT"/usr/local/bin/rk-* 2>/dev/null || true
     [ -f "$ROOT/etc/sudoers.d/rkshell" ] && { chmod 440 "$ROOT/etc/sudoers.d/rkshell"; [ -n "$ROOT" ] || visudo -c -q || return 1; }
     python3 -m compileall -q "$PYDIR/rkshell" || return 1
+}
+
+soft_mb() {         # megabytes the soft layer takes on this system now (what a backup copies)
+    local d paths="$PYDIR/rkshell"
+    for d in $SOFT_OVERLAY; do [ -e "$ROOT/$d" ] && paths="$paths $ROOT/$d"; done
+    du -smc $paths 2>/dev/null | awk 'END {print $1 + 0}'
+}
+
+# Room, before anything is fetched: the download, a full copy of the current
+# files (the backup, on the data partition), and the new files beside the old
+# ones on the system partition while they are swapped.
+room() {
+    local soft; soft=$(soft_mb)
+    mkdir -p "$BK_DIR" 2>/dev/null
+    rk_need_space $(( soft + 16 )) "$BK_DIR" "the backup made before an update" || return 1
+    rk_need_space $(( soft / 2 + 24 )) "$PYDIR" "the update" || return 1
+    rk_need_mem 40 "checking the new desktop" || return 1
+}
+
+prune_backups() {   # keep the newest $KEEP_BACKUPS; "latest" points at the newest
+    local n=0 b
+    for b in $(ls -1d "$BK_DIR"/[0-9]*T*Z 2>/dev/null | sort -r); do
+        n=$((n + 1))
+        [ "$n" -le "$KEEP_BACKUPS" ] || rm -rf "$b"
+    done
 }
 
 set_version() { sed -i "s/^RK_VERSION=.*/RK_VERSION=\"$1\"/" "$RELEASE"; }
@@ -205,7 +239,8 @@ apply() {
         [ -n "$to" ] || die "could not find a version to update to"
         [ "$to" != "$cur" ] && [ "v$to" != "$cur" ] && [ "$to" != "v$cur" ] || { say "already on $cur"; return 0; }
     fi
-    dest=$(mktemp -d)
+    room || die "nothing was changed"
+    dest=$(rk_tmpdir rk-update)
     # expanded now: $dest is local, and gone by the time the script exits
     trap "rm -rf '$dest' '$dest.tar'" EXIT
     fetch "${to:-main}" "$dest" || die "could not fetch the update"
@@ -217,10 +252,12 @@ apply() {
         say "install failed; rolling back"; restore "$bk"; restart_desktop || true; die "rolled back"
     fi
     is_version_ref "$to" && set_version "${to#v}"
+    [ -n "$ROOT" ] || /usr/local/sbin/rk-sysconf >/dev/null 2>&1 || true     # the settings files that came with it
     say "running migrations..."
     /usr/local/sbin/rk-migrate run || say "a migration reported a problem (continuing)"
     say "restarting the desktop..."
     if restart_desktop; then
+        prune_backups
         say "updated to $(installed_version). Backup kept at $bk"
     else
         say "the desktop did not come back; rolling back"
@@ -272,4 +309,4 @@ case "${1:-status}" in
             *)        die "usage: rk-update source official|fork OWNER/REPO|url URL [SHA256]" ;;
         esac ;;
     *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|rollback|source ..." >&2; exit 2 ;;
-esac
+esac; exit      # on one line: nothing is read from this file after the work is done

@@ -43,6 +43,8 @@ jobs:
           python3 tests/test_wifi.py
           python3 tests/test_update.py
           python3 tests/test_video.py
+          python3 tests/test_rotate.py
+          python3 tests/test_preflight.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
@@ -53,6 +55,45 @@ jobs:
             screens/
             screens-640x480/
             screens-480x320/
+          if-no-files-found: error
+          retention-days: 14
+
+  # One image for every RK3326 handheld arkos4clone supports. None but the
+  # R36MAX is on the bench, so each one's boot files, screen, pad and power
+  # chip are read from its device tree and held against what the system
+  # expects, and the desktop is drawn at each one's screen size.
+  handhelds:
+    name: Handhelds (every console's boot files, screen and pad)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch the pinned arkos4clone consoles
+        run: |
+          . build/upstream.env
+          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
+          cd upstream
+          git sparse-checkout init --no-cone
+          git sparse-checkout set /boot/dArkOS/consoles/
+          git checkout --quiet "$UPSTREAM_COMMIT"
+      - name: Check every handheld
+        run: |
+          python3 build/check-consoles.py upstream/boot/dArkOS/consoles --table devices.md
+          # the list in the repository is the one this commit of arkos4clone gives
+          diff -u docs/devices.md devices.md || { echo "docs/devices.md is out of date: run build/check-consoles.py <consoles> --table docs/devices.md"; exit 1; }
+      - name: Draw the desktop at every handheld's screen size
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core >/dev/null
+          cd shell
+          for size in $(python3 ../build/check-consoles.py ../upstream/boot/dArkOS/consoles --sizes); do
+            echo "== $size"
+            SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots "../handheld-screens/$size" --size "$size"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handheld-screens
+          path: handheld-screens/
           if-no-files-found: error
           retention-days: 14
 
@@ -71,7 +112,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -euo pipefail -c '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkg-config unzip xz-utils \
-              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev >/dev/null
+              libdrm-dev libgbm-dev libegl-dev libgles-dev libasound2-dev libudev-dev libfreetype-dev zlib1g-dev libpng-dev patch meson ninja-build patchelf >/dev/null
             build/build-emulators.sh emu-out
           '
           sudo chown -R "$(id -u):$(id -g)" emu-out
@@ -113,6 +154,9 @@ jobs:
           git sparse-checkout set /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/ \
             /rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so \
             /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate90 \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate180 \
+            /rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.rotate270 \
             /rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt \
             $(grep -vE '^\s*(#|$)' ../build/firmware-upstream.txt | sed 's#^#/rootfs/dArkOS/usr/lib/firmware/#')
           set +f
@@ -150,7 +194,7 @@ jobs:
   release:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [image, emulators]
+    needs: [image, emulators, handhelds, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

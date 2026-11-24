@@ -765,6 +765,25 @@ class Install:
         self.done = True
 
 
+LOW_SYSTEM_MB, LOW_DATA_MB, LOW_MEMORY_MB = 150, 200, 48
+
+
+def health_warnings(storage, spare_mb):
+    """What is running short, in words for the owner: [(key, text)]. `storage`
+    is storage()'s list; `spare_mb` the memory still to be had (available plus
+    free swap), or None when it cannot be read."""
+    out = []
+    for st in storage:
+        free = (st["total"] - st["used"]) // (1024 * 1024)
+        if st["mount"] == "/" and free < LOW_SYSTEM_MB:
+            out.append(("system", f"System partition almost full: {free} MB free. Installs and updates will be refused."))
+        elif st["mount"] == "/data" and free < LOW_DATA_MB:
+            out.append(("data", f"Data partition almost full: {free} MB free."))
+    if spare_mb is not None and spare_mb < LOW_MEMORY_MB:
+        out.append(("memory", f"Memory is short: {spare_mb} MB to spare. Close what you do not use."))
+    return out
+
+
 def parse_monitor_modes(iw_phy_text):
     """{phy index: supports monitor mode} from `iw phy` output."""
     out, cur, in_modes = {}, None, False
@@ -903,6 +922,19 @@ class System:
             m[k] = int(v.split()[0]) // 1024 if v.split() else 0
         total = m.get("MemTotal", 0)
         return total - m.get("MemAvailable", 0), total
+
+    def memory_spare(self):
+        """Megabytes still to be had: available memory plus free swap. None when unknown."""
+        m = {}
+        for line in read("/proc/meminfo").splitlines():
+            k, _, v = line.partition(":")
+            if v.split():
+                m[k] = int(v.split()[0]) // 1024
+        return m["MemAvailable"] + m.get("SwapFree", 0) if "MemAvailable" in m else None
+
+    def health(self):
+        """What is running short: [(key, text)], looked at twice a minute at most."""
+        return self.cached("health", 30, lambda: health_warnings(self.storage(), self.memory_spare()))
 
     # ------------------------------------------------------------- battery
     def battery(self):
@@ -1344,6 +1376,8 @@ class DemoSystem(System):
     def kernel(self): return "5.10.252-arkos4clone"
     def uptime(self): return 3 * 3600 + 12 * 60
     def memory(self): return 96, 714
+    def memory_spare(self): return 618
+    def health(self): return list(getattr(self, "_health", []))
     def battery(self): return {"percent": 78, "status": "Discharging"}
     def wifi(self): return {"device": "wlan0", "state": "connected", "ssid": "Workshop", "address": "192.168.0.167"}
     def wired(self): return None

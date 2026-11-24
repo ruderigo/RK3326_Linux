@@ -70,7 +70,7 @@ while IFS='|' read -r console action node prop value; do
         ok "$DTB: $prop is not in $node"
     fi
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
-for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt fallback-4.4/boot.ini fallback-4.4/Image; do
+for f in wifi.txt README.txt hostname.txt rk-device.txt consoles/logos.txt consoles/names.txt consoles/rk-boot-select fallback-4.4/boot.ini fallback-4.4/Image; do
     mdir -i "$T/boot.img" "::$f" >/dev/null 2>&1 || fail "missing on the boot partition: $f"
 done
 ok "settings files and the 4.4 fallback set are on the boot partition"
@@ -107,7 +107,7 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /usr/lib/rk-gpu/libmali.so /usr/lib/rk-gpu/libSDL2-2.0.so.0 /usr/lib/rk-gpu/libEGL.so.1 \
          /usr/lib/rk-gpu/libGLESv2.so.2 /usr/lib/rk-gpu/libgbm.so.1 /usr/share/gamecontrollerdb.txt \
          /etc/udev/rules.d/70-mali-dma-heap.rules /usr/local/bin/rk-stump-pause /usr/local/bin/rk-video /usr/local/bin/rk-games \
-         /usr/share/rk/apps/games.json /usr/share/rk/retroarch/rk.cfg /usr/share/rk/emulators.bundle \
+         /usr/share/rk/apps/games.json /usr/share/rk/retroarch/rk.cfg /usr/share/rk/emulators.bundle /usr/lib/rk-gpu/turn1/libSDL2-2.0.so.0 /usr/lib/rk-gpu/turn2/libSDL2-2.0.so.0 /usr/lib/rk-gpu/turn3/libSDL2-2.0.so.0 \
          /usr/share/rk/retroarch/autoconfig/udev /opt/rk-emulators/bin/retroarch /opt/rk-emulators/cores/mupen64plus_next_libretro.so \
          /home/ark/ports/Ember.sh /home/ark/ports/ember/ember /home/ark/firefly/deploy/FireFly.sh \
          /home/ark/firefly/venv/bin/python /home/ark/R36MAX-Stump/handheld/install.sh \

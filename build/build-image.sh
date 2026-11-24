@@ -8,7 +8,9 @@
 # needed; the workflow makes that checkout).
 #
 # Environment:
-#   CONSOLE   arkos4clone console folder   (default "r36max type1")
+#   CONSOLE   arkos4clone console folder the image starts on (default "r36max
+#             type1"). Every console's boot files are on the card: another
+#             handheld is chosen on the boot partition, without a rebuild.
 #   KERNEL    5.10 or 4.4                  (default 5.10)
 #   HOSTNAME_ the system's host name       (default from the console: r36max, r36s)
 #   VERSION   shown in /etc/os-release     (default "dev")
@@ -68,7 +70,9 @@ FIRMWARE="$UP/rootfs/dArkOS/usr/lib/firmware"     # only what build/firmware-ups
 MALI="$UP/rootfs/dArkOS/usr/lib/aarch64-linux-gnu/mali/libmali-bifrost-g31-g29p1.so"
 SDLRK="$UP/rootfs/dArkOS/home/ark/.quirks/rotate/sdl2/64/libSDL2-2.0.so.0.3200.10.norotate"
 PADDB="$UP/rootfs/dArkOS/opt/inttools/gamecontrollerdb.txt"
-for f in "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
+# the same SDL2 built for panels mounted a quarter turn, upside down, or three quarters
+SDLTURN=("" "${SDLRK%.norotate}.rotate90" "${SDLRK%.norotate}.rotate180" "${SDLRK%.norotate}.rotate270")
+for f in "${SDLTURN[@]:1}" "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/uboot/trust.img" \
          "$CONS/$CONSOLE/boot.ini" "$CONS/kernel/5.10/Image" "$CONS/kernel/original/Image" \
          "$MALI" "$SDLRK" "$PADDB"; do
     [ -f "$f" ] || die "missing in the upstream checkout: $f"
@@ -106,6 +110,13 @@ mount --bind /dev/pts "$ROOTFS/dev/pts"
 # no services start while packages install
 printf '#!/bin/sh\nexit 101\n' > "$ROOTFS/usr/sbin/policy-rc.d"; chmod +x "$ROOTFS/usr/sbin/policy-rc.d"
 in_root() { chroot "$ROOTFS" env DEBIAN_FRONTEND=noninteractive LC_ALL=C "$@"; }
+
+# Before the first package: what dpkg leaves out of every package (change
+# logs, unused translations) and how apt behaves, so the whole system is
+# installed under the same rules it keeps on the handheld.
+( cd "$REPO/overlay/usr/share/rk/sysconf" && find etc/apt etc/dpkg -type f ) | while read -r f; do
+    install -D -m 0644 "$REPO/overlay/usr/share/rk/sysconf/$f" "$ROOTFS/$f"
+done
 
 say "Packages"
 in_root apt-get update -q
@@ -150,7 +161,7 @@ rm -rf "$ROOTFS"/var/lib/apt/lists/*
 
 # the languages most often sent along by a computer that logs in over SSH
 if [ -x "$ROOTFS/usr/sbin/locale-gen" ]; then
-    printf '%s UTF-8\n' en_US.UTF-8 en_CA.UTF-8 en_GB.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 > "$ROOTFS/etc/locale.gen"
+    printf '%s UTF-8\n' en_US.UTF-8 en_CA.UTF-8 en_GB.UTF-8 fr_CA.UTF-8 fr_FR.UTF-8 es_ES.UTF-8 es_MX.UTF-8 es_US.UTF-8 > "$ROOTFS/etc/locale.gen"
     in_root locale-gen
     echo 'LANG=C.UTF-8' > "$ROOTFS/etc/default/locale"
 fi
@@ -189,6 +200,11 @@ mkdir -p "$GPU"
 install -m 0644 "$MALI" "$GPU/libmali.so"
 install -m 0644 "$SDLRK" "$GPU/libSDL2-2.0.so.0"
 for n in libEGL.so.1 libGLESv2.so.2 libgbm.so.1; do ln -sf libmali.so "$GPU/$n"; done
+# Panels mounted on their side or upside down: arkos4clone's SDL2 for each
+# turn, in a folder of its own. The desktop puts the right one first for the
+# apps it opens (rkshell/panel.py). They turn the picture with librga, which
+# comes in the emulator bundle.
+for n in 1 2 3; do install -D -m 0644 "${SDLTURN[$n]}" "$GPU/turn$n/libSDL2-2.0.so.0"; done
 mkdir -p "$ROOTFS/usr/share"
 install -m 0644 "$PADDB" "$ROOTFS/usr/share/gamecontrollerdb.txt"
 ls -l "$GPU"
@@ -201,6 +217,7 @@ if [ -n "${EMULATORS:-}" ]; then
     [ -f "$EMULATORS" ] || die "no emulator bundle at $EMULATORS"
     tar -xJf "$EMULATORS" -C "$ROOTFS" --no-same-owner
     [ -x "$ROOTFS/opt/rk-emulators/bin/retroarch" ] || die "the emulator bundle has no RetroArch"
+    [ -f "$ROOTFS/opt/rk-emulators/lib/librga.so.2" ] || die "the emulator bundle has no librga (panels mounted on their side need it)"
     python3 -I -c "import sys; b=open(sys.argv[1],'rb').read(20); sys.exit(0 if b[:4]==b'\x7fELF' and b[18]==183 else 1)" \
         "$ROOTFS/opt/rk-emulators/bin/retroarch" || die "the bundle's RetroArch is not an arm64 program"
     chown -R 0:0 "$ROOTFS/opt/rk-emulators"
@@ -217,6 +234,11 @@ chmod 755 "$ROOTFS"/usr/local/sbin/rk-*
 chmod 755 "$ROOTFS"/usr/local/bin/rk-*
 chmod 440 "$ROOTFS/etc/sudoers.d/rkshell"
 in_root visudo -c -q -f /etc/sudoers.d/rkshell || die "the sudoers file for the desktop is not valid"
+# the settings files (a small log, no package work in the background, swap
+# tuned for compressed memory): the same step an updated card runs
+"$REPO/overlay/usr/local/sbin/rk-sysconf" "$ROOTFS"
+[ -L "$ROOTFS/etc/systemd/system/apt-daily.timer" ] && [ -f "$ROOTFS/etc/sysctl.d/30-rk-memory.conf" ] ||
+    die "the settings files are not in place"
 
 # the desktop: our Python package, where Debian keeps Python packages
 PYDIR="$ROOTFS/usr/lib/python3/dist-packages"
@@ -367,6 +389,16 @@ while IFS='|' read -r console action node prop value; do
 done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/dtb-fixes.txt")
 
 SELECT="$REPO/overlay/usr/local/sbin/rk-boot-select"
+# every console's boot.ini made ready for this system, so that copying a
+# console's files by hand (README.txt) gives a card that starts; and each
+# handheld's own name beside its folder name, for the lists
+"$SELECT" -b "$BOOT" prepare
+for d in "$BOOT"/consoles/*/; do
+    [ -f "$d/boot.ini" ] || continue
+    dtb=$(find "$d" -maxdepth 1 -name '*.dtb' | sort | head -n 1)
+    echo "$(basename "$d")|$(fdtget -t s "$dtb" / model 2>/dev/null || true)"
+done > "$BOOT/consoles/names.txt"
+echo "$(wc -l < "$BOOT/consoles/names.txt") handhelds on the card"
 # the two ready-made sets a Mac or PC can copy over when one kernel does not start
 for k in 4.4 5.10; do
     [ "$k" = 5.10 ] && [ ! -d "$CONS/$CONSOLE/5.10" ] && continue
@@ -376,6 +408,10 @@ for k in 4.4 5.10; do
 done
 "$SELECT" -b "$BOOT" set "$CONSOLE" "$KERNEL"
 cp "$REPO/boot-files/wifi.txt" "$REPO/boot-files/README.txt" "$BOOT/"
+# the device chooser for a Mac or Linux computer: the same program the
+# handheld uses, beside a launcher that can be double-clicked
+cp "$SELECT" "$BOOT/consoles/rk-boot-select"
+cp "$REPO/boot-files/Choose handheld.command" "$BOOT/"
 printf '%s\r\n' "$HOSTNAME_" > "$BOOT/hostname.txt"
 ls -la "$BOOT"; cat "$BOOT/boot.ini"
 

@@ -1,0 +1,33 @@
+#!/bin/bash
+# rk-sysconf: put this system's settings files in place.
+#
+# They live under /usr/share/rk/sysconf, laid out as they go under /. An
+# update of the OS (rk-update) replaces /usr/share/rk and then runs this, so
+# a card that was flashed long ago gets the same settings as a new image.
+# Safe to run again: a file that is already the same is left alone.
+#
+#   rk-sysconf [ROOT]      ROOT: the system to write to (default /; the image build gives its folder)
+set -u
+ROOT="${1:-}"
+SRC="$ROOT/usr/share/rk/sysconf"
+[ -d "$SRC" ] || exit 0
+changed=0
+while IFS= read -r f; do
+    rel=${f#"$SRC"}
+    cmp -s "$f" "$ROOT$rel" && continue
+    mkdir -p "$(dirname "$ROOT$rel")" && cp "$f" "$ROOT$rel" && chmod 644 "$ROOT$rel" && changed=$((changed + 1))
+done < <(find "$SRC" -type f)
+# Work Debian does on its own in the background, which this system does when
+# asked instead: refreshing and upgrading packages, and rebuilding the index
+# of manual pages. Masked, so a package update does not bring them back.
+for t in apt-daily.timer apt-daily-upgrade.timer man-db.timer; do
+    [ -L "$ROOT/etc/systemd/system/$t" ] || { mkdir -p "$ROOT/etc/systemd/system" && ln -sf /dev/null "$ROOT/etc/systemd/system/$t" && changed=$((changed + 1)); }
+done
+# on a running system: the memory settings now, the rest at the next start
+if [ -z "$ROOT" ] && [ "$changed" -gt 0 ]; then
+    sysctl -q -p /etc/sysctl.d/30-rk-memory.conf 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl stop apt-daily.timer apt-daily-upgrade.timer man-db.timer 2>/dev/null || true
+fi
+echo "rk-sysconf: $changed changed"
+exit 0

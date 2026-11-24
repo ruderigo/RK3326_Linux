@@ -1,0 +1,3 @@
+# The Rockchip 2D chip (RGA) turns the picture on panels mounted on their
+# side, for SDL programs and for Games: the user's programs may use it.
+KERNEL=="rga", GROUP="video", MODE="0660"

@@ -1,0 +1,12 @@
+# Not unpacked from packages: change logs and examples (the licence of each
+# package is kept), and translations other than English, French and Spanish.
+# Manual pages stay: this is a system to work in.
+path-exclude /usr/share/doc/*
+path-include /usr/share/doc/*/copyright
+path-exclude /usr/share/locale/*
+path-include /usr/share/locale/en*
+path-include /usr/share/locale/fr*
+path-include /usr/share/locale/es*
+path-include /usr/share/locale/locale.alias
+path-exclude /usr/share/info/*
+path-exclude /usr/share/lintian/*

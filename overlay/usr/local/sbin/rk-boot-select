@@ -5,6 +5,11 @@
 #   rk-boot-select list
 #   rk-boot-select set "<console>" <5.10|4.4>     e.g.  set "r36max type1" 5.10
 #   rk-boot-select kernel <5.10|4.4>              keep the console, change the kernel
+#   rk-boot-select prepare                        (image build) make every console's boot.ini
+#                                                 ready to copy by hand
+#
+# It also runs on a Mac or a Linux computer with the card in a reader:
+# "Choose handheld.command" on the boot partition calls it with -b.
 #
 # It works on the boot partition (/boot, or the folder given with -b), which
 # holds arkos4clone's "consoles" folder: one folder per handheld with its
@@ -28,10 +33,34 @@ logo_for() {    # console name -> logo folder, from consoles/logos.txt (console|
     [ -f "$C/logos.txt" ] && awk -F'|' -v c="$1" '$1==c {print $2; exit}' "$C/logos.txt"
 }
 
+model_for() {   # console name -> the handheld's own name, from consoles/names.txt (console|model)
+    [ -f "$C/names.txt" ] && awk -F'|' -v c="$1" '$1==c {print $2; exit}' "$C/names.txt"
+}
+
+# arkos4clone's boot.ini starts a ramdisk (uInitrd) that this system does
+# not have or need: both kernels have the SD card and ext4 drivers built
+# in. The start is shown on the screen instead of a splash picture;
+# loglevel=4 keeps the kernel's routine messages (USB, Wi-Fi) off it,
+# where they used to print over the login prompt. Errors still show.
+# Converting a file that is already converted changes nothing.
+convert_ini() {     # convert_ini FROM TO
+    tr -d '\r' < "$1" | sed -E \
+        -e '/^load .* uInitrd[[:space:]]*$/d' \
+        -e 's/^booti \$\{loadaddr\} \$\{initrd_loadaddr\} \$\{dtb_loadaddr\}/booti ${loadaddr} - ${dtb_loadaddr}/' \
+        -e '/^setenv bootargs /s/ (quiet|splash|plymouth\.ignore-serial-consoles)//g' \
+        -e '/^setenv bootargs /{/ loglevel=4 console=tty1"/!s/"[[:space:]]*$/ loglevel=4 console=tty1"/;}' \
+        > "$2"
+    grep -q '^booti \${loadaddr} - \${dtb_loadaddr}' "$2"
+}
+
+dtb_of() {      # the console's device tree (4.4), not a Mac's "._" shadow of it
+    find "$1" -maxdepth 1 -name '*.dtb' ! -name '._*' | sort | head -n 1
+}
+
 select_boot() {
     local console=$1 kernel=$2 dir="$C/$1" dtb name src image logo new
     [ -d "$dir" ] || quit "unknown console: $console (see: rk-boot-select list)"
-    dtb=$(find "$dir" -maxdepth 1 -name '*.dtb' | head -n 1)
+    dtb=$(dtb_of "$dir")
     [ -n "$dtb" ] || quit "no device tree in $dir"
     name=$(basename "$dtb")
     case $kernel in
@@ -46,18 +75,7 @@ select_boot() {
     new="$B/.rk-boot-new"
     rm -rf "$new"; mkdir "$new" || quit "cannot write to $B"
     cp "$src" "$new/$name" && cp "$image" "$new/Image" || quit "copying the boot files failed"
-    # arkos4clone's boot.ini starts a ramdisk (uInitrd) that this system does
-    # not have or need: both kernels have the SD card and ext4 drivers built
-    # in. The start is shown on the screen instead of a splash picture;
-    # loglevel=4 keeps the kernel's routine messages (USB, Wi-Fi) off it,
-    # where they used to print over the login prompt. Errors still show.
-    tr -d '\r' < "$dir/boot.ini" | sed -E \
-        -e '/^load .* uInitrd[[:space:]]*$/d' \
-        -e 's/^booti \$\{loadaddr\} \$\{initrd_loadaddr\} \$\{dtb_loadaddr\}/booti ${loadaddr} - ${dtb_loadaddr}/' \
-        -e '/^setenv bootargs /s/ (quiet|splash|plymouth\.ignore-serial-consoles)//g' \
-        -e '/^setenv bootargs /s/"[[:space:]]*$/ loglevel=4 console=tty1"/' \
-        > "$new/boot.ini"
-    grep -q '^booti \${loadaddr} - \${dtb_loadaddr}' "$new/boot.ini" || quit "unexpected boot.ini in $dir"
+    convert_ini "$dir/boot.ini" "$new/boot.ini" || quit "unexpected boot.ini in $dir"
     grep -q "^load .* $name\$" "$new/boot.ini" || quit "boot.ini in $dir does not load $name"
     cmp -s "$image" "$new/Image" || quit "copying the kernel failed"
 
@@ -82,7 +100,16 @@ case ${1:-} in
         for d in "$C"/*/; do
             n=$(basename "$d")
             [ -f "$d/boot.ini" ] || continue
-            [ -d "$d/5.10" ] && echo "$n    (5.10, 4.4)" || echo "$n    (4.4)"
+            m=$(model_for "$n")
+            [ -d "$d/5.10" ] && echo "$n    (5.10, 4.4)${m:+    $m}" || echo "$n    (4.4)${m:+    $m}"
+        done ;;
+    prepare)
+        for d in "$C"/*/; do
+            [ -f "$d/boot.ini" ] || continue
+            convert_ini "$d/boot.ini" "$d/boot.ini.new" || { rm -f "$d/boot.ini.new"; quit "unexpected boot.ini in $d"; }
+            name=$(basename "$(dtb_of "$d")")
+            grep -q "^load .* $name\$" "$d/boot.ini.new" || { rm -f "$d/boot.ini.new"; quit "boot.ini in $d does not load $name"; }
+            mv -f "$d/boot.ini.new" "$d/boot.ini"
         done ;;
     set)
         [ $# -eq 3 ] || quit 'usage: rk-boot-select set "<console>" <5.10|4.4>'
@@ -92,5 +119,5 @@ case ${1:-} in
         cur=$(state console); [ -n "$cur" ] || quit "no console recorded in $STATE; use: set"
         select_boot "$cur" "$2" ;;
     *)
-        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+        sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

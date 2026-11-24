@@ -27,8 +27,27 @@ If it does not start (black screen, or it stops)
   partition, replacing the ones there, and start again.
   To go back, do the same with the folder default-5.10.
 
+Another handheld (any RK3326 handheld arkos4clone supports)
+  This card starts on the handheld named in rk-device.txt. The boot files of
+  all the others are in consoles/, one folder each.
+  Mac or Linux: run "Choose handheld.command" on this partition and pick
+  yours from the list.
+  Windows, or by hand: copy three files to the top of this partition,
+  replacing the ones there (delete the old .dtb file):
+    consoles/<your handheld>/boot.ini
+    consoles/<your handheld>/5.10/<name>.dtb      and  consoles/kernel/5.10/Image
+  or, for the 4.4 kernel:
+    consoles/<your handheld>/<name>.dtb           and  consoles/kernel/original/Image
+  Not sure which folder is yours: arkos4clone's DTB Analysis Tool tells you
+  (https://github.com/lcdyk0517/arkos4clone). The wrong one usually gives a
+  black or sideways screen, or buttons that do nothing; choose again.
+  On the handheld itself:  sudo rk-boot-select list   and   set "<name>" 5.10
+  Screen sideways or upside down: put a file rotate.txt here holding one
+  number, 0, 1, 2 or 3 (quarter turns), and start again.
+
 Files here
   boot.ini, Image, *.dtb, logo.bmp   what the handheld starts
   consoles/                          boot files for every supported handheld
+  Choose handheld.command            picks one of them (Mac, Linux)
   rk-device.txt                      the handheld and kernel selected
   wifi.txt, authorized_keys          settings read at every start

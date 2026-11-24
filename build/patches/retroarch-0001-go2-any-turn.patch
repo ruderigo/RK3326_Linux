@@ -1,0 +1,90 @@
+diff --git a/gfx/drivers_context/drm_go2_ctx.c b/gfx/drivers_context/drm_go2_ctx.c
+index dcc1877..25b1544 100644
+--- a/gfx/drivers_context/drm_go2_ctx.c
++++ b/gfx/drivers_context/drm_go2_ctx.c
+@@ -108,21 +108,57 @@ static void gfx_ctx_go2_drm_input_driver(void *data,
+    *input_data     = NULL;
+ }
+ 
++/* RK3326 Linux: the panel's turn comes from the launcher, in RK_ROTATE
++ * (quarter turns clockwise, as fbcon=rotate:N). Unset, this driver behaves
++ * as it always did: a quarter turn the ODROID-GO Advance way, on panels
++ * that are taller than wide. */
++static go2_rotation_t rk_rotation = GO2_ROTATION_DEGREES_270;
++static bool rk_swap_xy            = true;
++
+ static void *gfx_ctx_go2_drm_init(void *video_driver)
+ {
+-   gfx_ctx_go2_drm_data_t *drm = (gfx_ctx_go2_drm_data_t*)
++   const char *turn            = getenv("RK_ROTATE");
++   gfx_ctx_go2_drm_data_t *drm = NULL;
++
++   if (turn && (turn[0] < '1' || turn[0] > '3' || turn[1]))
++      turn = (turn[0] == '0' && !turn[1]) ? turn : NULL;
++   /* A panel that is not turned: the plain KMS driver, next in the list */
++   if (turn && turn[0] == '0')
++      return NULL;
++
++   drm = (gfx_ctx_go2_drm_data_t*)
+       calloc(1, sizeof(gfx_ctx_go2_drm_data_t));
+ 
+    if (!drm)
+       return NULL;
+ 
++   rk_rotation        = GO2_ROTATION_DEGREES_270;
++   rk_swap_xy         = true;
++   if (turn && turn[0] == '1')
++      rk_rotation     = GO2_ROTATION_DEGREES_90;
++   else if (turn && turn[0] == '2')
++   {
++      rk_rotation     = GO2_ROTATION_DEGREES_180;
++      rk_swap_xy      = false;
++   }
++
+    drm->display       = go2_display_create();
+ 
+-   drm->native_width  = go2_display_height_get(drm->display);
+-   drm->native_height = go2_display_width_get(drm->display);
++   if (rk_swap_xy)
++   {
++      drm->native_width  = go2_display_height_get(drm->display);
++      drm->native_height = go2_display_width_get(drm->display);
++   }
++   else
++   {
++      drm->native_width  = go2_display_width_get(drm->display);
++      drm->native_height = go2_display_height_get(drm->display);
++   }
++   RARCH_LOG("[GO2 DRM] RK_ROTATE=%s: %dx%d as looked at.\n",
++         turn ? turn : "(unset)", drm->native_width, drm->native_height);
+ 
+    /* This driver should only be used on rotated screens */
+-   if (drm->native_width < drm->native_height)
++   if (!turn && drm->native_width < drm->native_height)
+    {
+       /* This should be fixed by using wayland/weston... */
+       go2_display_destroy(drm->display);
+@@ -342,11 +378,18 @@ static void gfx_ctx_go2_drm_swap_buffers(void *data)
+ #ifdef HAVE_EGL
+    go2_context_swap_buffers(drm->context);
+    surf     = go2_context_surface_lock(drm->context);
+-   go2_presenter_post(drm->presenter,
+-         surf,
+-         src_x, src_y, src_w, src_h,
+-         out_y, out_x, out_h, out_w,
+-         GO2_ROTATION_DEGREES_270, 2);
++   if (rk_swap_xy)
++      go2_presenter_post(drm->presenter,
++            surf,
++            src_x, src_y, src_w, src_h,
++            out_y, out_x, out_h, out_w,
++            rk_rotation, 2);
++   else
++      go2_presenter_post(drm->presenter,
++            surf,
++            src_x, src_y, src_w, src_h,
++            out_x, out_y, out_w, out_h,
++            rk_rotation, 2);
+    go2_context_surface_unlock(drm->context, surf);
+ #endif
+ }
