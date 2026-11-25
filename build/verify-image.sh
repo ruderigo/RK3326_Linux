@@ -172,7 +172,11 @@ else
     filecat /usr/lib/modules/$K510/modules.dep | grep -q '^kernel/drivers/usb/serial/ch341\.ko:' || fail "ch341 is not in $K510's modules.dep"
     filecat /usr/lib/modules/$K510/modules.alias | grep -qi '^alias usb:v1A86p7523d.* ch341$' || fail "$K510's modules.alias does not load ch341 for a CH340 (1a86:7523)"
     filecat /usr/lib/modules/$K510/modules.dep | grep -q '^kernel/drivers/usb/serial/cp210x\.ko:' || fail "$K510's modules.dep lost the modules it had (cp210x)"
-    ok "kernel $K510 has the CH340 serial driver (ch341), loaded when the chip is plugged in"
+    WANT=$(filecat /usr/share/rk/kernel-modules.bundle | head -1)
+    [ -n "$WANT" ] && [ "$(filecat /usr/lib/modules/rk-kernel-modules.bundle | head -1)" = "bundle $WANT" ] ||
+        fail "the image's kernel modules are not bundle '$WANT', the one /usr/share/rk/kernel-modules.bundle asks for"
+    filecat /usr/lib/modules/rk-kernel-modules.bundle | grep -qx "$K510/kernel/drivers/usb/serial/ch341.ko" || fail "the kernel modules' list does not name ch341"
+    ok "kernel $K510 has the CH340 serial driver (ch341), loaded when the chip is plugged in (bundle $WANT)"
 fi
 # The first start adds the data partition. Do the same to a larger copy of
 # the image, as on a real card, and make sure the boot chain is untouched and

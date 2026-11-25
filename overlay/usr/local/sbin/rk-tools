@@ -9,6 +9,10 @@
 #   rk-tools install-media   install what Video and Games need (mpv, QuickJS,
 #                            and the emulator bundle: RetroArch and its cores),
 #                            on a card flashed before they were part of the image
+#   rk-tools kernel-modules [FILE]   add the kernel modules the image carries
+#                            and this card lacks (the CH340 serial driver), from
+#                            the system's releases or from a bundle file; run by
+#                            rk-migrate after an update (--auto: quiet, never fails)
 #
 # For testing machines that are yours, or that you have been asked to test.
 set -u
@@ -292,6 +296,123 @@ install_emulators() {
     say "the emulators are installed (bundle $n)."
 }
 
+# Kernel modules that arkos4clone's 5.10 kernel is built without and the
+# image adds (build/kernel-modules.env: today ch341, the CH340 serial chip of
+# most ESP32 boards). A card that is updated and not flashed again does not
+# have them, since an update leaves the kernel's files alone. This adds them:
+# each release of the system carries rk-kernel-modules-<n>.tar.xz, and which
+# <n> this system wants is in /usr/share/rk/kernel-modules.bundle.
+#
+# It only ever adds. A module must say it is built for the very kernel whose
+# folder it goes into, a file the kernel's own build put there is never
+# replaced, and nothing else under /usr/lib/modules is touched except the
+# lists depmod writes. A module that did not fit would simply not load.
+KMOD_DIR="${RK_KMOD_DIR:-/usr/lib/modules}"         # RK_KMOD_*: for the tests
+KMOD_STAMP="$KMOD_DIR/rk-kernel-modules.bundle"     # "bundle <n>", then the files this put there
+install_kernel_modules() {      # [--auto] [FILE]
+    local auto= file n name url tmp want got rc
+    [ "${1:-}" = --auto ] && { auto=1; shift; }
+    file=${1:-}
+    quiet() { [ -n "$auto" ] || say "$@"; }
+    n=$(head -1 "${RK_KMOD_WANT:-/usr/share/rk/kernel-modules.bundle}" 2>/dev/null | tr -cd '0-9')
+    [ -n "$n" ] || { quiet "this system does not say which kernel modules it wants."; return 0; }
+    if [ -z "$file" ] && [ "$(sed -n 's/^bundle //p' "$KMOD_STAMP" 2>/dev/null | head -1)" = "$n" ]; then
+        quiet "the extra kernel modules are already here (bundle $n)"; return 0
+    fi
+    name="rk-kernel-modules-$n.tar.xz"
+    tmp=$(rk_tmpdir rk-kmods) || return 1
+    if [ -n "$file" ]; then
+        [ -f "$file" ] || { say "no such file: $file"; rm -rf "$tmp"; return 1; }
+        cp "$file" "$tmp/$name"
+        [ -f "$file.sha256" ] && cp "$file.sha256" "$tmp/sum" || say "no $(basename "$file").sha256 beside it: the file is not checked against one."
+    else
+        if ! online; then
+            quiet "not online. Join Wi-Fi first, then try again."; rm -rf "$tmp"
+            [ -n "$auto" ]; return $?
+        fi
+        if [ -n "${RK_KMOD_BASE:-}" ]; then url="$RK_KMOD_BASE/$name"; else url=$(release_asset "$name"); fi
+        if [ -z "$url" ]; then
+            say "bundle $n of the kernel modules is not published yet: a CH340 board gets no serial port until it is."
+            rm -rf "$tmp"; return 0
+        fi
+        say "fetching the kernel modules (bundle $n)..."
+        if ! curl -fsSL "$url.sha256" -o "$tmp/sum" || ! curl -fsSL "$url" -o "$tmp/$name"; then
+            say "could not fetch $name."; rm -rf "$tmp"; return 1
+        fi
+    fi
+    if [ -f "$tmp/sum" ]; then
+        want=$(awk '{print $1; exit}' "$tmp/sum"); got=$(sha256sum "$tmp/$name" | cut -d' ' -f1)
+        if [ -z "$want" ] || [ "$want" != "$got" ]; then
+            say "the kernel modules do not match their checksum; nothing changed."; rm -rf "$tmp"; return 1
+        fi
+    fi
+    python3 -I - "$tmp/$name" "$KMOD_DIR" "$KMOD_STAMP" "$n" <<'PY'
+import os, re, subprocess, sys, tarfile
+src, moddir, stamp, n = sys.argv[1:5]
+say = lambda text: print("rk-tools: " + text, flush=True)
+try:
+    ours = set(open(stamp).read().splitlines()[1:])     # what an earlier bundle put there
+except OSError:
+    ours = set()
+todo = []
+try:
+    with tarfile.open(src, "r:xz") as t:
+        for m in t.getmembers():
+            name = m.name
+            while name.startswith("./"):
+                name = name[2:]
+            name = name.rstrip("/")
+            if m.isdir() or not name:
+                continue
+            # <kernel release>/kernel/<folders>/<module>.ko, a plain file, and nothing else
+            if not m.isfile() or ".." in name.split("/") or not re.fullmatch(r"[^/]+/kernel/(?:[^/]+/)*[^/]+\.ko", name):
+                sys.exit(f"rk-tools: the bundle holds {m.name!r}, which is not a kernel module; nothing changed.")
+            release = name.split("/", 1)[0]
+            data = t.extractfile(m).read()
+            if b"vermagic=" + release.encode() + b" " not in data:
+                sys.exit(f"rk-tools: {name} is not built for kernel {release}; nothing changed.")
+            todo.append((release, name, data))
+except (tarfile.TarError, OSError, EOFError) as e:
+    sys.exit(f"rk-tools: {e}")
+if not todo:
+    sys.exit("rk-tools: the bundle is empty.")
+kept, touched = [], set()
+for release, name, data in todo:
+    if not os.path.isdir(os.path.join(moddir, release, "kernel")):
+        continue                                        # not a kernel of this card
+    dest = os.path.join(moddir, name)
+    if os.path.exists(dest) and name not in ours:
+        if open(dest, "rb").read() != data:
+            say(f"the kernel already has {os.path.basename(name)} of its own: left alone.")
+        continue
+    kept.append(name)
+    if os.path.exists(dest) and open(dest, "rb").read() == data:
+        continue
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest + ".new", "wb") as f:
+        f.write(data)
+    os.chmod(dest + ".new", 0o644)
+    os.replace(dest + ".new", dest)
+    touched.add(release)
+    say(f"added {os.path.basename(name)} to kernel {release}")
+for release in sorted(touched):
+    # the kernel's lists of modules: without this the module is there but never loaded
+    base = moddir[:-len("/lib/modules")] if moddir.endswith("/lib/modules") else None
+    cmd = ["depmod"] + (["-b", base] if base and base != "/usr" else []) + [release]
+    if base is None or subprocess.run(cmd).returncode != 0:
+        sys.exit(f"rk-tools: depmod failed for kernel {release}; the module is in place but will not load by itself.")
+with open(stamp, "w") as f:
+    f.write("\n".join([f"bundle {n}"] + sorted(kept)) + "\n")
+if not kept:
+    say(f"bundle {n} has nothing for this card's kernels.")
+elif touched:
+    say("done. Plug the board in again and it gets its serial port.")
+PY
+    rc=$?
+    rm -rf "$tmp"
+    return "$rc"
+}
+
 install_media() {
     local p rc=0
     wait_lock || return 1
@@ -325,6 +446,11 @@ case "${1:-}" in
     links)  [ "$(id -u)" -eq 0 ] || { echo "rk-tools: run as root" >&2; exit 1; }; relink ;;
     install-emulators)
         install_emulators; exit $? ;;
+    kernel-modules)
+        [ "$(id -u)" -eq 0 ] || [ -n "${RK_KMOD_DIR:-}" ] || { echo "rk-tools: run as root" >&2; exit 1; }
+        shift
+        if [ "${1:-}" = --auto ]; then install_kernel_modules "$@" || say "the kernel modules were not added (see above); nothing else is affected."; exit 0; fi
+        install_kernel_modules "$@"; exit $? ;;
     install-media)
         online || { say "not online. Join Wi-Fi first, then try again."; exit 1; }
         rc=0
@@ -342,5 +468,5 @@ case "${1:-}" in
         $APT clean >/dev/null 2>&1 || true
         [ "$rc" -eq 0 ] && say "done." || say "finished; some tools were not installed (see above)."
         exit "$rc" ;;
-    *) echo "usage: rk-tools status | install-heavy | install-media | install-emulators" >&2; exit 2 ;;
+    *) echo "usage: rk-tools status | install-heavy | install-media | install-emulators | kernel-modules [FILE]" >&2; exit 2 ;;
 esac

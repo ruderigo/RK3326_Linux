@@ -20,8 +20,13 @@ From a builder's notes on 1.1.0 (25 November):
   Provisioner reached it, and esptool or a serial terminal saw nothing. The
   build now makes that one module (`ch341`) from the kernel's own source and
   configuration and adds it to the image; it loads when the board is plugged
-  in. This needs a flashed image: **Update this handheld** leaves the
-  kernel's files alone. The 4.4 fallback kernel is not covered.
+  in. A card that is updated and not flashed again gets it too: each
+  release carries the module as a file, and after **Update this handheld**
+  the card takes it from there (`rk-tools kernel-modules`, also by hand and
+  from a file). An update still never replaces a kernel file: the module
+  must be built for the very kernel it goes to, a file the kernel's build
+  put there is left alone, and only the lists of modules are rewritten. The
+  4.4 fallback kernel is not covered.
 - **The Provisioner is a dock app like the others.** It is in the image
   (Workshop → Provisioner), `rk-apps install|update provisioner` fetches its
   newest release and checks it against the release's SHA-256, and the Apps

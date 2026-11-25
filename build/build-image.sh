@@ -190,6 +190,11 @@ cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
 # why). depmod rewrites that kernel's module lists so a board that needs one
 # loads it when it is plugged in.
 if [ "$KMODS" != none ]; then
+    . "$HERE/kernel-modules.env"
+    # which bundle is in the image and what it put there: rk-tools
+    # kernel-modules reads this, and finds nothing to do on a flashed card
+    echo "bundle $KMODS_BUNDLE" > "$ROOTFS/usr/lib/modules/rk-kernel-modules.bundle"
+    (cd "$KMODS" && find . -path './*/kernel/*' -name '*.ko' | sed 's#^\./##' | sort) >> "$ROOTFS/usr/lib/modules/rk-kernel-modules.bundle"
     for kdir in "$KMODS"/*/; do
         kver=$(basename "$kdir")
         [ -d "$ROOTFS/usr/lib/modules/$kver" ] || die "KMODS has modules for $kver, which is not a kernel of this image"

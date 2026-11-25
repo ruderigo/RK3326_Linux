@@ -45,6 +45,7 @@ jobs:
           python3 tests/test_video.py
           python3 tests/test_rotate.py
           python3 tests/test_preflight.py
+          python3 tests/test_kmods.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
@@ -131,6 +132,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: The bundle number is the same everywhere
+        run: |
+          . build/kernel-modules.env
+          [ "$(head -1 overlay/usr/share/rk/kernel-modules.bundle)" = "$KMODS_BUNDLE" ] || { echo "overlay/usr/share/rk/kernel-modules.bundle does not say $KMODS_BUNDLE (build/kernel-modules.env)"; exit 1; }
       # one module of the shipped kernel, to compare against: a module built
       # here must say it is for exactly the same kernel
       - name: Fetch a module of the shipped kernel
@@ -147,17 +152,27 @@ jobs:
           . build/kernel-modules.env
           docker run --rm -v "$PWD:/src" -w /src -e KERNEL_RELEASE="$KERNEL_RELEASE" debian:trixie bash -euo pipefail -c '
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential flex bison bc libssl-dev libelf-dev kmod python3 python-is-python3 >/dev/null
+            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential flex bison bc libssl-dev libelf-dev kmod xz-utils python3 python-is-python3 >/dev/null
             build/build-kernel-modules.sh kmods-out "upstream/rootfs/dArkOS/usr/lib/modules/$KERNEL_RELEASE/kernel/drivers/usb/serial/cp210x.ko"
           '
           sudo chown -R "$(id -u):$(id -g)" kmods-out
           find kmods-out -type f
+          # the installer a handheld runs after an update, on the bundle just made
+          python3 shell/tests/test_kmods.py kmods-out
       - uses: actions/upload-artifact@v7
         with:
           name: rk-kernel-modules
           path: kmods-out/
           if-no-files-found: error
           retention-days: 30
+      # the bundle alone, as the release carries it
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rk-kernel-modules-bundle
+          path: kmods-out/rk-kernel-modules-*.tar.xz*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
   image:
     name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
@@ -234,7 +249,7 @@ jobs:
   release:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [image, emulators, handhelds, desktop]
+    needs: [image, emulators, kmods, handhelds, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -251,6 +266,13 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           name: rk-emulators
+          path: out
+      # and the kernel modules the image adds, as a file of its own: a card
+      # that is updated and not flashed again takes them from the release
+      # (rk-tools kernel-modules, run by rk-migrate after an update)
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-kernel-modules-bundle
           path: out
       - name: Create the release
         env:

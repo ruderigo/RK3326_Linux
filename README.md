@@ -336,7 +336,7 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 KMODS="$PWD/kmods" build/build-image.sh 
 | `build/upstream.env` | the arkos4clone commit and the Debian release the image is made from |
 | `build/build-image.sh` | installs Debian, adds the kernels' modules and our files, assembles the image |
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
-| `build/kernel-modules.env`, `build-kernel-modules.sh` | kernel modules arkos4clone's 5.10 kernel is built without (the CH340 serial driver), built from its source |
+| `build/kernel-modules.env`, `build-kernel-modules.sh` | kernel modules arkos4clone's 5.10 kernel is built without (the CH340 serial driver), built from its source; also made into `rk-kernel-modules-<n>.tar.xz` for the releases |
 | `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
 | `build/packages.txt`, `packages-optional.txt` | what is installed |
 | `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg`, the desktop's service and its permissions |

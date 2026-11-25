@@ -5,7 +5,8 @@
 #   build/build-kernel-modules.sh OUT [REFERENCE.ko]
 #
 # OUT gets <release>/kernel/<path>/<module>.ko, laid out as under
-# /usr/lib/modules, and build-image.sh adds it (KMODS=OUT). REFERENCE.ko is a
+# /usr/lib/modules, and build-image.sh adds it (KMODS=OUT). OUT also gets the
+# same as one file, rk-kernel-modules-<n>.tar.xz, for the releases. REFERENCE.ko is a
 # module of the shipped kernel (arkos4clone's cp210x.ko): each built module
 # must say it is for exactly the same kernel, or the handheld refuses it.
 #
@@ -21,7 +22,7 @@ OUT="${1:?usage: build-kernel-modules.sh OUT [REFERENCE.ko]}"
 REF="${2:-}"
 say() { echo "== $*"; }
 die() { echo "build-kernel-modules: $*" >&2; exit 1; }
-for t in git make flex bison bc modinfo python "${CROSS_COMPILE:-}gcc" "${CROSS_COMPILE:-}strip"; do
+for t in git make flex bison bc modinfo xz python "${CROSS_COMPILE:-}gcc" "${CROSS_COMPILE:-}strip"; do
     command -v "$t" >/dev/null || die "missing tool: $t"
 done
 [ "$(uname -m)" = aarch64 ] || [ -n "${CROSS_COMPILE:-}" ] || die "not an arm64 machine: set CROSS_COMPILE (aarch64-linux-gnu-)"
@@ -74,5 +75,10 @@ for m in "${MODS[@]}"; do
     "${CROSS_COMPILE:-}strip" --strip-debug "$OUT/$REL/kernel/$path"
     echo "   $(magic "$OUT/$REL/kernel/$path")   $(du -k "$OUT/$REL/kernel/$path" | cut -f1) KB"
 done
+# The same modules as one file for the releases (see KMODS_BUNDLE).
+BUNDLE="rk-kernel-modules-$KMODS_BUNDLE.tar.xz"
+STAMP="$(git -C "$SRC" log -1 --format=%ct)"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$STAMP" -C "$OUT" -cf - "$REL" | xz -9 > "$OUT/$BUNDLE"
+(cd "$OUT" && sha256sum "$BUNDLE" > "$BUNDLE.sha256")
 [ -n "${KMOD_WORK:-}" ] || rm -rf "$WORK"
-say "Done: $OUT/$REL"
+say "Done: $OUT/$REL and $OUT/$BUNDLE"
