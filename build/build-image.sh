@@ -17,6 +17,9 @@
 #   ROOT_MB   size of the system partition (default 6144; empty space
 #             compresses away, so the download stays small)
 #   EMULATORS a bundle from build/build-emulators.sh to put in the image
+#   KMODS     the folder build/build-kernel-modules.sh made: modules the 5.10
+#             kernel's own build leaves out (the CH340 serial driver). "none"
+#             builds an image without them.
 #   ROOTFS_DIR  a ready-made system folder: skips the Debian install, to test
 #               the image assembly on any machine
 #
@@ -43,6 +46,7 @@ OUT=${2:?usage: build-image.sh <upstream dir> <out dir>}
 CONSOLE=${CONSOLE:-r36max type1}
 KERNEL=${KERNEL:-5.10}
 VERSION=${VERSION:-dev}
+KMODS=${KMODS:-}
 ROOT_MB=${ROOT_MB:-6144}
 BOOT_MB=256
 case $CONSOLE in
@@ -78,6 +82,12 @@ for f in "${SDLTURN[@]:1}" "$UP/uboot/idbloader.img" "$UP/uboot/uboot.img" "$UP/
     [ -f "$f" ] || die "missing in the upstream checkout: $f"
 done
 [ -d "$MODS" ] || die "missing in the upstream checkout: $MODS"
+case $KMODS in
+    none) ;;
+    "") die "KMODS is not set: run build/build-kernel-modules.sh OUT first and pass KMODS=OUT (or KMODS=none for an image without the CH340 serial driver)" ;;
+    *) ls "$KMODS"/*/kernel >/dev/null 2>&1 || die "no modules in KMODS=$KMODS"
+       command -v depmod >/dev/null || die "missing tool: depmod (kmod)" ;;
+esac
 
 WORK=$(mktemp -d /var/tmp/rkbuild.XXXXXX)
 ROOTFS="$WORK/rootfs"; BOOT="$WORK/boot"
@@ -175,6 +185,19 @@ echo "America/Toronto" > "$ROOTFS/etc/timezone"
 say "Kernel modules (4.4 and 5.10)"
 mkdir -p "$ROOTFS/usr/lib/modules"
 cp -a "$MODS"/. "$ROOTFS/usr/lib/modules/"
+# Modules the 5.10 kernel's own build leaves out, built from its source by
+# build/build-kernel-modules.sh (build/kernel-modules.env says which and
+# why). depmod rewrites that kernel's module lists so a board that needs one
+# loads it when it is plugged in.
+if [ "$KMODS" != none ]; then
+    for kdir in "$KMODS"/*/; do
+        kver=$(basename "$kdir")
+        [ -d "$ROOTFS/usr/lib/modules/$kver" ] || die "KMODS has modules for $kver, which is not a kernel of this image"
+        cp -a "$kdir". "$ROOTFS/usr/lib/modules/$kver/"
+        depmod -b "$ROOTFS/usr" "$kver" || die "depmod failed for $kver"
+        (cd "$kdir" && find . -name '*.ko' | sed "s#^\./#  added to $kver: #")
+    done
+fi
 chown -R 0:0 "$ROOTFS/usr/lib/modules"
 ls "$ROOTFS/usr/lib/modules"
 
@@ -307,7 +330,7 @@ rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
 
-say "The dock apps (Ember, FireFly, and the Stump's files)"
+say "The dock apps (Ember, FireFly, the Stump's files, the Provisioner)"
 # Installed here, so a fresh card has them without a command being typed.
 # They are fetched as rk-apps fetches them on a running handheld (the latest
 # release of each), into ark's home, and handed to ark afterwards.
@@ -322,6 +345,11 @@ as_ark /usr/local/sbin/rk-apps install firefly || die "FireFly could not be inst
 # ark: until the first password change the account is expired, and systemd's
 # user@1000.service fails at boot. The Stump's installer turns it on.)
 as_ark /usr/local/sbin/rk-apps install stump || die "the Stump's files could not be fetched"
+# The Provisioner (the board bench) needs no answers: its release carries
+# its firmware and its installer, which also puts the serial access rule in
+# /etc/udev/rules.d. The dock entry is the image's own (overlay).
+as_ark /usr/local/sbin/rk-apps install provisioner || die "the Provisioner could not be installed"
+[ -x "$ROOTFS/home/ark/rk3326_provisioner/RK3326_Provisioner.sh" ] || die "the Provisioner is not complete in the image"
 in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
     die "SandBox_Stump_On could not be fetched"
 mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"
@@ -449,7 +477,7 @@ start=$P2_START, size=$P2_SIZE, type=83
 PT
 sfdisk -l "$IMG"
 
-"$HERE/verify-image.sh" "$IMG" "$UP" "$KERNEL"
+KMODS="$KMODS" "$HERE/verify-image.sh" "$IMG" "$UP" "$KERNEL"
 
 say "Compress"
 xz -T0 -6 -f "$IMG"

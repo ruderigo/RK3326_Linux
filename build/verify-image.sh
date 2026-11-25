@@ -111,7 +111,10 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /usr/share/rk/retroarch/autoconfig/udev /opt/rk-emulators/bin/retroarch /opt/rk-emulators/cores/mupen64plus_next_libretro.so \
          /home/ark/ports/Ember.sh /home/ark/ports/ember/ember /home/ark/firefly/deploy/FireFly.sh \
          /home/ark/firefly/venv/bin/python /home/ark/R36MAX-Stump/handheld/install.sh \
-         /home/ark/SandBox_Stump_On/provisioner.py /roms/ports/stump_r36max/drop /usr/bin/gcc; do
+         /home/ark/SandBox_Stump_On/provisioner.py /roms/ports/stump_r36max/drop /usr/bin/gcc \
+         /usr/share/rk/apps/provisioner.json /home/ark/rk3326_provisioner/RK3326_Provisioner.sh \
+         /home/ark/rk3326_provisioner/provisioner/__main__.py /home/ark/rk3326_provisioner/VERSION \
+         /etc/udev/rules.d/99-rk3326-provisioner.rules; do
     has "$p" || fail "missing in the system: $p"
 done
 filecat /usr/share/gamecontrollerdb.txt | grep -q "GO-Super Gamepad" || fail "the controller database has no entry for the built-in pad"
@@ -157,6 +160,20 @@ for m in rt2800usb cp210x; do
     echo "$DEP" | grep -q "/$m\.ko" && ok "kernel $KVER has the $m module" ||
         echo "  note: $m is not a module of $KVER (it may be built in)"
 done
+# The CH340/CH341 serial driver (most ESP32 boards): arkos4clone's 5.10
+# kernel is built without it, so the build adds it (build/kernel-modules.env).
+# It must be listed for loading and carry the alias of the chip (1a86:7523),
+# or a board plugged in gets no /dev/ttyUSB*.
+K510=5.10.252-arkos4clone
+if [ "${KMODS:-}" = none ]; then
+    echo "  WARNING: built with KMODS=none: no CH340 serial driver, such a board gets no serial port"
+else
+    has /usr/lib/modules/$K510/kernel/drivers/usb/serial/ch341.ko || fail "kernel $K510 has no ch341 module (the CH340 serial driver)"
+    filecat /usr/lib/modules/$K510/modules.dep | grep -q '^kernel/drivers/usb/serial/ch341\.ko:' || fail "ch341 is not in $K510's modules.dep"
+    filecat /usr/lib/modules/$K510/modules.alias | grep -qi '^alias usb:v1A86p7523d.* ch341$' || fail "$K510's modules.alias does not load ch341 for a CH340 (1a86:7523)"
+    filecat /usr/lib/modules/$K510/modules.dep | grep -q '^kernel/drivers/usb/serial/cp210x\.ko:' || fail "$K510's modules.dep lost the modules it had (cp210x)"
+    ok "kernel $K510 has the CH340 serial driver (ch341), loaded when the chip is plugged in"
+fi
 # The first start adds the data partition. Do the same to a larger copy of
 # the image, as on a real card, and make sure the boot chain is untouched and
 # the new partition starts right after the system. (A first version let the

@@ -125,9 +125,43 @@ jobs:
           retention-days: 30
           compression-level: 0
 
+  kmods:
+    name: Kernel modules (the CH340 serial driver)
+    runs-on: ubuntu-24.04-arm        # arm64, and Debian trixie's gcc: what the 5.10 kernel itself was built with
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # one module of the shipped kernel, to compare against: a module built
+      # here must say it is for exactly the same kernel
+      - name: Fetch a module of the shipped kernel
+        run: |
+          . build/upstream.env
+          . build/kernel-modules.env
+          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
+          cd upstream
+          git sparse-checkout init --no-cone
+          git sparse-checkout set "/rootfs/dArkOS/usr/lib/modules/$KERNEL_RELEASE/kernel/drivers/usb/serial/cp210x.ko"
+          git checkout --quiet "$UPSTREAM_COMMIT"
+      - name: Build the modules
+        run: |
+          . build/kernel-modules.env
+          docker run --rm -v "$PWD:/src" -w /src -e KERNEL_RELEASE="$KERNEL_RELEASE" debian:trixie bash -euo pipefail -c '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential flex bison bc libssl-dev libelf-dev kmod python3 >/dev/null
+            build/build-kernel-modules.sh kmods-out "upstream/rootfs/dArkOS/usr/lib/modules/$KERNEL_RELEASE/kernel/drivers/usb/serial/cp210x.ko"
+          '
+          sudo chown -R "$(id -u):$(id -g)" kmods-out
+          find kmods-out -type f
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rk-kernel-modules
+          path: kmods-out/
+          if-no-files-found: error
+          retention-days: 30
+
   image:
     name: Image (${{ inputs.console || 'r36max type1' }}, kernel ${{ inputs.kernel || '5.10' }})
-    needs: emulators
+    needs: [emulators, kmods]
     runs-on: ubuntu-24.04-arm        # arm64, like the handhelds: Debian installs natively
     timeout-minutes: 60
     env:
@@ -168,16 +202,22 @@ jobs:
           name: rk-emulators
           path: emu
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: rk-kernel-modules
+          path: kmods
+
       # Debian trixie builds Debian trixie: the same debootstrap, keys and
       # filesystem tools as the system that ends up on the card.
       - name: Build and verify the image
         run: |
           . build/emulators.env
           export EMULATORS="/src/emu/rk-emulators-$BUNDLE.tar.xz"
+          export KMODS=/src/kmods
           docker run --rm --privileged -v "$PWD:/src" -w /src \
-            -e CONSOLE -e KERNEL -e VERSION -e EMULATORS debian:trixie bash -euo pipefail -c '
+            -e CONSOLE -e KERNEL -e VERSION -e EMULATORS -e KMODS debian:trixie bash -euo pipefail -c '
               apt-get update -qq
-              apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates device-tree-compiler >/dev/null
+              apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates device-tree-compiler kmod >/dev/null
               build/build-image.sh upstream out
             '
           sudo chown -R "$(id -u):$(id -g)" out

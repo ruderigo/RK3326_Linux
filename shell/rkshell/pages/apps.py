@@ -1,9 +1,11 @@
-"""Apps: the versions of FireFly, Stump and Ember here and the newest ones,
-and their updates.
+"""Apps: the versions of FireFly, Stump, Ember and the Provisioner here and
+the newest ones, and their updates.
 
 An update runs the app's own installer (through rk-apps), so its data and
 settings are kept as that installer keeps them. FireFly and the Stump come
-from the main branch of their repositories, Ember from its latest release.
+from the main branch of their repositories, Ember and the Provisioner from
+their newest release. The Provisioner can also be installed from here when a
+card does not have it (one updated from before the image carried it).
 The handheld's password is asked because the installers need root for a few
 steps; it goes to sudo and is not kept.
 """
@@ -38,6 +40,9 @@ class AppsPage(Page):
     def state(self, a):
         """(text, colour, can update) for a row."""
         if a["installed"] == "-":
+            if a["id"] == "provisioner":        # needs no setup: A fetches it
+                return (f"not installed  (A installs {a['newest']})" if a["newest"] != "?" else "not installed",
+                        T.MUTED, a["newest"] != "?")
             return "not set up", T.DIM, False
         if "?" in (a["newest"], a["installed"]):
             return (f"{a['installed']}  (newest {a['newest']})" if a["newest"] != "?" else f"{a['installed']}  (could not check)",
@@ -144,8 +149,11 @@ class AppsPage(Page):
         note = ("Checking again…" if self.check is not None else
                 "An update runs the app's own installer; its data is kept. FireFly has two sources, switched "
                 "with Y: stable (its published repository) and sandbox (new versions land there first).")
-        for k, ln in enumerate(G.wrap(f.small, note, area.w - 32)[:3]):
-            G.text(surf, f.small, ln, (x, area.bottom - 3 * f.small_line - 6 + k * f.small_line), T.DIM)
+        # the note takes what the rows leave: on a small screen four rows
+        # leave room for less of it, or none
+        fits = max(0, min(3, (area.bottom - 6 - y) // f.small_line))
+        for k, ln in enumerate(G.wrap(f.small, note, area.w - 32)[:fits]):
+            G.text(surf, f.small, ln, (x, area.bottom - fits * f.small_line - 6 + k * f.small_line), T.DIM)
 
     def draw_run(self, surf, f, area):
         job = AppsPage.job

@@ -1,22 +1,22 @@
-# The dock apps: FireFly, Stump, Ember
+# The dock apps: FireFly, Stump, Ember, Provisioner
 
 > Making an app of your own? The builder's contract is in
-> [`building-apps.md`](building-apps.md). This page is about using the three.
+> [`building-apps.md`](building-apps.md). This page is about using these four.
 
 > Video and Games (mpv and RetroArch) are in [`media.md`](media.md).
 
-These three are your own programs ported onto the desktop. Since 1.1.0 they
+These are your own programs ported onto the desktop. Since 1.1.0 they
 are in the image: a freshly flashed card has Ember and FireFly ready on the
 dock, and the Stump's files in place with only its setup left to answer (see
-below). Each is a full-screen app: when you open it the desktop steps aside
+below). The Provisioner joined them after 1.1.0. Each is a full-screen app: when you open it the desktop steps aside
 and comes back when you quit it (for FireFly and Stump, SELECT+START returns).
 
 They live under `/home/ark`, where the dock's launchers look. A USB keyboard
-helps with all three. A card that came from an older image and has since been
+helps with all of them. A card that came from an older image and has since been
 updated may still show one as **(not installed)**; fetch it over Wi-Fi from
 the Terminal:
 
-    rk-apps install all        # or: ember | firefly | stump
+    rk-apps install all        # or: ember | firefly | stump | provisioner
     rk-apps status
 
 ## Ember — analog pads and a vocoder
@@ -68,6 +68,22 @@ that joins another Stump on the Wi-Fi the handheld is on. For anything else
 (Bluetooth radio, joining a Stump's own hotspot), run the installer in the
 Terminal: `bash ~/R36MAX-Stump/handheld/install.sh`.
 
+## Provisioner — the board bench
+
+**Workshop → Provisioner** on the dock. It flashes ESP32 boards, makes a
+Stump on a board, and puts packs on it. It does not install or update the
+apps on this handheld: the Apps window below does that.
+
+It is in the image, from its newest release, with the rule that lets `ark`
+open USB serial boards. A card from before that shows it as **(not
+installed)** after an update: open **Apps**, go to its row and press A, or
+run `rk-apps install provisioner`. Its releases come from
+`SandBox_RK3326_Provisioner`, the only repository it has today, and each
+download is checked against the release's SHA-256 before its installer runs.
+
+A board with a CH340 chip (most ESP32 boards) gets a serial port on kernel
+5.10; see [`devices.md`](devices.md).
+
 ## Updating them
 
 The **Apps** window on the dock shows each app's version here and the newest
@@ -78,7 +94,8 @@ one, and updates it with A:
 An update runs the app's own installer, so its data and settings are kept as
 that installer keeps them. FireFly and the Stump are taken from the `main`
 branch of their repositories (their GitHub releases lag behind); Ember from
-its latest release, since its binary is only built for releases. The window
+its latest release, since its binary is only built for releases; the
+Provisioner from its newest release, pre-releases included. The window
 asks for this handheld's password, for the installers' root steps.
 
 FireFly has two sources. **stable** is its published repository
@@ -87,7 +104,7 @@ a new version lands first. Press Y on FireFly's row to switch; the row shows
 which one is in use, and the choice is kept in `~/.config/rk-apps`.
 
 The same from a terminal: `rk-apps versions`,
-`rk-apps update firefly|stump|ember|all` and
+`rk-apps update firefly|stump|ember|provisioner|all` and
 `rk-apps source firefly stable|sandbox`.
 
 ## Sound and volume

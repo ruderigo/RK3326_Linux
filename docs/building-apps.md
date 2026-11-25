@@ -276,8 +276,8 @@ request to this repo. Until then, use `chip` or the letter fallback.
 <a name="updates"></a>
 ## Shipping updates through rk-apps
 
-`rk-apps` installs, versions and updates the three apps, over Wi-Fi, into
-`/home/ark`. It is also how the image bakes them in at build time. Supporting
+`rk-apps` installs, versions and updates the dock apps (FireFly, Stump,
+Ember, the Provisioner), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
 it is optional for a brand-new app, but it's how FireFly, Stump and Ember stay
 current, and the pattern is worth matching.
 
@@ -294,6 +294,11 @@ against the newest published one. The three apps expose "newest" differently:
 - **Stump** — a `handheld/VERSION` file on `main`.
 - **Ember** — the tag of its latest GitHub release (its binary is only built
   for releases); the installed version is recorded in `~/ports/ember/.rk-version`.
+- **Provisioner** — the newest `vX.Y.Z` tag of its repository, pre-releases
+  included (GitHub's "latest release" skips those), ranked as versions are:
+  `0.3.0-beta.24` above `0.3.0-beta.8`, and a plain `0.3.0` above both. The
+  release's `.tar.gz` is checked against its `SHA256SUMS`; the installed
+  version is the `VERSION` file in `~/rk3326_provisioner`.
 
 Pick whichever fits how you release, and keep it somewhere `rk-apps` can read
 without cloning the whole repo.

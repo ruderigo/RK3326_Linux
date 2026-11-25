@@ -1,16 +1,18 @@
 #!/bin/bash
-# The dock apps (Ember, FireFly, Stump): fetch them, see their versions,
-# update them. Over Wi-Fi, into /home/ark where the dock's launchers look.
+# The dock apps (Ember, FireFly, Stump, the Provisioner): fetch them, see
+# their versions, update them. Over Wi-Fi, into /home/ark where the dock's
+# launchers look.
 #
 #   rk-apps status                     what is installed
 #   rk-apps versions                   installed and newest version of each
-#   rk-apps install ember|firefly|stump|all     (from each one's latest release)
-#   rk-apps update ember|firefly|stump|all
+#   rk-apps install ember|firefly|stump|provisioner|all     (from each one's latest release)
+#   rk-apps update ember|firefly|stump|provisioner|all
 #   rk-apps source firefly|stump stable|sandbox  where FireFly/Stump updates come from
 #
 # An update takes FireFly and the Stump from the main branch of their
-# repositories (their GitHub releases lag behind), and Ember from its latest
-# release (its binary is only built for releases). Each app's own installer
+# repositories (their GitHub releases lag behind), and Ember and the
+# Provisioner from their newest release (Ember's binary is only built for
+# releases; the Provisioner's release carries its firmware). Each app's own installer
 # does the work, so its data and settings are kept as that installer keeps
 # them.
 #
@@ -37,6 +39,7 @@ room_for() {        # room_for APP [update]
         firefly-update) mb=120; mem=100 ;;      # the new files beside the old; its Python environment is there already
         stump)          mb=250; mem=60 ;;
         stump-update)   mb=40;  mem=60 ;;       # a few MB of files, and room to work in
+        provisioner|provisioner-update) mb=90 ;; # the release, unpacked, and its copy in the home folder
         *)              return 0 ;;
     esac
     rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
@@ -100,6 +103,55 @@ clone_stump() {
     fi
 }
 
+# The Provisioner (the board bench: flashes ESP32 boards, makes a Stump on
+# one). Its releases carry everything, the firmware and its own installer,
+# and all of them are pre-releases so far, which GitHub's "latest release"
+# skips: the newest is read from the repository's tags instead. Only its
+# sandbox repository exists today.
+PROVISIONER_REPO=SandBox_RK3326_Provisioner
+PROVISIONER_APP="$H/rk3326_provisioner"
+newest_tag() {      # `git ls-remote --tags` on stdin -> the newest version, without its v
+    # Ranked as versions are: 0.3.0-beta.24 above 0.3.0-beta.8, and a plain
+    # 0.3.0 above every 0.3.0-something.
+    python3 -c '
+import re, sys
+best = None
+for line in sys.stdin:
+    m = re.search(r"refs/tags/v(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$", line.strip())
+    if not m:
+        continue
+    suffix = [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in (m.group(2) or "").split(".") if p]
+    key = (tuple(int(n) for n in m.group(1).split(".")), m.group(2) is None, suffix)
+    if best is None or key > best[0]:
+        best = (key, m.group(1) + ("-" + m.group(2) if m.group(2) else ""))
+if best:
+    print(best[1])'
+}
+provisioner_latest() {
+    timeout 20 git ls-remote --tags "https://github.com/ruderigo/$PROVISIONER_REPO" 2>/dev/null | newest_tag
+}
+install_provisioner() {     # also its update: the installer keeps what it should
+    local v; v=$(provisioner_latest)
+    [ -n "$v" ] || { say "could not find a Provisioner release."; return 1; }
+    say "Fetching the Provisioner $v..."
+    local name="RK3326-Provisioner-$v" rc
+    local from="https://github.com/ruderigo/$PROVISIONER_REPO/releases/download/v$v"
+    local tmp; tmp=$(rk_tmpdir rk-provisioner)
+    if ! curl -fsSL "$from/$name.tar.gz" -o "$tmp/$name.tar.gz" || ! curl -fsSL "$from/SHA256SUMS" -o "$tmp/SHA256SUMS"; then
+        say "download failed."; rm -rf "$tmp"; return 1
+    fi
+    if ! ( cd "$tmp" && grep -F "$name.tar.gz" SHA256SUMS | sha256sum -c --status ); then
+        say "the download does not match its checksum: nothing was installed."; rm -rf "$tmp"; return 1
+    fi
+    tar xzf "$tmp/$name.tar.gz" --no-same-owner -C "$tmp" && [ -f "$tmp/$name/install.sh" ] ||
+        { say "the release has no install.sh."; rm -rf "$tmp"; return 1; }
+    say "Running the Provisioner's own installer..."
+    bash "$tmp/$name/install.sh"; rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || { say "the Provisioner's installer stopped (its message is above)."; return 1; }
+    say "The Provisioner is now $(head -1 "$PROVISIONER_APP/VERSION" 2>/dev/null)."
+}
+
 # ------------------------------------------------------------ versions
 RAW=https://raw.githubusercontent.com/ruderigo
 # FireFly and Stump each have two repositories: the published one, and the
@@ -144,6 +196,9 @@ versions() {        # one line each: id|name|installed|newest|source   ("-" not 
     i=$(head -1 "$H/ports/ember/.rk-version" 2>/dev/null)
     [ -x "$H/ports/Ember.sh" ] || i=-
     echo "ember|Ember|${i:-?}|$(a=$(ember_latest); echo "${a:-?}")"
+    i=$(head -1 "$PROVISIONER_APP/VERSION" 2>/dev/null)
+    [ -x "$PROVISIONER_APP/RK3326_Provisioner.sh" ] || i=-
+    echo "provisioner|Provisioner|${i:-?}|$(a=$(provisioner_latest); echo "${a:-?}")"
 }
 
 # ------------------------------------------------------------- updates
@@ -190,7 +245,8 @@ update_stump() {
 }
 
 status() {
-    for f in "$H/ports/Ember.sh:Ember" "$H/firefly/deploy/FireFly.sh:FireFly" "$H/R36MAX-Stump/handheld/LaBuche_Stump.sh:Stump"; do
+    for f in "$H/ports/Ember.sh:Ember" "$H/firefly/deploy/FireFly.sh:FireFly" "$H/R36MAX-Stump/handheld/LaBuche_Stump.sh:Stump" \
+             "$PROVISIONER_APP/RK3326_Provisioner.sh:Provisioner"; do
         p=${f%%:*}; n=${f##*:}
         [ -x "$p" ] && echo "$n installed" || echo "$n absent"
     done
@@ -206,9 +262,10 @@ case "$cmd" in
             ember) room_for ember && install_ember || rc=1 ;;
             firefly) room_for firefly && install_firefly || rc=1 ;;
             stump) room_for stump && clone_stump || rc=1 ;;
-            all) for a in ember firefly stump; do room_for "$a" || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; } ;;
-            *) echo "usage: rk-apps install ember|firefly|stump|all" >&2; exit 2 ;;
+            provisioner) room_for provisioner && install_provisioner || rc=1 ;;
+            all) for a in ember firefly stump provisioner; do room_for "$a" || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; install_provisioner || rc=1; } ;;
+            *) echo "usage: rk-apps install ember|firefly|stump|provisioner|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
     versions) versions ;;
@@ -227,10 +284,11 @@ case "$cmd" in
             ember) room_for ember && install_ember || rc=1 ;;
             firefly) room_for firefly update && update_firefly || rc=1 ;;
             stump) room_for stump update && update_stump || rc=1 ;;
-            all) for a in ember firefly stump; do room_for "$a" update || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; } ;;
-            *) echo "usage: rk-apps update ember|firefly|stump|all" >&2; exit 2 ;;
+            provisioner) room_for provisioner update && install_provisioner || rc=1 ;;
+            all) for a in ember firefly stump provisioner; do room_for "$a" update || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; install_provisioner || rc=1; } ;;
+            *) echo "usage: rk-apps update ember|firefly|stump|provisioner|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
-    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump all)" >&2; exit 2 ;;
+    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump provisioner all)" >&2; exit 2 ;;
 esac
