@@ -147,7 +147,7 @@ jobs:
           . build/kernel-modules.env
           docker run --rm -v "$PWD:/src" -w /src -e KERNEL_RELEASE="$KERNEL_RELEASE" debian:trixie bash -euo pipefail -c '
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential flex bison bc libssl-dev libelf-dev kmod python3 >/dev/null
+            apt-get install -y -qq --no-install-recommends git ca-certificates build-essential flex bison bc libssl-dev libelf-dev kmod python3 python-is-python3 >/dev/null
             build/build-kernel-modules.sh kmods-out "upstream/rootfs/dArkOS/usr/lib/modules/$KERNEL_RELEASE/kernel/drivers/usb/serial/cp210x.ko"
           '
           sudo chown -R "$(id -u):$(id -g)" kmods-out

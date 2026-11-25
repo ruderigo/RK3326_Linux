@@ -12,7 +12,8 @@
 # Only the module is built, not the kernel: the configuration is the
 # kernel's own with the module switched on, which changes nothing else.
 # Needs git, make, gcc (aarch64, or CROSS_COMPILE), flex, bison, bc,
-# libssl-dev, libelf-dev, kmod. The 4.4 fallback kernel is not covered.
+# libssl-dev, libelf-dev, kmod, and python (the kernel's compiler wrapper
+# asks for "python": python-is-python3 on Debian). The 4.4 fallback kernel is not covered.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/kernel-modules.env"
@@ -20,7 +21,7 @@ OUT="${1:?usage: build-kernel-modules.sh OUT [REFERENCE.ko]}"
 REF="${2:-}"
 say() { echo "== $*"; }
 die() { echo "build-kernel-modules: $*" >&2; exit 1; }
-for t in git make flex bison bc modinfo "${CROSS_COMPILE:-}gcc" "${CROSS_COMPILE:-}strip"; do
+for t in git make flex bison bc modinfo python "${CROSS_COMPILE:-}gcc" "${CROSS_COMPILE:-}strip"; do
     command -v "$t" >/dev/null || die "missing tool: $t"
 done
 [ "$(uname -m)" = aarch64 ] || [ -n "${CROSS_COMPILE:-}" ] || die "not an arm64 machine: set CROSS_COMPILE (aarch64-linux-gnu-)"
