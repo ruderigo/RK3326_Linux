@@ -19,6 +19,26 @@ The OS is two layers with very different risk:
 `rk-update` replaces the **soft layer only**. It never touches the kernel,
 `/home` or `/data`, so by construction an update can't lose an adopter's data.
 
+One thing is added beside the kernel, never in place of it: **extra kernel
+modules**. arkos4clone's 5.10 kernel is built without a few drivers the
+image adds (today `ch341`, the CH340 serial chip of most ESP32 boards). A
+flashed image has them; after an update, `rk-migrate` runs
+`rk-tools kernel-modules`, which takes `rk-kernel-modules-<n>.tar.xz` from
+the system's releases (`/usr/share/rk/kernel-modules.bundle` says which
+`<n>`), checks it against its SHA-256, and adds the modules to
+`/usr/lib/modules`. The rules that keep this safe:
+
+- a module must say it is built for the very kernel whose folder it goes
+  into, or the whole bundle is refused;
+- a file the kernel's own build put there is never replaced;
+- nothing else changes but the lists `depmod` writes, and a module that did
+  not fit would not load: the handheld starts as before either way;
+- with no network, or before a release carries the bundle, nothing happens
+  and the update goes on.
+
+By hand: `sudo rk-tools kernel-modules`, or from a file with no network,
+`sudo rk-tools kernel-modules rk-kernel-modules-1.tar.xz`.
+
 ## `rk-update` — live updates, safely
 
 From **Settings → Update this handheld**, or the terminal:

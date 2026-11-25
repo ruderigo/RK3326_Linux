@@ -1263,10 +1263,17 @@ class System:
         {"name": "...", "icon": "firefly", "group": "...", "about": "one line", "exec": ["cmd", "arg"]}
         "icon" names a drawing in desktop.py; without one the dock shows the first letter.
         An entry whose "exec" program is missing shows as "not installed".
+        The same file name in two folders is one app: the first folder's is kept.
         """
-        found = []
+        found, seen = [], set()
         for d in APPS_DIRS:
             for f in sorted(glob.glob(os.path.join(d, "*.json"))):
+                # the image's own entry wins over one of the same file name
+                # on /data (an app's installer may have left one there
+                # before the image carried it): no icon twice
+                if os.path.basename(f) in seen:
+                    continue
+                seen.add(os.path.basename(f))
                 try:
                     with open(f) as fh:
                         a = json.load(fh)
@@ -1492,7 +1499,8 @@ class DemoSystem(System):
         job.done, job.apps = True, [{"id": "firefly", "name": "FireFly", "installed": "0.9.11", "source": src,
                                      "newest": "0.9.12" if src == "sandbox" else "0.9.11"},
                                     {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.4-b.87", "source": "stable"},
-                                    {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"}]
+                                    {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"},
+                                    {"id": "provisioner", "name": "Provisioner", "installed": "-", "newest": "0.3.0-beta.24"}]
         return job
 
     def app_source(self, app, source):

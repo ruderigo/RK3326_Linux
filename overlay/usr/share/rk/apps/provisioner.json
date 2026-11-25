@@ -1,0 +1,3 @@
+{"name": "Provisioner", "icon": "chip", "group": "Workshop",
+ "about": "Flash ESP32 boards: Stumps, packs, your own builds",
+ "exec": ["/home/ark/rk3326_provisioner/RK3326_Provisioner.sh"], "mouse": false}

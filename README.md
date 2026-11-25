@@ -327,7 +327,8 @@ To build by hand, on an arm64 Linux machine with Debian trixie's tools:
 git clone --filter=blob:none --no-checkout "$UPSTREAM_REPO" upstream
 git -C upstream sparse-checkout set --no-cone /uboot/ /boot/dArkOS/consoles/ /dtbTools/internal/console/ /rootfs/dArkOS/usr/lib/modules/ /rootfs/dArkOS/usr/lib/firmware/
 git -C upstream checkout "$UPSTREAM_COMMIT"
-sudo CONSOLE="r36max type1" KERNEL=5.10 build/build-image.sh upstream out
+build/build-kernel-modules.sh kmods upstream/rootfs/dArkOS/usr/lib/modules/5.10.252-arkos4clone/kernel/drivers/usb/serial/cp210x.ko
+sudo CONSOLE="r36max type1" KERNEL=5.10 KMODS="$PWD/kmods" build/build-image.sh upstream out
 ```
 
 | File | What it is |
@@ -335,6 +336,7 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 build/build-image.sh upstream out
 | `build/upstream.env` | the arkos4clone commit and the Debian release the image is made from |
 | `build/build-image.sh` | installs Debian, adds the kernels' modules and our files, assembles the image |
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
+| `build/kernel-modules.env`, `build-kernel-modules.sh` | kernel modules arkos4clone's 5.10 kernel is built without (the CH340 serial driver), built from its source; also made into `rk-kernel-modules-<n>.tar.xz` for the releases |
 | `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
 | `build/packages.txt`, `packages-optional.txt` | what is installed |
 | `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg`, the desktop's service and its permissions |

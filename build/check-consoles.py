@@ -203,7 +203,8 @@ def table(rows, commit):
             "chip (librga). `rotate.txt` sets these too.",
             "- **Sound, charging, brightness**: the fixes in `build/dtb-fixes.txt` are for the R36MAX (type 1) only, found on "
             "one. Other handhelds run arkos4clone's device tree as it is.",
-            "- **Left-stick pointer**: needs a left stick. Without one the direction pad does everything.", ""]
+            "- **Left-stick pointer**: needs a left stick. Without one the direction pad does everything.",
+            "- **Boards on USB serial (ESP32 and the like)**: on kernel 5.10, the chips these boards use all get a serial port (`/dev/ttyUSB0`, or `/dev/ttyACM0`): CP210x, FTDI, PL2303, and the CH340/CH341 of most ESP32 boards (a Freenove ESP32-WROVER, for one). arkos4clone's 5.10 kernel is built without the CH340 driver (`ch341`), so the image adds it, built from that kernel's source (`build/kernel-modules.env`). A flashed image has it; a card that is updated takes it from the release after **Update this handheld** (or `sudo rk-tools kernel-modules`), which adds the module and replaces none of the kernel's files. On the 4.4 fallback kernel a CH340 board gets no serial port; the Provisioner still reaches it there, driving the chip itself.", ""]
     return "\n".join(out)
 
 

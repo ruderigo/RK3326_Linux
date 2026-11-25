@@ -14,6 +14,26 @@ From a builder's notes on 1.1.0 (25 November):
   The image now has no line for `/data`; `rk-firstboot` adds it once the
   partition is there. Cards already in use keep their line and are not
   touched.
+- **A CH340 board gets a serial port.** arkos4clone's 5.10 kernel is built
+  without the driver for the CH340/CH341 USB-serial chip, so a Freenove
+  ESP32-WROVER, like most ESP32 boards, got no `/dev/ttyUSB*`: only the
+  Provisioner reached it, and esptool or a serial terminal saw nothing. The
+  build now makes that one module (`ch341`) from the kernel's own source and
+  configuration and adds it to the image; it loads when the board is plugged
+  in. A card that is updated and not flashed again gets it too: each
+  release carries the module as a file, and after **Update this handheld**
+  the card takes it from there (`rk-tools kernel-modules`, also by hand and
+  from a file). An update still never replaces a kernel file: the module
+  must be built for the very kernel it goes to, a file the kernel's build
+  put there is left alone, and only the lists of modules are rewritten. The
+  4.4 fallback kernel is not covered.
+- **The Provisioner is a dock app like the others.** It is in the image
+  (Workshop → Provisioner), `rk-apps install|update provisioner` fetches its
+  newest release and checks it against the release's SHA-256, and the Apps
+  window shows its version, updates it, and installs it on a card that does
+  not have it. Its installer's dock entry on `/data` no longer shows a second
+  icon beside the image's own. Only its sandbox repository exists, so there
+  is no stable/sandbox switch for it yet.
 - **Guides brought in line with 1.1.0**: `docs/apps.md` says the three dock
   apps are in the image; `docs/building-apps.md` says the microphone is for
   one program at a time (capture is not shared), and that `/data/ark` is the
