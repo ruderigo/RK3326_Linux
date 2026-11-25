@@ -137,7 +137,7 @@ def write_all(system, size, out_dir):
             app.stack.clear()
             app.window.view = "list"
             ArsenalPage_reset()
-        if item["name"] == "Apps":
+        if item["name"] == "AppManager":
             app.toast_text = ""
             from .pages.apps import AppsPage
             app.tick()

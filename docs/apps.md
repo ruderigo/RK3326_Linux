@@ -1,14 +1,14 @@
-# The dock apps: FireFly, Stump, Ember, Provisioner
+# The dock apps: FireFly, Stump, Ember, Provisioner, STUMP Recon
 
 > Making an app of your own? The builder's contract is in
-> [`building-apps.md`](building-apps.md). This page is about using these four.
+> [`building-apps.md`](building-apps.md). This page is about using these five.
 
 > Video and Games (mpv and RetroArch) are in [`media.md`](media.md).
 
 These are your own programs ported onto the desktop. Since 1.1.0 they
 are in the image: a freshly flashed card has Ember and FireFly ready on the
 dock, and the Stump's files in place with only its setup left to answer (see
-below). The Provisioner joined them in 1.2.0. Each is a full-screen app: when you open it the desktop steps aside
+below). The Provisioner joined them in 1.2.0, and STUMP Recon after it. Each is a full-screen app: when you open it the desktop steps aside
 and comes back when you quit it (for FireFly and Stump, SELECT+START returns).
 
 They live under `/home/ark`, where the dock's launchers look. A USB keyboard
@@ -16,7 +16,7 @@ helps with all of them. A card that came from an older image and has since been
 updated may still show one as **(not installed)**; fetch it over Wi-Fi from
 the Terminal:
 
-    rk-apps install all        # or: ember | firefly | stump | provisioner
+    rk-apps install all        # or: ember | firefly | stump | provisioner | stump-recon
     rk-apps status
 
 ## Ember — analog pads and a vocoder
@@ -72,11 +72,11 @@ Terminal: `bash ~/R36MAX-Stump/handheld/install.sh`.
 
 **Workshop → Provisioner** on the dock. It flashes ESP32 boards, makes a
 Stump on a board, and puts packs on it. It does not install or update the
-apps on this handheld: the Apps window below does that.
+apps on this handheld: the AppManager window below does that.
 
 It is in the image, from its newest release, with the rule that lets `ark`
 open USB serial boards. A card from before that shows it as **(not
-installed)** after an update: open **Apps**, go to its row and press A, or
+installed)** after an update: open **AppManager**, go to its row and press A, or
 run `rk-apps install provisioner`. Its releases come from
 `SandBox_RK3326_Provisioner`, the only repository it has today, and each
 download is checked against the release's SHA-256 before its installer runs.
@@ -84,18 +84,48 @@ download is checked against the release's SHA-256 before its installer runs.
 A board with a CH340 chip (most ESP32 boards) gets a serial port on kernel
 5.10; see [`devices.md`](devices.md).
 
+## STUMP Recon — LoRa and 2.4 GHz recon
+
+**Comms → STUMP Recon** on the dock. It listens through a board on USB (a
+Heltec V3, or another ESP32 board with the STUMP RF Recon firmware; a CH340
+board gets its serial port on kernel 5.10) and shows what it hears: LoRa and
+2.4 GHz traffic, signal levels, and each frame taken apart. X and Y in the
+frame view save a capture (`.pcap`, `.chlsj`, `.json`). SELECT+START quits.
+For your own radios and ones you are allowed to test.
+
+- Captures and its `debug.log` go to `/data/ark/stump-recon/exports`, on the
+  data partition: they are in the **Files** window and survive a reflash.
+- While it is open the Stump is paused, as for FireFly: both want the board
+  on USB. It comes back when you quit.
+- The left stick is not a mouse while it runs (it uses the stick and the
+  shoulder buttons itself).
+- It draws for 720×720 and scales that onto other panels.
+
+Its files travel with the system (`/usr/share/rk/bundled/stump-rf-recon`,
+the app's own RK3326 release, unchanged). A flashed card has it installed. A
+card that is updated shows it as **(not installed)** until you open
+**AppManager**, go to its row and press A: that needs no Wi-Fi, the files
+are already on the card. From a terminal: `rk-apps install stump-recon`. Once
+its repository (`stump-rf-recon`) publishes a higher version on its `main`
+branch, AppManager offers that one.
+
+Not yet tried on a handheld: the build starts it with no screen and no board, and
+nobody has opened it on an R36MAX with a board plugged in.
+
 ## Updating them
 
-The **Apps** window on the dock shows each app's version here and the newest
-one, and updates it with A:
+The **AppManager** window on the dock (named Apps until 1.2.0) shows each
+app's version here and the newest one, and updates it with A:
 
-![The Apps window](apps-window.png)
+![The AppManager window](apps-window.png)
 
 An update runs the app's own installer, so its data and settings are kept as
 that installer keeps them. FireFly and the Stump are taken from the `main`
 branch of their repositories (their GitHub releases lag behind); Ember from
 its latest release, since its binary is only built for releases; the
-Provisioner from its newest release, pre-releases included. The window
+Provisioner from its newest release, pre-releases included; STUMP Recon
+from the copy in the system or its repository, whichever version is higher.
+The window
 asks for this handheld's password, for the installers' root steps.
 
 FireFly has two sources. **stable** is its published repository
@@ -104,7 +134,7 @@ a new version lands first. Press Y on FireFly's row to switch; the row shows
 which one is in use, and the choice is kept in `~/.config/rk-apps`.
 
 The same from a terminal: `rk-apps versions`,
-`rk-apps update firefly|stump|ember|provisioner|all` and
+`rk-apps update firefly|stump|ember|provisioner|stump-recon|all` and
 `rk-apps source firefly stable|sandbox`.
 
 ## Sound and volume

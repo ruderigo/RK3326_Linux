@@ -277,7 +277,7 @@ request to this repo. Until then, use `chip` or the letter fallback.
 ## Shipping updates through rk-apps
 
 `rk-apps` installs, versions and updates the dock apps (FireFly, Stump,
-Ember, the Provisioner), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
+Ember, the Provisioner, STUMP Recon), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
 it is optional for a brand-new app, but it's how FireFly, Stump and Ember stay
 current, and the pattern is worth matching.
 
@@ -289,7 +289,7 @@ against the newest published one. The three apps expose "newest" differently:
 - **FireFly** — `__version__` in `firefly/firefly/__init__.py` on the repo's
   `main` branch. (FireFly also has a **sandbox** source — the
   `SandBox_FireFly_RK3326` repo, where a version lands first; `rk-apps source
-  firefly stable|sandbox`, or **Y** on FireFly's row in the Apps window,
+  firefly stable|sandbox`, or **Y** on FireFly's row in the AppManager window,
   switches.)
 - **Stump** — a `handheld/VERSION` file on `main`.
 - **Ember** — the tag of its latest GitHub release (its binary is only built
@@ -299,6 +299,10 @@ against the newest published one. The three apps expose "newest" differently:
   `0.3.0-beta.24` above `0.3.0-beta.8`, and a plain `0.3.0` above both. The
   release's `.tar.gz` is checked against its `SHA256SUMS`; the installed
   version is the `VERSION` file in `~/rk3326_provisioner`.
+- **STUMP Recon** — a `VERSION` file at the top of its release. A copy of the
+  release travels with the system (`overlay/usr/share/rk/bundled/`, see
+  [below](#bundled)); the same file on its repository's `main` branch is
+  compared with it, and the higher version is the newest.
 
 Pick whichever fits how you release, and keep it somewhere `rk-apps` can read
 without cloning the whole repo.
@@ -318,7 +322,7 @@ own installer so the app decides what to preserve. The shared conventions:
   app that needs no questions can ignore this.
 
 If an app does none of this, it still runs from the dock; it just won't appear
-in the Apps window's version list, and it's updated by re-running its own
+in the AppManager window's version list, and it's updated by re-running its own
 installer by hand.
 
 <a name="where-files-live"></a>
@@ -352,6 +356,21 @@ To ship an app on the card (as FireFly, Stump and Ember are):
 
 An app that is only *offered* (fetched later over Wi-Fi) needs just step 1 and
 a working `rk-apps install`.
+
+<a name="bundled"></a>
+### A small app can travel with the system
+
+STUMP Recon is three small files and an installer, so its release is kept
+whole in `overlay/usr/share/rk/bundled/stump-rf-recon/` (its `host/`,
+`deploy/install.sh`, `VERSION`). `rk-apps install stump-recon` runs that
+installer from there. What this buys: the image build needs no download for
+it, an OS update carries it to cards that are not flashed again
+(`/usr/share/rk` is replaced by an update), and it installs with no network.
+When the app's repository publishes a higher `VERSION` with the same
+`deploy/install.sh`, `rk-apps` fetches that instead. To bring in a new
+version here, replace the folder with the new release. This suits an app of
+a few hundred kilobytes; anything larger belongs in a release that is
+fetched, like the others.
 
 <a name="checklist"></a>
 ## Checklist
