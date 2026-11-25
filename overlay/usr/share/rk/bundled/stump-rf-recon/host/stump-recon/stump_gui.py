@@ -10,7 +10,7 @@ Includes:
   - View 5: Filtered Serial Telemetry Console
 """
 
-import sys, os, re, glob, time, json, math, mmap, signal, struct, random, threading, datetime, pygame
+import sys, os, re, glob, time, json, math, mmap, signal, struct, random, subprocess, threading, datetime, pygame
 
 try:
     from pygame._sdl2 import controller as sdl_controller
@@ -187,7 +187,8 @@ OUI_MAP = {
     "70:04:1d": "Espressif/Heltec", "34:85:18": "Espressif/Heltec", "40:4c:ca": "Espressif/Heltec",
     "00:17:f2": "Apple Inc.", "a4:83:e7": "Apple Inc.", "3c:22:fb": "Apple Inc.",
     "dc:a6:32": "Raspberry Pi", "b8:27:eb": "Raspberry Pi",
-    "14:8f:30": "Ralink Tech", "00:e0:4c": "Realtek", "f8:1a:67": "TP-Link"
+    "14:8f:30": "Ralink Tech", "00:0c:43": "Ralink Tech", "7c:dd:90": "Ralink/MTK",
+    "00:e0:4c": "Realtek", "f8:1a:67": "TP-Link"
 }
 
 def resolve_oui(mac):
@@ -366,6 +367,9 @@ dev_popup_open = False   # When True, shows the full-screen Device Confirmation 
 
 sl = [f"{time.strftime('%Y-%m-%d %H:%M:%S')} SYS Ready. [L1/R1]:Views [A]:Inspect [Y in Console]:Export PCAP/Charles/JSON"]
 sr = sp = None
+wifi_proc = None
+wifi_proc_lock = threading.Lock()
+wifi_hw = {"online": False, "iface": None, "driver": None, "chip": None, "ch": 0, "status": "idle"}
 kx = -98.0
 kp = 2.0
 ui_paused = False
@@ -1001,6 +1005,40 @@ def cm(c):
         except Exception:
             pass
 
+
+def send_wifi_mon_cmd(cmd):
+    with wifi_proc_lock:
+        proc = wifi_proc
+    if proc and proc.poll() is None and proc.stdin:
+        try:
+            proc.stdin.write(cmd + "\n")
+            proc.stdin.flush()
+        except Exception:
+            pass
+
+
+def stop_wifi_mon():
+    global wifi_proc
+    with wifi_proc_lock:
+        proc = wifi_proc
+        wifi_proc = None
+    if proc is None:
+        return
+    try:
+        if proc.stdin and not proc.stdin.closed:
+            proc.stdin.write("quit\n")
+            proc.stdin.flush()
+            proc.stdin.close()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=1.5)
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
 def cm_silent(c):
     global tdm_silent_until
     tdm_silent_until = time.time() + 0.45
@@ -1171,6 +1209,32 @@ def handle_parsed_event(d):
     elif e == "boot":
         ad_log(f"BOOT Heltec V3 fw={d.get('fw')}")
 
+    elif e == "wifi_hw":
+        stt = d.get("status", "")
+        if stt in ("monitor", "scan"):
+            wifi_hw.update({
+                "online": True,
+                "mode": d.get("mode", stt),
+                "iface": d.get("iface"),
+                "driver": d.get("driver", "wifi"),
+                "chip": d.get("chip", "USB Wi-Fi"),
+                "ch": int(d.get("ch", 0)),
+                "status": stt,
+            })
+            mode_txt = "MONITOR" if stt == "monitor" else "AP-SCAN"
+            ad_log(f"WIFI-HW {wifi_hw['chip']} ({wifi_hw['driver']}) on {wifi_hw['iface']} {mode_txt} active")
+        elif stt == "upgrading":
+            ad_log(f"WIFI-HW {d.get('reason', 'Upgrading to USB monitor adapter...')}")
+        elif stt in ("disconnected", "absent", "stopped", "waiting"):
+            was_on = wifi_hw.get("online", False)
+            wifi_hw.update({"online": False, "status": stt})
+            if was_on:
+                ad_log(f"WIFI-HW {wifi_hw.get('iface') or 'USB Wi-Fi'} {stt}")
+        elif stt in ("error", "warning"):
+            if stt == "error":
+                wifi_hw.update({"online": False, "status": "error"})
+            ad_log(f"WIFI-HW {stt.upper()}: {d.get('reason', '')}")
+
 def wk():
     global sr, sp
     pending_frag = ""
@@ -1257,6 +1321,66 @@ def wk():
 
 threading.Thread(target=wk, daemon=True).start()
 
+
+def wk_wifi_adapter():
+    """Background worker driving any monitor-capable or consumer USB Wi-Fi dongle via rk-stump-wifi or wifi_mon.py."""
+    global wifi_proc
+    local_helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wifi_mon.py")
+    sys_helper = "/usr/local/sbin/rk-stump-wifi"
+    req_iface = os.environ.get("STUMP_WIFI_IFACE", "auto").strip() or "auto"
+    base_args = ["--watch", "--iface", req_iface, "--channel", str(int(st.get("wifich", 0)))]
+
+    if os.geteuid() == 0 and os.path.isfile(local_helper):
+        cmd = [sys.executable, "-u", local_helper] + base_args
+    elif os.path.isfile(sys_helper) and os.access(sys_helper, os.X_OK):
+        cmd = ["sudo", "-n", sys_helper] + base_args
+    elif os.path.isfile(local_helper):
+        cmd = [sys.executable, "-u", local_helper] + base_args
+    else:
+        return
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+    except Exception as exc:
+        ad_log(f"WIFI-HW helper unavailable: {exc}")
+        return
+
+    with wifi_proc_lock:
+        wifi_proc = proc
+
+    try:
+        for raw_ln in proc.stdout:
+            ln = raw_ln.strip()
+            if not ln:
+                continue
+            try:
+                handle_parsed_event(json.loads(ln))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    finally:
+        rc = proc.poll()
+        if rc not in (None, 0) and not wifi_hw.get("online"):
+            err_txt = ""
+            try:
+                err_txt = (proc.stderr.read() or "").strip().splitlines()[-1]
+            except Exception:
+                pass
+            if err_txt:
+                ad_log(f"WIFI-HW ({rc}): {err_txt[:72]}")
+        wifi_hw["online"] = False
+
+
+threading.Thread(target=wk_wifi_adapter, daemon=True).start()
+
 # --- 4. Interactive Controls & D-Pad Navigation ---
 BW_LIST = [62.5, 125.0, 250.0, 500.0]
 SY_LIST = [18, 43, 52]
@@ -1319,10 +1443,12 @@ def dp(dx, dy):
         elif tr == 6:
             st["wifi"] = not bool(st.get("wifi", True))
             cm(f"wifi {'on' if st['wifi'] else 'off'}")
+            send_wifi_mon_cmd("resume" if st["wifi"] else "pause")
         elif tr == 7:
             nch = (int(st.get("wifich", 0)) + dx) % 14
             st["wifich"] = nch
             cm(f"wifich {'hop' if nch == 0 else nch}")
+            send_wifi_mon_cmd(f"ch {nch}")
 
 ck = pygame.time.Clock()
 rn = True
@@ -1588,8 +1714,18 @@ while rn:
     if ui_paused:
         bx(275, 13, 112, 22, (120, 28, 45), RO)
         tx(fx, "STREAM PAUSED", 281, 17, TX)
-    conn_s = f"ONLINE {sp}" if sp else "AWAITING USB OTG (/dev/ttyUSB0)"
-    tx(fx, conn_s, 18, 40, GR if sp else AM)
+    wf_on = bool(wifi_hw.get("online"))
+    wf_tag = "MON" if wifi_hw.get("status") == "monitor" else "SCAN"
+    wf_lbl_hw = f"{wifi_hw.get('chip') or 'WIFI'}({wifi_hw.get('iface')})"
+    if sp and wf_on:
+        conn_s = f"ONLINE {sp} + {wf_tag}:{wf_lbl_hw}"
+    elif sp:
+        conn_s = f"ONLINE {sp}"
+    elif wf_on:
+        conn_s = f"ONLINE {wf_tag}:{wf_lbl_hw} [{wifi_hw.get('driver', 'wifi')}]"
+    else:
+        conn_s = "AWAITING HELTEC (ttyUSB0) OR USB WI-FI ADAPTER"
+    tx(fx, conn_s, 18, 40, GR if (sp or wf_on) else AM)
 
     sy_v = int(st.get("sync", 18))
     sy_lbl = "RNS(0x12)" if sy_v == 18 else "MESH(0x2B)" if sy_v == 43 else f"0x{sy_v:02X}"
@@ -1643,7 +1779,13 @@ while rn:
                 bx(24 + ci * 56, 312 + ri * 5, 42, 4, wcol, None)
 
         bx(10, 418, 700, 234)
-        tx(fs, "2.4 GHz 802.11 PROMISCUOUS OCCUPANCY (CH 1-13)", 20, 426, CY)
+        wf_mode_hdr = "MONITOR" if wifi_hw.get("status") == "monitor" else "AP-SCAN"
+        wf_hdr = (
+            f"2.4 GHz 802.11 {wf_mode_hdr} ({wifi_hw.get('chip','USB Wi-Fi')} {wifi_hw.get('driver','wifi')} · {wifi_hw.get('iface')})"
+            if wifi_hw.get("online")
+            else "2.4 GHz 802.11 PROMISCUOUS OCCUPANCY (CH 1-13)"
+        )
+        tx(fs, wf_hdr, 20, 426, CY)
         for c in range(1, 14):
             x = 22 + (c - 1) * 52
             wval = ws[c]
@@ -1837,11 +1979,12 @@ while rn:
             o = ev[si]
             dt_full = o.get("dt", fmt_dt())
             if o.get("k") == "W":
-                tx(fs, f"LOCKED 802.11 FRAME #{si+1}: {o.get('ftype')} (CH {o.get('ch')})  [{dt_full}]", 32, 420, CY)
+                src_tag = o.get("src") or "Heltec ESP32"
+                tx(fs, f"LOCKED 802.11 FRAME #{si+1}: {o.get('ftype')} (CH {o.get('ch')}) [{src_tag}]", 32, 420, CY)
                 tx(fm, f"Source MAC : {o.get('mac')}  [{o.get('oui')}]", 32, 452, AM)
                 tx(fm, f"BSSID      : {o.get('bssid','ff:ff:ff:ff:ff:ff')}  | Length: {o.get('len',0)} Bytes", 32, 480, TX)
                 tx(fm, f"Signal RSSI: {o.get('rssi')} dBm  | LAA Randomized Bit: {'YES' if o.get('laa') else 'NO (Global)'}", 32, 508, GR)
-                tx(fm, f"SSID Tag 00: \"{o.get('ssid') or '<Wildcard Broadcast>'}\"", 32, 536, VI)
+                tx(fm, f"SSID Tag 00: \"{o.get('ssid') or '<Wildcard Broadcast>'}\"  [{dt_full}]", 32, 536, VI)
             else:
                 ds = o.get("ds", {})
                 tx(fs, f"LOCKED LORA PACKET #{si+1}: {ds.get('proto')} ({ds.get('type','PKT')})  [{dt_full}]", 32, 420, VI)
@@ -1868,7 +2011,7 @@ while rn:
             ("LoRa Coding Rate", f"4/{st.get('cr', 5)}"),
             ("LoRa Sync Word", sy_str),
             ("Acquisition Mode", str(st.get("mode", "sniff")).upper()),
-            ("2.4 GHz Wi-Fi Sniffer", "ENABLED (Promiscuous)" if st.get("wifi", True) else "DISABLED"),
+            ("2.4 GHz Wi-Fi Sniffer", (f"ENABLED ({wifi_hw.get('chip','USB Wi-Fi')} {'MON' if wifi_hw.get('status') == 'monitor' else 'SCAN'})" if wifi_hw.get("online") else "ENABLED (Promiscuous)") if st.get("wifi", True) else "DISABLED"),
             ("2.4 GHz Wi-Fi Channel", "AUTO-HOP (Ch 1-13)" if int(st.get("wifich", 0)) == 0 else f"FIXED CH {st.get('wifich')}")
         ]
         for i, (k, v) in enumerate(tuner_items):
@@ -1917,6 +2060,7 @@ while rn:
                 fb[y * stw:y * stw + rw] = d[y * rw:(y + 1) * rw]
     ck.tick(30)
 
+stop_wifi_mon()
 if jsonl_f:
     jsonl_f.close()
 if fb:

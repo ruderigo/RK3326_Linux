@@ -42,7 +42,7 @@ room_for() {        # room_for APP [update]
         stump)          mb=250; mem=60 ;;
         stump-update)   mb=40;  mem=60 ;;       # a few MB of files, and room to work in
         provisioner|provisioner-update) mb=90 ;; # the release, unpacked, and its copy in the home folder
-        stump-recon|stump-recon-update) mb=15 ;; # two Python files and a launcher, and a checkout when its repository has a newer one
+        stump-recon|stump-recon-update) mb=15 ;; # three Python files and a launcher, and a checkout when its repository has a newer one
         *)              return 0 ;;
     esac
     rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
@@ -156,7 +156,9 @@ install_provisioner() {     # also its update: the installer keeps what it shoul
 }
 
 # STUMP Recon (LoRa and 2.4 GHz recon with a Heltec V3 or another ESP32 board
-# on USB). A copy travels with the system, in /usr/share/rk/bundled: it is on
+# on USB, a USB Wi-Fi adapter, or both). Its installer needs root for one
+# step: its Wi-Fi capture helper goes to /usr/local/sbin/rk-stump-wifi, with
+# a sudoers line for it (/etc/sudoers.d/stump-recon-wifi). A copy travels with the system, in /usr/share/rk/bundled: it is on
 # a fresh card, an OS update brings it to a card that is not flashed again,
 # and it installs with no network. Its repository's main branch is used
 # instead once it carries a higher VERSION and the same deploy/install.sh.

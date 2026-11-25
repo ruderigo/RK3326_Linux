@@ -117,7 +117,8 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/udev/rules.d/99-rk3326-provisioner.rules \
          /usr/share/rk/apps/stump-recon.json /usr/share/rk/bundled/stump-rf-recon/VERSION \
          /usr/share/rk/bundled/stump-rf-recon/deploy/install.sh /home/ark/stump-rf-recon/STUMP-Recon.sh \
-         /home/ark/stump-rf-recon/stump-recon/stump_gui.py /home/ark/stump-rf-recon/VERSION; do
+         /home/ark/stump-rf-recon/stump-recon/stump_gui.py /home/ark/stump-rf-recon/VERSION \
+         /home/ark/stump-rf-recon/stump-recon/wifi_mon.py /usr/local/sbin/rk-stump-wifi /etc/sudoers.d/stump-recon-wifi; do
     has "$p" || fail "missing in the system: $p"
 done
 filecat /usr/share/gamecontrollerdb.txt | grep -q "GO-Super Gamepad" || fail "the controller database has no entry for the built-in pad"

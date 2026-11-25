@@ -6,9 +6,14 @@ replace is in [`docs/updates.md`](docs/updates.md).
 
 ## Next
 
-- **STUMP Recon is on the dock** (Comms → STUMP Recon, version 0.4.1-rk3326):
+- **STUMP Recon is on the dock** (Comms → STUMP Recon, version 0.6.0-rk3326):
   LoRa and 2.4 GHz recon through a Heltec V3 or another ESP32 board on USB,
-  from its team's RK3326 port. Its files travel with the system
+  a USB Wi-Fi adapter, or both, from its team's RK3326 port. An adapter that
+  can monitor (an RT3070, for one) is taken off the network while the app is
+  open and given back when it quits; one that cannot stays connected and
+  lists the networks it sees. The capture runs as root through one helper
+  the app's installer adds (`/usr/local/sbin/rk-stump-wifi`, with its own
+  sudoers line); it listens and sends nothing. Its files travel with the system
   (`/usr/share/rk/bundled/stump-rf-recon`, the port as delivered), so a
   flashed card has it installed, and a card that is updated installs it from
   AppManager with A, with no Wi-Fi needed. `rk-apps install|update

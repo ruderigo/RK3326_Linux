@@ -162,7 +162,8 @@ with tempfile.TemporaryDirectory() as d:
     assert p.returncode == 1 and "has no version yet" in p.stdout and log == "", p.stdout
 # the copy in this repository is whole, and its dock entry is the image's own
 BUNDLED = os.path.normpath(os.path.join(HERE, "..", "..", "overlay", "usr", "share", "rk", "bundled", "stump-rf-recon"))
-for f in ("VERSION", "deploy/install.sh", "host/STUMP-Recon.sh", "host/stump-recon/stump_gui.py", "host/stump-recon/stump_cli.py"):
+for f in ("VERSION", "deploy/install.sh", "host/STUMP-Recon.sh", "host/stump-recon/stump_gui.py", "host/stump-recon/stump_cli.py",
+          "host/stump-recon/wifi_mon.py"):
     assert os.path.isfile(f"{BUNDLED}/{f}"), f"missing from the bundled STUMP Recon: {f}"
 for f in ("deploy/install.sh", "host/STUMP-Recon.sh"):
     assert os.access(f"{BUNDLED}/{f}", os.X_OK), f"not executable: {f}"
@@ -177,7 +178,9 @@ import time
 with tempfile.TemporaryDirectory() as d:
     gui = subprocess.Popen([sys.executable, f"{BUNDLED}/host/stump-recon/stump_gui.py"], cwd=d,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", STUMP_RECON_DATA_DIR=d))
+                           # (a Wi-Fi adapter name that does not exist: the test takes no real one)
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", STUMP_RECON_DATA_DIR=d,
+                                    STUMP_WIFI_IFACE="none0"))
     time.sleep(4)
     still = gui.poll() is None
     gui.terminate()
@@ -188,6 +191,24 @@ with tempfile.TemporaryDirectory() as d:
         out = gui.communicate()[0]
     assert still, "STUMP Recon stopped by itself:\n" + out
     assert os.path.isdir(f"{d}/exports"), "STUMP Recon did not use its data folder"
+
+# Its Wi-Fi helper runs as root on the handheld. It only listens: it must
+# refuse an adapter name that is not one, pick nothing when there is no
+# adapter, and never send a frame (no write to its capture socket).
+sys.path.insert(0, f"{BUNDLED}/host/stump-recon")
+import wifi_mon
+for bad in ("", "a", "wlan0;reboot", "../x", "wlan0 up", "x" * 16):
+    assert not wifi_mon.valid_iface_name(bad), bad
+with tempfile.TemporaryDirectory() as d:
+    assert wifi_mon.discover_wifi_adapters(sys_root=d, iw_phy_text="") == []
+    assert wifi_mon.select_best_adapter("wlan0;reboot", sys_root=d, iw_phy_text="") is None
+    assert wifi_mon.select_best_adapter("auto", sys_root=d, iw_phy_text="") is None
+helper = open(f"{BUNDLED}/host/stump-recon/wifi_mon.py").read()
+for sends in (".send(", ".sendto(", ".sendall(", ".sendmsg(", "shell=True", "os.system("):
+    assert sends not in helper, f"the Wi-Fi helper has {sends}"
+installer = open(f"{BUNDLED}/deploy/install.sh").read()
+assert "NOPASSWD: /usr/local/sbin/rk-stump-wifi\n" in installer and installer.count("NOPASSWD") == 1, "the installer's sudoers line changed"
+assert "sudo -S" not in installer.replace("never uses sudo -S", "")
 
 # The AppManager window: A installs an app that needs no setup, and STUMP
 # Recon (its files are in the system) without Wi-Fi.

@@ -88,13 +88,28 @@ A board with a CH340 chip (most ESP32 boards) gets a serial port on kernel
 
 **Comms → STUMP Recon** on the dock. It listens through a board on USB (a
 Heltec V3, or another ESP32 board with the STUMP RF Recon firmware; a CH340
-board gets its serial port on kernel 5.10) and shows what it hears: LoRa and
-2.4 GHz traffic, signal levels, and each frame taken apart. X and Y in the
+board gets its serial port on kernel 5.10), through a USB Wi-Fi adapter, or
+through both, and shows what it hears: LoRa and 2.4 GHz traffic, signal
+levels, and each frame taken apart. It only listens; it sends nothing. X and Y in the
 frame view save a capture (`.pcap`, `.chlsj`, `.json`). SELECT+START quits.
 For your own radios and ones you are allowed to test.
 
 - Captures and its `debug.log` go to `/data/ark/stump-recon/exports`, on the
   data partition: they are in the **Files** window and survive a reflash.
+- **A Wi-Fi adapter that can monitor** (RT3070 and other `rt2800usb`,
+  AR9271, MT7601U/MT7612U, the Realtek 8812au/8821cu/8822bu/8188eu families)
+  is switched to monitor mode while the app is open, and hops the 2.4 GHz
+  channels. **It is off the network for that time.** If it is the handheld's
+  only Wi-Fi (an R36MAX with one dongle), Wi-Fi and SSH stop when you open
+  STUMP Recon and come back a few seconds after you quit. With two adapters,
+  set which one it takes: `STUMP_WIFI_IFACE=wlan1` before its launcher.
+- **A Wi-Fi adapter that cannot monitor** stays connected: the app reads the
+  list of networks it sees instead (names, channels, levels; no frames).
+- The capture runs as root through one helper,
+  `/usr/local/sbin/rk-stump-wifi`, which the app's installer puts there with
+  a line in `/etc/sudoers.d/stump-recon-wifi` so `ark` may run it without a
+  password. `rk-stump-wifi --probe` lists the adapters it sees and which one
+  it would take.
 - While it is open the Stump is paused, as for FireFly: both want the board
   on USB. It comes back when you quit.
 - The left stick is not a mouse while it runs (it uses the stick and the
@@ -105,7 +120,8 @@ Its files travel with the system (`/usr/share/rk/bundled/stump-rf-recon`,
 the app's own RK3326 release, unchanged). A flashed card has it installed. A
 card that is updated shows it as **(not installed)** until you open
 **AppManager**, go to its row and press A: that needs no Wi-Fi, the files
-are already on the card. From a terminal: `rk-apps install stump-recon`. Once
+are already on the card. It asks for the handheld's password, for the helper
+above. From a terminal: `rk-apps install stump-recon`. Once
 its repository (`stump-rf-recon`) publishes a higher version on its `main`
 branch, AppManager offers that one.
 

@@ -358,8 +358,12 @@ as_ark /usr/local/sbin/rk-apps install provisioner || die "the Provisioner could
 # STUMP Recon needs no answers either. Its files are the system's own copy
 # (overlay/usr/share/rk/bundled), put in ark's home by its own installer.
 as_ark /usr/local/sbin/rk-apps install stump-recon || die "STUMP Recon could not be installed"
-[ -x "$ROOTFS/home/ark/stump-rf-recon/STUMP-Recon.sh" ] && [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/stump_gui.py" ] ||
+# Its installer also puts its Wi-Fi capture helper in /usr/local/sbin
+# (root's, run through sudo) with the one sudoers line that allows it.
+[ -x "$ROOTFS/home/ark/stump-rf-recon/STUMP-Recon.sh" ] && [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/stump_gui.py" ] &&
+    [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/wifi_mon.py" ] && [ -x "$ROOTFS/usr/local/sbin/rk-stump-wifi" ] ||
     die "STUMP Recon is not complete in the image"
+in_root visudo -c -q || die "the sudoers files do not pass visudo's check after STUMP Recon's installer"
 in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
     die "SandBox_Stump_On could not be fetched"
 mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"

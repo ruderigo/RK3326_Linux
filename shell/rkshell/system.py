@@ -1502,7 +1502,7 @@ class DemoSystem(System):
                                     {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.4-b.87", "source": "stable"},
                                     {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"},
                                     {"id": "provisioner", "name": "Provisioner", "installed": "-", "newest": "0.3.0-beta.24"},
-                                    {"id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326", "newest": "0.4.1-rk3326"}]
+                                    {"id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326", "newest": "0.6.0-rk3326"}]
         return job
 
     def app_source(self, app, source):
