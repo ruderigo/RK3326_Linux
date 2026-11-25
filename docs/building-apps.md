@@ -192,8 +192,9 @@ app should **open the ALSA `default` device and nothing else**:
 
 - `default` is wired (via `/etc/asound.conf`, rewritten by `rk-audiod`) to the
   USB headset or microphone while one is plugged in, and to the built-in chip
-  otherwise. The built-in chip is shared through `dmix`/`dsnoop` at 44100 Hz,
-  so two programs can play at once and the volume keys keep working.
+  otherwise. Playback on the built-in chip is shared through `dmix` at
+  44100 Hz, so two programs can play at once and the volume keys keep working.
+  A USB sound device is not shared: one program plays through it at a time.
 - The 3.5 mm jack is switched between speaker and headphones by the service.
 - **Do not hardcode `hw:0,0` or `plughw:0,0`.** That bypasses routing: it
   pins you to the built-in chip, ignores the headset, can't share, and makes
@@ -202,6 +203,11 @@ app should **open the ALSA `default` device and nothing else**:
 - For a microphone, open the `default` capture device. The **Sound** window on
   the dock is the reference: if it records your mic and your app doesn't, your
   app is opening its own device instead of `default`.
+- **The microphone is for one program at a time.** Capture is not shared
+  (there is no `dsnoop`): while one program records, a second one that opens
+  the microphone gets "device busy". Open it only while you record and close
+  it afterwards, and tell the owner plainly when it is busy. FireFly's voice
+  messages and Ember's vocoder meet this when both are open.
 - If you genuinely must target a specific device (a diagnostic), read
   `/run/rk-audio/status` (JSON) to see what `rk-audiod` chose, rather than
   guessing a card number.
@@ -317,8 +323,8 @@ installer by hand.
 |---|---|
 | `/home/ark/<App>/` | the app itself (owned by `ark`). FireFly: `/home/ark/firefly`. Stump: `/home/ark/R36MAX-Stump`. |
 | `/home/ark/ports/` | ports-style apps (Ember: `/home/ark/ports/Ember.sh`). |
-| `/roms/ports/<app>/` | a port's working/drop folders. |
-| `/data/ark/` | user data on the data partition (survives reflashing). `/data/ark/apps/` for a dock entry added at install time. |
+| `/data/ark/` | **the place for an app's own files on RK3326 Linux**: user data on the data partition (survives reflashing). `/data/ark/apps/` for a dock entry added at install time. |
+| `/roms/ports/<app>/` | a port's working/drop folders, kept for apps that also run on arkos4clone and dArkOS. Don't put new state here. |
 | `/data/opt/` | large optional payloads (Exploit-DB lives here). |
 | `/usr/lib/rk-gpu/` | the GPU driver and SDL2 the launcher puts on `LD_LIBRARY_PATH`. Read-only; don't ship your own copies. |
 

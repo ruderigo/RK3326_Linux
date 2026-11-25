@@ -9,6 +9,8 @@
 # already there, it is kept as it is.
 set -u
 log() { echo "rk-firstboot: $*"; }
+FSTAB=/etc/fstab
+FSTAB_DATA='LABEL=RKDATA    /data  ext4  defaults,noatime,nofail,x-systemd.device-timeout=8s 0 2'
 
 [ -f /etc/ssh/ssh_host_ed25519_key ] || { ssh-keygen -A && log "SSH host keys made"; }
 
@@ -34,7 +36,11 @@ if [ -b "$disk" ] && [ "$disk" != /dev/ ]; then
         fi
         udevadm settle --timeout=10
         mkdir -p /data
-        if [ -b "$part" ]; then
+        if [ -b "$part" ] && [ "$(blkid -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
+            # The image has no /etc/fstab line for /data (the partition is
+            # only made here), so later starts mount it from this one.
+            grep -q '^LABEL=RKDATA[[:space:]]' "$FSTAB" ||
+                echo "$FSTAB_DATA" >> "$FSTAB"
             mountpoint -q /data || mount /data || log "could not mount /data"
             mountpoint -q /data && { mkdir -p /data/ark; chown ark:ark /data/ark; }
         fi

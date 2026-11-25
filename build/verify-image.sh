@@ -138,6 +138,9 @@ ARK=$(filecat /etc/shadow | grep '^ark:') || fail "no user ark"
 filecat /etc/shadow | grep -qE '^root:[!*]' || fail "root is not locked"
 ok "user ark: password set and due for change at first login; root locked"
 filecat /etc/fstab | grep -q '^/dev/mmcblk0p2[[:space:]]*/[[:space:]]' || fail "fstab has no system partition line"
+filecat /etc/fstab | grep -q 'RKDATA' && fail "fstab waits for the data partition, which the first start has not made yet"
+filecat /usr/local/sbin/rk-firstboot | grep -q "^FSTAB_DATA='LABEL=RKDATA[[:space:]]*/data[[:space:]]" ||
+    fail "rk-firstboot does not add the /data line to fstab"
 [ -z "$(filecat /etc/machine-id)" ] || fail "machine-id is not empty"
 ok "fstab and an empty machine-id"
 # firmware of the Wi-Fi dongle the project uses (Ralink RT3070, driver rt2800usb)
