@@ -4,7 +4,7 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
-## Next
+## 1.3.0 — 2026-11-25
 
 - **STUMP Recon is on the dock** (Comms → STUMP Recon, version 0.4.1-rk3326):
   LoRa and 2.4 GHz recon through a Heltec V3 or another ESP32 board on USB,
@@ -14,8 +14,8 @@ replace is in [`docs/updates.md`](docs/updates.md).
   AppManager with A, with no Wi-Fi needed. `rk-apps install|update
   stump-recon` does the same, and takes a higher version from its repository
   once one is published there. Captures go to
-  `/data/ark/stump-recon/exports`. It pauses the Stump while it is open. Not
-  yet opened on a handheld.
+  `/data/ark/stump-recon/exports`. It pauses the Stump while it is open. Tried
+  on an R36MAX as an update, before it was merged.
 - **Apps is now AppManager.** The window that shows the dock apps' versions
   and updates them has the new name on the dock, in its title and in the
   guides. Nothing else about it changed, except that its list now scrolls on

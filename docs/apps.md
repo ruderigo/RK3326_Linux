@@ -8,7 +8,7 @@
 These are your own programs ported onto the desktop. Since 1.1.0 they
 are in the image: a freshly flashed card has Ember and FireFly ready on the
 dock, and the Stump's files in place with only its setup left to answer (see
-below). The Provisioner joined them in 1.2.0, and STUMP Recon after it. Each is a full-screen app: when you open it the desktop steps aside
+below). The Provisioner joined them in 1.2.0, and STUMP Recon in 1.3.0. Each is a full-screen app: when you open it the desktop steps aside
 and comes back when you quit it (for FireFly and Stump, SELECT+START returns).
 
 They live under `/home/ark`, where the dock's launchers look. A USB keyboard
@@ -109,12 +109,12 @@ are already on the card. From a terminal: `rk-apps install stump-recon`. Once
 its repository (`stump-rf-recon`) publishes a higher version on its `main`
 branch, AppManager offers that one.
 
-Not yet tried on a handheld: the build starts it with no screen and no board, and
-nobody has opened it on an R36MAX with a board plugged in.
+Tried on an R36MAX as an update of a 1.2.0 card (25 November). The build
+also starts it with no screen and no board.
 
 ## Updating them
 
-The **AppManager** window on the dock (named Apps until 1.2.0) shows each
+The **AppManager** window on the dock (named Apps until 1.3.0) shows each
 app's version here and the newest one, and updates it with A:
 
 ![The AppManager window](apps-window.png)

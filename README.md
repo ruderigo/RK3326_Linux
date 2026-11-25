@@ -12,7 +12,7 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first desktop and FireFly, the Stump and Ember built in, for teaching
 and authorised testing on your own equipment.
 
-> **Status: 1.2.0 runs on an R36MAX (type 1 board), tested through 2026-11-25: its first start on a flashed card, and the rest as an update of that card (the CH340 driver, the Provisioner). Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
+> **Status: 1.3.0 runs on an R36MAX (type 1 board), tested through 2026-11-25: its first start on a flashed card (as 1.2.0), and the rest as updates of that card (the CH340 driver, the Provisioner, AppManager, STUMP Recon). Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
 > *Works on that handheld:* kernel 5.10, the screen, the desktop and its
 > pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data
@@ -62,7 +62,7 @@ On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
 built into the image. FireFly and Ember are ready on a fresh card; the Stump
 asks a few questions the first time you open it. With them: the
 **Provisioner** (flashes ESP32 boards) and **STUMP Recon** (LoRa and 2.4 GHz
-recon with a board on USB; new, not yet tried on a handheld). Updating them
+recon with a board on USB; new in 1.3.0). Updating them
 (the **AppManager** window), and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
