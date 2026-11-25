@@ -8,7 +8,7 @@
 These are your own programs ported onto the desktop. Since 1.1.0 they
 are in the image: a freshly flashed card has Ember and FireFly ready on the
 dock, and the Stump's files in place with only its setup left to answer (see
-below). The Provisioner joined them after 1.1.0. Each is a full-screen app: when you open it the desktop steps aside
+below). The Provisioner joined them in 1.2.0. Each is a full-screen app: when you open it the desktop steps aside
 and comes back when you quit it (for FireFly and Stump, SELECT+START returns).
 
 They live under `/home/ark`, where the dock's launchers look. A USB keyboard
