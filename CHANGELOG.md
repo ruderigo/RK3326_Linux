@@ -4,7 +4,7 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
-## Unreleased
+## 1.2.0 — 2026-11-25
 
 From a builder's notes on 1.1.0 (25 November):
 
