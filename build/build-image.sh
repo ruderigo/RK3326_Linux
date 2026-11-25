@@ -269,8 +269,11 @@ printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\tlocalhost ip6-localhost ip6-lo
 cat > "$ROOTFS/etc/fstab" <<'FSTAB'
 /dev/mmcblk0p2  /      ext4  defaults,noatime                                    0 1
 /dev/mmcblk0p1  /boot  vfat  defaults,umask=0022,nofail                          0 2
-LABEL=RKDATA    /data  ext4  defaults,noatime,nofail,x-systemd.device-timeout=8s 0 2
 FSTAB
+# No line for /data here: its partition does not exist until the first start.
+# A line for it made every first start wait 8 seconds and print TIME and
+# DEPEND failures for /data. rk-firstboot adds the line once the partition is
+# there.
 mkdir -p "$ROOTFS/boot" "$ROOTFS/data"
 cat >> "$ROOTFS/etc/os-release.rk" <<REL
 RK_NAME="RK3326 Linux"

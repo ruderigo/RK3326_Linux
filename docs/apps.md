@@ -5,24 +5,24 @@
 
 > Video and Games (mpv and RetroArch) are in [`media.md`](media.md).
 
-These three are your own programs ported onto the desktop. They are not baked
-into the image (each is large and wants its own setup), so they show on the
-dock as **(not installed)** until you fetch them. Each is a full-screen app:
-when you open it the desktop steps aside and comes back when you quit it (for
-FireFly and Stump, SELECT+START returns).
+These three are your own programs ported onto the desktop. Since 1.1.0 they
+are in the image: a freshly flashed card has Ember and FireFly ready on the
+dock, and the Stump's files in place with only its setup left to answer (see
+below). Each is a full-screen app: when you open it the desktop steps aside
+and comes back when you quit it (for FireFly and Stump, SELECT+START returns).
 
-Fetch them over Wi-Fi from the Terminal:
+They live under `/home/ark`, where the dock's launchers look. A USB keyboard
+helps with all three. A card that came from an older image and has since been
+updated may still show one as **(not installed)**; fetch it over Wi-Fi from
+the Terminal:
 
     rk-apps install all        # or: ember | firefly | stump
     rk-apps status
 
-They install under `/home/ark`, where the dock's launchers look, so the icons
-light up once each is in place. A USB keyboard helps with all three.
-
 ## Ember — analog pads and a vocoder
 
-A prebuilt arm64 binary, so this is the simplest: `rk-apps install ember`
-unpacks it into `/home/ark/ports`. It uses SDL2 and ALSA, which are in the
+A prebuilt arm64 binary, so this is the simplest: it is unpacked into
+`/home/ark/ports`. It uses SDL2 and ALSA, which are in the
 image. Audio comes out of the USB-C port (the jack's left channel is a
 hardware fault on this handheld). To rebuild from source instead:
 `sudo apt install build-essential libsdl2-dev libsdl2-ttf-dev libasound2-dev`
@@ -30,10 +30,10 @@ then run its `Ember.sh`, which compiles once.
 
 ## FireFly — messages over LoRa and Wi-Fi
 
-`rk-apps install firefly` downloads the latest release and runs FireFly's own
-installer, which makes a Python virtual environment in `/home/ark/firefly` and
-pulls Reticulum (`rns`/`lxmf`) from pip — so the first install needs internet.
-The packages it depends on (python3-venv, python3-serial, python3-cryptography,
+FireFly is installed when the image is built, by its own installer: a Python
+virtual environment in `/home/ark/firefly`, with Reticulum (`rns`/`lxmf`) from
+pip. Installing it again by hand (`rk-apps install firefly`) therefore needs
+internet. The packages it depends on (python3-venv, python3-serial, python3-cryptography,
 opus-tools, codec2) are already in the image. Plug an RNode LoRa board into USB
 for the radio; it also works over Wi-Fi/LAN without one.
 

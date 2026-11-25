@@ -4,6 +4,22 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## Unreleased
+
+From a builder's notes on 1.1.0 (25 November):
+
+- **The first start no longer prints failures for `/data`.** The image's
+  `/etc/fstab` waited 8 seconds for the data partition before the first start
+  had made it, and showed TIME and DEPEND failures that were not failures.
+  The image now has no line for `/data`; `rk-firstboot` adds it once the
+  partition is there. Cards already in use keep their line and are not
+  touched.
+- **Guides brought in line with 1.1.0**: `docs/apps.md` says the three dock
+  apps are in the image; `docs/building-apps.md` says the microphone is for
+  one program at a time (capture is not shared), and that `/data/ark` is the
+  place for an app's files, with `/roms/ports` kept for arkos4clone and
+  dArkOS.
+
 ## 1.1.0 — 2026-11-24
 
 - **Every RK3326 handheld arkos4clone supports, from one image**: 93 of them,
