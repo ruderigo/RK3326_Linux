@@ -65,6 +65,7 @@ proxychains4
 
 # --- support for the dock apps (FireFly, Ember; Stump installs its own) ---
 # FireFly: a Python/pygame app that makes a venv and talks to a LoRa radio
+# (STUMP Recon reads its board through python3-serial as well)
 python3-venv
 python3-serial
 python3-cryptography

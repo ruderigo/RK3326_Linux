@@ -39,7 +39,7 @@ and authorised testing on your own equipment.
   is on the card as a fallback.
 - Boots to its own **desktop**, driven by the gamepad: a dock at the bottom
   whose icons grow under the cursor, and windows for Files, Terminal, Scan,
-  Arsenal, Survey, Network, Devices, Sound, Apps and Settings. A USB keyboard works too.
+  Arsenal, Survey, Network, Devices, Sound, AppManager and Settings. A USB keyboard works too.
 - The **left stick moves a pointer** over all of it; A presses what it is
   on. A USB mouse does the same.
 - **Terminal**: a real shell in a window, with an on-screen keyboard.
@@ -60,7 +60,10 @@ and authorised testing on your own equipment.
 
 On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
 built into the image. FireFly and Ember are ready on a fresh card; the Stump
-asks a few questions the first time you open it. Updating them, and the
+asks a few questions the first time you open it. With them: the
+**Provisioner** (flashes ESP32 boards) and **STUMP Recon** (LoRa and 2.4 GHz
+recon with a board on USB; new, not yet tried on a handheld). Updating them
+(the **AppManager** window), and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
 

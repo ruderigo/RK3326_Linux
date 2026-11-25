@@ -1,0 +1,14 @@
+Apps that travel with the system.
+
+A folder here is an app's own release, unchanged: its files and its own
+installer. rk-apps installs from it when the app's repository does not
+publish a newer one, so the app is on a fresh card, reaches a card that is
+updated and not flashed again (an update replaces /usr/share/rk), and
+installs with no network.
+
+  stump-rf-recon   STUMP Recon, the RK3326 Linux port (its VERSION file says which)
+
+To bring in a new version: replace the folder with the app's release and
+keep VERSION as its first line reads. Once the app's repository carries the
+same layout on its main branch (VERSION, deploy/install.sh), rk-apps takes
+whichever version is higher.

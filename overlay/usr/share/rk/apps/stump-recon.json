@@ -1,0 +1,22 @@
+{
+  "name": "STUMP Recon",
+  "icon": "chip",
+  "group": "Comms",
+  "about": "Dual-band LoRa & 2.4 GHz RF recon",
+  "exec": [
+    "/home/ark/stump-rf-recon/STUMP-Recon.sh"
+  ],
+  "before": [
+    "/usr/local/bin/rk-stump-pause",
+    "pause"
+  ],
+  "after": [
+    "/usr/local/bin/rk-stump-pause",
+    "resume"
+  ],
+  "mouse": false,
+  "needs": [
+    "~/stump-rf-recon/STUMP-Recon.sh",
+    "~/stump-rf-recon/stump-recon/stump_gui.py"
+  ]
+}

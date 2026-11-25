@@ -1,11 +1,13 @@
-"""Apps: the versions of FireFly, Stump, Ember and the Provisioner here and
-the newest ones, and their updates.
+"""AppManager: the versions of FireFly, Stump, Ember, the Provisioner and
+STUMP Recon here and the newest ones, and their updates.
 
 An update runs the app's own installer (through rk-apps), so its data and
 settings are kept as that installer keeps them. FireFly and the Stump come
 from the main branch of their repositories, Ember and the Provisioner from
-their newest release. The Provisioner can also be installed from here when a
-card does not have it (one updated from before the image carried it).
+their newest release, STUMP Recon from the copy that came with the system
+or its repository, whichever is newer. The Provisioner and STUMP Recon can
+also be installed from here when a card does not have them (one updated from
+before the image carried them).
 The handheld's password is asked because the installers need root for a few
 steps; it goes to sudo and is not kept.
 """
@@ -17,9 +19,14 @@ from ..system import START_PASSWORD
 from ..widgets import Keyboard
 from .base import Page
 
+# apps that need no setup of their own: A on their row installs them when the card has none
+INSTALLS = ("provisioner", "stump-recon")
+# those whose files came with the system: no network needed to install them
+OFFLINE = ("stump-recon",)
+
 
 class AppsPage(Page):
-    title, icon = "Apps", "update"
+    title, icon = "AppManager", "update"
     job = None                      # a running update outlives the window
     job_name = ""
 
@@ -27,6 +34,7 @@ class AppsPage(Page):
         super().__init__(app)
         self.sel, self.apps, self.check, self.told = 0, [], None, False
         self.view = "list"
+        self.first = 0              # the first row shown, when the list is longer than the window
 
     def enter(self):
         if AppsPage.job is not None:
@@ -40,7 +48,7 @@ class AppsPage(Page):
     def state(self, a):
         """(text, colour, can update) for a row."""
         if a["installed"] == "-":
-            if a["id"] == "provisioner":        # needs no setup: A fetches it
+            if a["id"] in INSTALLS:             # needs no setup: A fetches it
                 return (f"not installed  (A installs {a['newest']})" if a["newest"] != "?" else "not installed",
                         T.MUTED, a["newest"] != "?")
             return "not set up", T.DIM, False
@@ -88,7 +96,7 @@ class AppsPage(Page):
             self.app.toast("Open Stump on the dock to set it up first" if a["id"] == "stump"
                            else f"{a['name']} is not installed", 4, error=True)
             return
-        if not self.app.system.online():
+        if a["id"] not in OFFLINE and not self.app.system.online():
             self.app.toast("Join Wi-Fi first", 4, error=True)
             return
         fresh = self.app.system.password_expired()
@@ -134,7 +142,16 @@ class AppsPage(Page):
                    (x, y), T.MUTED)
             return
         row_h = f.line + f.small_line + 14
+        # a small screen holds fewer rows than there are apps: show the ones
+        # around the selected row, with a mark where the list goes on
+        fit = max(1, (area.bottom - 4 - y) // row_h)
+        first = 0
+        if len(self.apps) > fit:
+            first = max(0, min(max(self.sel - fit + 1, self.first), self.sel, len(self.apps) - fit))
+        self.first = first
         for i, a in enumerate(self.apps):
+            if i < first or i >= first + fit:
+                continue
             r = pygame.Rect(area.x + 12, y, area.w - 24, row_h - 4)
             sel = i == self.sel
             if sel:
@@ -146,6 +163,10 @@ class AppsPage(Page):
             if a.get("source"):
                 G.text(surf, f.small, "from: " + a["source"], (r.right - 14, r.y + 10), T.MUTED, right=True)
             y += row_h
+        if first > 0:
+            G.text(surf, f.small, "▲", (area.right - 16, area.y + 2), T.MUTED, right=True)
+        if first + fit < len(self.apps):
+            G.text(surf, f.small, "▼", (area.right - 16, area.bottom - f.small_line - 2), T.MUTED, right=True)
         note = ("Checking again…" if self.check is not None else
                 "An update runs the app's own installer; its data is kept. FireFly has two sources, switched "
                 "with Y: stable (its published repository) and sandbox (new versions land there first).")
