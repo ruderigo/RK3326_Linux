@@ -65,6 +65,7 @@ die() { echo "build-image: $*" >&2; exit 1; }
 for t in mkfs.vfat mkfs.ext4 mcopy sfdisk xz python3 fdtput fdtget; do
     command -v $t >/dev/null || die "missing tool: $t"
 done
+python3 -c 'import PIL' 2>/dev/null || die "missing tool: python3-pil (it makes the boot logos)"
 CONS="$UP/boot/dArkOS/consoles"
 MODS="$UP/rootfs/dArkOS/usr/lib/modules"
 FIRMWARE="$UP/rootfs/dArkOS/usr/lib/firmware"     # only what build/firmware-upstream.txt names is checked out
@@ -377,6 +378,10 @@ fi
 # ------------------------------------------------------- boot partition
 say "Boot partition: $CONSOLE, kernel $KERNEL"
 cp -a "$CONS" "$BOOT/consoles"
+# our boot logo in place of arkos4clone's, in every panel's size and turn:
+# rk-boot-select copies a handheld's logo from consoles/logo when it is chosen
+python3 "$HERE/make-logos.py" "$REPO/boot-files/logo.jpg" "$BOOT/consoles/logo" "$HERE/logo-turns.txt" ||
+    die "the boot logos could not be made"
 # console folder -> boot logo folder, from arkos4clone's device selector
 python3 - "$UP/dtbTools/internal/console/config.go" > "$BOOT/consoles/logos.txt" <<'PY'
 import re, sys

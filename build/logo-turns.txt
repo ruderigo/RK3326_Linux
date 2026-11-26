@@ -1,0 +1,17 @@
+# How the boot logo is turned for each of arkos4clone's logo folders
+# (consoles/logo/<folder>/logo.bmp). u-boot draws the file as it is, so for a
+# panel mounted on its side the picture is stored turned. The number is how
+# far the upright picture is turned counter-clockwise, read off arkos4clone's
+# own logo in that folder. A folder that is not listed keeps arkos4clone's
+# logo, and the build says so: look at the new one and add its line.
+320P|90
+480P|0
+480P-1|270
+480P-270|90
+480P5-3|90
+540P|180
+720P|0
+720x1280P|90
+720x1280P-90|270
+768P|0
+854x480P|90

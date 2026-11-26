@@ -232,7 +232,7 @@ jobs:
           docker run --rm --privileged -v "$PWD:/src" -w /src \
             -e CONSOLE -e KERNEL -e VERSION -e EMULATORS -e KMODS debian:trixie bash -euo pipefail -c '
               apt-get update -qq
-              apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 ca-certificates device-tree-compiler kmod >/dev/null
+              apt-get install -y -qq --no-install-recommends debootstrap dosfstools e2fsprogs mtools fdisk xz-utils python3 python3-pil ca-certificates device-tree-compiler kmod >/dev/null
               build/build-image.sh upstream out
             '
           sudo chown -R "$(id -u):$(id -g)" out

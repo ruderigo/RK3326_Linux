@@ -48,6 +48,20 @@ done < <(sed -n 's/^load mmc 1:1 \${[a-z_]*} \(.*\)$/\1/p' "$T/boot.ini" | tr -d
 # our device tree changes are in the tree the card starts
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mcopy -i "$T/boot.img" ::rk-device.txt "$T/rk-device.txt"
+# the boot logo: ours, in the only format u-boot shows (a BMP that is not
+# compressed, 24 bits), and the size of the panel of the handheld the image starts on
+mcopy -i "$T/boot.img" ::logo.bmp "$T/logo.bmp" 2>/dev/null || fail "no logo.bmp on the boot partition"
+LOGO_DIR=$(mcopy -i "$T/boot.img" ::consoles/logos.txt - | awk -F'|' -v c="$(mcopy -i "$T/boot.img" ::rk-device.txt - | sed -n 's/^console=//p' | tr -d '\r')" '$1==c {print $2; exit}')
+[ -n "$LOGO_DIR" ] && [ -f "$UP/boot/dArkOS/consoles/$LOGO_DIR/logo.bmp" ] || fail "no logo folder known for this image's handheld"
+python3 - "$T/logo.bmp" "$UP/boot/dArkOS/consoles/$LOGO_DIR/logo.bmp" <<'PY' || fail "the boot logo is not ours in the panel's size, or not a plain 24-bit BMP"
+import struct, sys
+def head(p):
+    b = open(p, "rb").read()
+    return b[:2], struct.unpack("<iiHHI", b[18:34]), b
+(m1, (w1, h1, _, bpp1, comp1), ours), (m2, (w2, h2, _, _, _), stock) = head(sys.argv[1]), head(sys.argv[2])
+sys.exit(0 if m1 == b"BM" and (w1, h1) == (w2, h2) and bpp1 == 24 and comp1 == 0 and ours != stock else 1)
+PY
+ok "boot logo: ours, a plain 24-bit BMP in the size of $LOGO_DIR"
 CONSOLE=$(sed -n 's/^console=//p' "$T/rk-device.txt" | tr -d '\r')
 DTB=$(sed -n 's/^load mmc 1:1 \${dtb_loadaddr} \(.*\)$/\1/p' "$T/boot.ini" | tr -d '\r' | head -n 1)
 mcopy -i "$T/boot.img" "::$DTB" "$T/started.dtb"
