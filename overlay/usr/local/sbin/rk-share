@@ -50,6 +50,7 @@ DATA_MAX=$(( ${RK_SHARE_DATA_MB:-16384} * MIB ))
 SHARE_MIN=$(( ${RK_SHARE_MIN_MB:-1024} * MIB ))
 
 card() {        # the disk the system started from
+    [ -n "${RK_SHARE_CARD:-}" ] && { echo "$RK_SHARE_CARD"; return; }
     local root
     root=$(sed -n 's/.*\broot=\([^ ]*\).*/\1/p' /proc/cmdline)
     case $root in /dev/*) ;; *) root=$(findmnt -n -o SOURCE /) ;; esac
@@ -280,7 +281,8 @@ case "${1:-}" in
                        say "the visible partition is $MNT: $(df -h --output=avail "$MNT" | tail -1 | tr -d ' ') free. Games in $MNT/roms, app packages in $MNT/packages."
                    else say "the visible partition is on the card but not mounted (sudo mount $MNT)"; fi ;;
             requested) say "asked for: it is made at the next start (sudo rk-share cancel takes that back)" ;;
-            none) say "this card has no visible partition: /data fills it. sudo rk-share request makes one." ;;
+            none) say "this card has no visible partition: /data fills it. sudo rk-share request makes one."
+                  [ -s "$STATE/share.log" ] && { say "the last try:"; sed 's/^/    /' "$STATE/share.log"; } ;;
             small) say "this card has no room for a visible partition" ;;
         esac ;;
     request)
@@ -312,7 +314,10 @@ case "${1:-}" in
         rm -f "$REQUEST"; say "request taken back" ;;
     boot)
         echo; say "Making the part of the card a computer can read."
-        convert "$(card)"; rc=$?
+        # in a subshell: a step that gives up ends convert, not this
+        mkdir -p "$STATE"
+        ( convert "$(card)" ) > >(tee "$STATE/share.log") 2>&1; rc=$?
+        echo "result $rc, $(date -u +%FT%TZ)" >> "$STATE/share.log"
         case $rc in
             0) rm -f "$REQUEST"; : > "$ADOPT"
                say "Done. Restarting once more..."
