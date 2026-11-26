@@ -363,7 +363,7 @@ GitHub builds the image for every pull request, every push to `main` and
 every `v*` tag ([workflow](.github/workflows/build.yml)); a branch with no
 pull request is not built. To build by hand, on an arm64 Linux machine with
 Debian trixie's tools (the workflow's `apt-get install` line lists them;
-`python3-pil` makes the boot logos):
+`python3-pygame` makes the boot logos):
 
 ```sh
 . build/upstream.env
@@ -381,13 +381,13 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 KMODS="$PWD/kmods" build/build-image.sh 
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
 | `build/kernel-modules.env`, `build-kernel-modules.sh` | kernel modules arkos4clone's 5.10 kernel is built without (the CH340 serial driver), built from its source; also made into `rk-kernel-modules-<n>.tar.xz` for the releases |
 | `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
-| `build/make-logos.py`, `logo-turns.txt` | the boot logo, made from `boot-files/logo.jpg` for every panel's size and turn |
+| `overlay/usr/lib/rk/bootlogo.py`, `overlay/usr/share/rk/boot-logo/` | the boot logo: the picture (`logo.jpg`), how it is turned for each panel (`turns.txt`), and the program that makes it for every panel, at build time and once on an updated card |
 | `build/check-consoles.py` | reads every handheld's device tree and writes [`docs/devices.md`](docs/devices.md) |
 | `build/emulators.env`, `build-emulators.sh` | RetroArch and its cores, for Games |
 | `build/packages.txt`, `packages-tools.txt`, `packages-media.txt`, `packages-optional.txt` | what is installed |
 | `overlay/` | our files in the system: the first start (`rk-firstboot`, `rk-data-partition`, `rk-share`), the boot files (`rk-boot-select`, `rk-bootcfg`), updates (`rk-update`, `rk-migrate`), apps (`rk-apps`, `rk-pkg`, `rk-paths`), the desktop's service and its permissions |
 | `shell/rkshell/`, `shell/tests/` | the desktop, and the tests the build runs (`test_share.sh`: what `rk-share` does to a card) |
-| `boot-files/` | `wifi.txt`, the README and the logo that go on the BOOT partition |
+| `boot-files/` | `wifi.txt` and the README that go on the BOOT partition |
 
 ## Where the parts come from
 
