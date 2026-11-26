@@ -86,7 +86,7 @@ A board with a CH340 chip (most ESP32 boards) gets a serial port on kernel
 
 ## AppManager: updating these, and installing other apps
 
-The **AppManager** window on the dock (named Apps until 1.2.0) lists the
+The **AppManager** window on the dock (named Apps before 1.2.8) lists the
 apps on this handheld:
 
 ![The AppManager window](apps-window.png)
