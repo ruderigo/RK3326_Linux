@@ -20,7 +20,8 @@ replace is in [`docs/updates.md`](docs/updates.md).
   and arkos4clone's files.
 
 The logo step is tested in the build on a stand-in boot partition, for
-every panel size. Not yet seen on a handheld's screen after an update.
+every panel size, and was seen on an R36MAX on 26 November: a card updated
+to 1.3.1 from Settings showed the new picture at its next start.
 
 ## 1.3.0 — 2026-11-26
 
