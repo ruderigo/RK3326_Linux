@@ -4,6 +4,51 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## 1.3.0 — 2026-11-26
+
+- **A part of the card your computer can read: RKSHARE.** With the card in
+  a Mac or a PC only BOOT showed up, because the system and `/data` are
+  ext4. The card now has a fourth partition, in exFAT, that every computer
+  opens: `roms/` for games and BIOS files, `packages/` for app packages. On
+  the handheld it is `/share`. `/data` is 16 GB and RKSHARE takes the rest
+  of the card (half each on a small card; a card with under about 2 GB free
+  after the system keeps it all for `/data`).
+  - A newly flashed card gets it at the first start.
+  - A card flashed again keeps it, with `/data`: both are found and put back
+    as they were, nothing is formatted.
+  - A card set up before this release keeps its layout until you ask:
+    **Settings → Show the card on a computer**, on Wi-Fi (the exFAT tools
+    are fetched once). Settings says to wait while it prepares, then asks to
+    restart. At that start `/data` is made smaller with what is in it kept,
+    RKSHARE is made, and the handheld restarts once more. It takes a few
+    minutes: plug the charger in and do not switch off. From a terminal:
+    `sudo rk-share request`, `rk-share status`. It cannot be undone, and an
+    update's rollback does not undo it.
+  - Flashing 1.2.8 or older over a card that has RKSHARE loses what is on
+    RKSHARE.
+- **Games reads from RKSHARE.** `/data/ark/roms` is now a link to
+  `/share/roms`; games already there move over.
+- **AppManager also finds packages in `/share/packages`**, so an app's
+  `.zip` can be copied with the card in a computer. It skips the `._` files
+  a Mac leaves on exFAT.
+- **`rk-paths`: the one place an app asks where things are.** `rk-paths
+  inbox APP` gives an app the folders where it finds files from its owner
+  (the one on RKSHARE first), `rk-paths find APP '*.bin'` lists them, and
+  `share`, `data`, `roms`, `packages`, `list` and `env` answer the rest. A
+  command, not a service. Apps should ask it and not write paths:
+  [`docs/building-apps.md`](docs/building-apps.md#where-files-live).
+- **Our own picture at switch-on**, in place of arkos4clone's, made for
+  every panel's size and turn. It shows on a newly flashed card; an update
+  does not touch BOOT. For your own: replace `logo.bmp` on BOOT with a BMP,
+  24 bits, not compressed, exactly the screen's size.
+- The README and the docs were brought up to date (the system partition's
+  size, the card to use, flashing from a Mac's Terminal, what the build
+  runs on).
+
+Tried on an R36MAX with kernel 5.10: a new card, a card flashed again, and
+a 1.2.8 card changed from Settings; RKSHARE opened on a Mac. Not tried: the
+4.4 fallback kernel mounting RKSHARE, and any other handheld.
+
 ## 1.2.8 — 2026-11-25
 
 - **Apps is now AppManager, and it installs apps from packages.** An app
