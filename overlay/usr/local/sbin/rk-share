@@ -296,8 +296,17 @@ case "${1:-}" in
             RK_WHO=rk-share; . /usr/lib/rk/preflight.sh
             rk_need_apt "the exFAT tools" exfatprogs || exit 1
             say "fetching the exFAT tools..."
-            { apt-get install -y -q exfatprogs >/dev/null 2>&1 || { apt-get update -q >/dev/null 2>&1; apt-get install -y -q exfatprogs >/dev/null 2>&1; }; } ||
-                die "could not install exfatprogs"
+            # what apt said is kept and shown when it fails: "could not" alone left no way to tell why
+            apt_log=$(mktemp); APT="apt-get -o DPkg::Lock::Timeout=600"
+            export DEBIAN_FRONTEND=noninteractive
+            if ! $APT install -y -q exfatprogs >"$apt_log" 2>&1; then
+                $APT update -q >"$apt_log" 2>&1
+                $APT install -y -q exfatprogs >>"$apt_log" 2>&1 || {
+                    grep -E '^(E|W|Err):?' "$apt_log" | tail -4 | sed 's/^/rk-share: apt: /'
+                    reason=$(grep -m1 -E '^E:' "$apt_log" | cut -c4-90); rm -f "$apt_log"
+                    die "could not install the exFAT tools (exfatprogs)${reason:+: $reason}"; }
+            fi
+            rm -f "$apt_log"
         fi
         # what /data holds must fit in its new size (checked again, exactly, at the start)
         used=$(df -Pm "$DATA" 2>/dev/null | awk 'NR==2 {print $3}')
