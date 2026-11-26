@@ -398,5 +398,22 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 KMODS="$PWD/kmods" build/build-image.sh 
 - **The system**: [Debian](https://www.debian.org) 13, including packages
   from its `non-free-firmware` section (firmware files for Wi-Fi dongles).
 
+## Licence
+
+What is written for this repository is under the [MIT licence](LICENSE):
+the desktop, the `rk-*` programs, the build scripts, the docs, and the boot
+logo picture.
+
+Three things are not ours to license and keep their own terms:
+
+- **What the image carries.** The Linux kernel and u-boot (GPL-2.0), Debian's
+  packages (each its own licence), the Wi-Fi firmware files (redistributable,
+  not free software) and RetroArch with its cores (GPL-3.0 and others). The
+  MIT licence above covers how the image is put together, not these parts.
+- **The two files in [`build/patches/`](build/patches)** change RetroArch's
+  source, so they are under RetroArch's licence, GPL-3.0-or-later.
+- **arkos4clone's files**, fetched at build time, are under its MIT licence
+  (lcdyk).
+
 Kernel 4.4 no longer receives security fixes, and 5.10 reaches the end of
 its upstream support at the end of 2026. Treat the handheld as a lab tool.
