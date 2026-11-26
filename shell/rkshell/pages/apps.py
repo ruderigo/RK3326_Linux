@@ -1,13 +1,20 @@
-"""AppManager: the versions of FireFly, Stump, Ember, the Provisioner and
-STUMP Recon here and the newest ones, and their updates.
+"""AppManager: the apps on this handheld, their versions, their updates, and
+installing an app from a package.
+
+Two kinds of app are listed. The system's own (FireFly, Stump, Ember, the
+Provisioner): their versions here and the newest ones, and their updates.
+And apps from packages: a .zip put in /data/ark/packages is listed with its
+name and version, A installs it (or a newer one over the one installed), Y
+removes it. A package changes nothing in the system: it is to this handheld
+what a program's installer is to a computer.
 
 An update runs the app's own installer (through rk-apps), so its data and
 settings are kept as that installer keeps them. FireFly and the Stump come
 from the main branch of their repositories, Ember and the Provisioner from
-their newest release, STUMP Recon from the copy that came with the system
-or its repository, whichever is newer. The Provisioner and STUMP Recon can
-also be installed from here when a card does not have them (one updated from
-before the image carried them).
+their newest release. The Provisioner can also be installed from here when a
+card does not have it (one updated from before the image carried it). A
+package's own installer does its work too; nothing checks a package, so the
+window says where it comes from and asks before running it.
 The handheld's password is asked because the installers need root for a few
 steps; it goes to sudo and is not kept.
 """
@@ -20,15 +27,18 @@ from ..widgets import Keyboard
 from .base import Page
 
 # apps that need no setup of their own: A on their row installs them when the card has none
-INSTALLS = ("provisioner", "stump-recon")
-# those whose files came with the system: no network needed to install them
-OFFLINE = ("stump-recon",)
+INSTALLS = ("provisioner",)
+PACKAGES = "/data/ark/packages"
+# (while it runs, when it worked) for what a job is doing
+WORDS = {"update": ("Updating {}", "{} is up to date"), "install": ("Installing {}", "{} is installed"),
+         "remove": ("Removing {}", "{} is removed")}
 
 
 class AppsPage(Page):
     title, icon = "AppManager", "update"
     job = None                      # a running update outlives the window
     job_name = ""
+    job_kind = "update"             # a key of WORDS
 
     def __init__(self, app):
         super().__init__(app)
@@ -47,6 +57,17 @@ class AppsPage(Page):
     # --------------------------------------------------------------- state
     def state(self, a):
         """(text, colour, can update) for a row."""
+        if a.get("bad"):
+            return "not a package: " + a["why"], T.DIM, False
+        if a.get("pkg"):
+            here, there = a["installed"], a["newest"]
+            if here == "-":
+                return f"package {there}  (A installs)", T.MUTED, True
+            if there == "-":
+                return f"{here}  from a package", T.OK, False
+            if here == there:
+                return f"{here}  from a package  (A installs it again)", T.OK, True
+            return f"{here}  →  {there}", T.EMBER_BRIGHT, True
         if a["installed"] == "-":
             if a["id"] in INSTALLS:             # needs no setup: A fetches it
                 return (f"not installed  (A installs {a['newest']})" if a["newest"] != "?" else "not installed",
@@ -68,9 +89,12 @@ class AppsPage(Page):
         if self.view == "running":
             job = AppsPage.job
             return [("B", "back")] if job and job.done else [("B", "hide")]
-        hints = [("A", "update"), ("X", "check again")]
-        if self.apps and self.apps[min(self.sel, len(self.apps) - 1)].get("source"):
+        a = self.apps[min(self.sel, len(self.apps) - 1)] if self.apps else {}
+        hints = [("A", "install" if a.get("pkg") else "update"), ("X", "check again")]
+        if a.get("source"):
             hints.append(("Y", "stable / sandbox"))
+        elif a.get("pkg") and a["installed"] != "-":
+            hints.append(("Y", "remove"))
         return hints + [("B", "close")]
 
     def wants_back(self):
@@ -87,18 +111,46 @@ class AppsPage(Page):
             self.app.dirty = True
             if job.done and not self.told:
                 self.told = True
-                self.app.toast(f"{AppsPage.job_name} is up to date" if job.ok else "The update stopped", 5, error=not job.ok)
+                self.app.toast(WORDS[AppsPage.job_kind][1].format(AppsPage.job_name) if job.ok else "It stopped: see the last lines",
+                               5, error=not job.ok)
                 self.app.fill_dock()
 
     # --------------------------------------------------------------- input
     def update(self, a):
+        if a.get("bad"):
+            self.app.toast("That file is not an app package", 4, error=True)
+            return
+        if a.get("pkg"):
+            return self.install_package(a)
         if not self.state(a)[2]:
             self.app.toast("Open Stump on the dock to set it up first" if a["id"] == "stump"
                            else f"{a['name']} is not installed", 4, error=True)
             return
-        if a["id"] not in OFFLINE and not self.app.system.online():
+        if not self.app.system.online():
             self.app.toast("Join Wi-Fi first", 4, error=True)
             return
+        self.ask_password(lambda pw, old: self.app.system.app_update(a["id"], pw, old), a["name"], "update")
+
+    def install_package(self, a):
+        if not self.state(a)[2]:
+            self.app.toast(f"For a newer {a['name']}, put its package in {PACKAGES}", 5)
+            return
+        # nothing checks a package: say what is about to run, and ask
+        detail = (f"Version {a['newest']}, from {a['file']}. Its own installer runs with this handheld's password."
+                  + (" It has steps for root: it may add programs that run as root." if a.get("root") else "")
+                  + " Install only a package from someone you trust.")
+        self.app.confirm(f"Install {a['name']}?", detail, "Install", lambda: self.ask_password(
+            lambda pw, old: self.app.system.package_install(a["id"], pw, old), a["name"], "install"))
+
+    def remove_package(self, a):
+        detail = ("Its files, its dock entry and what its installer added for root are removed. "
+                  "What it saved on the data partition stays.")
+        self.app.confirm(f"Remove {a['name']}?", detail, "Remove", lambda: self.ask_password(
+            lambda pw, old: self.app.system.package_remove(a["id"], pw), a["name"], "remove"))
+
+    def ask_password(self, start, name, kind):
+        """Ask for the handheld's password, then start(password, the starting
+        password when this one is new) and show the job."""
         fresh = self.app.system.password_expired()
 
         def go(pw):
@@ -107,8 +159,8 @@ class AppsPage(Page):
                 return
             if not pw:
                 return
-            AppsPage.job = self.app.system.app_update(a["id"], pw, START_PASSWORD if fresh else None)
-            AppsPage.job_name, self.view, self.told = a["name"], "running", False
+            AppsPage.job = start(pw, START_PASSWORD if fresh else None)
+            AppsPage.job_name, AppsPage.job_kind, self.view, self.told = name, kind, "running", False
         self.app.push(Keyboard(self.app, "Choose a password for this handheld (8 or more)" if fresh
                                else "This handheld's password (SELECT shows it)", go, secret=True))
 
@@ -126,7 +178,9 @@ class AppsPage(Page):
             self.look()
         elif action == "y" and self.apps and self.check is None:
             a = self.apps[self.sel]
-            if a.get("source"):
+            if a.get("pkg") and a["installed"] != "-":
+                self.remove_package(a)
+            elif a.get("source"):
                 to = "sandbox" if a["source"] == "stable" else "stable"
                 if self.app.system.app_source(a["id"], to):
                     self.app.toast(f"{a['name']} now comes from its {to} repository", 3)
@@ -162,14 +216,16 @@ class AppsPage(Page):
             G.text(surf, f.small, G.fit(f.small, text, r.w - 28), (r.x + 14, r.y + 9 + f.line), colour)
             if a.get("source"):
                 G.text(surf, f.small, "from: " + a["source"], (r.right - 14, r.y + 10), T.MUTED, right=True)
+            elif a.get("pkg") or a.get("bad"):
+                G.text(surf, f.small, "package" if a.get("pkg") else "file", (r.right - 14, r.y + 10), T.MUTED, right=True)
             y += row_h
         if first > 0:
             G.text(surf, f.small, "▲", (area.right - 16, area.y + 2), T.MUTED, right=True)
         if first + fit < len(self.apps):
             G.text(surf, f.small, "▼", (area.right - 16, area.bottom - f.small_line - 2), T.MUTED, right=True)
         note = ("Checking again…" if self.check is not None else
-                "An update runs the app's own installer; its data is kept. FireFly has two sources, switched "
-                "with Y: stable (its published repository) and sandbox (new versions land there first).")
+                f"An update runs the app's own installer; its data is kept. For another app, put its package "
+                f"(a .zip) in {PACKAGES}: it is listed here and A installs it.")
         # the note takes what the rows leave: on a small screen four rows
         # leave room for less of it, or none
         fits = max(0, min(3, (area.bottom - 6 - y) // f.small_line))
@@ -181,7 +237,8 @@ class AppsPage(Page):
         x, y = area.x + 16, area.y + 10
         done, ok = bool(job and job.done), bool(job and job.ok)
         why = job.reason if job else ""
-        head = f"{AppsPage.job_name} is up to date" if ok else "The update stopped" if done else f"Updating {AppsPage.job_name}"
+        doing, did = WORDS[AppsPage.job_kind]
+        head = did.format(AppsPage.job_name) if ok else "It stopped" if done else doing.format(AppsPage.job_name)
         G.text(surf, f.big, head, (x, y), T.OK if ok else T.ERROR if done else T.EMBER_BRIGHT)
         y += f.line + 6
         sub = ("B goes back to the list." if ok

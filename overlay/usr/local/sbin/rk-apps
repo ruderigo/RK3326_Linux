@@ -1,20 +1,26 @@
 #!/bin/bash
-# The dock apps (Ember, FireFly, Stump, the Provisioner, STUMP Recon): fetch
-# them, see their versions, update them. Over Wi-Fi, into /home/ark where the
-# dock's launchers look. The AppManager window on the dock runs this.
+# The dock apps (Ember, FireFly, Stump, the Provisioner): fetch them, see
+# their versions, update them. Over Wi-Fi, into /home/ark where the dock's
+# launchers look. The AppManager window on the dock runs this.
+#
+# These four are the apps the system carries. Any other app comes as a
+# package (a .zip in /data/ark/packages) and is handled by rk-pkg, which
+# the last three commands below pass on to: installing one changes nothing
+# in the system.
 #
 #   rk-apps status                     what is installed
 #   rk-apps versions                   installed and newest version of each
-#   rk-apps install ember|firefly|stump|provisioner|stump-recon|all     (from each one's latest release)
-#   rk-apps update ember|firefly|stump|provisioner|stump-recon|all
+#   rk-apps install ember|firefly|stump|provisioner|all     (from each one's latest release)
+#   rk-apps update ember|firefly|stump|provisioner|all
 #   rk-apps source firefly|stump stable|sandbox  where FireFly/Stump updates come from
+#   rk-apps packages                   the packages found, and the apps installed from one
+#   rk-apps package-install FILE|ID    install or update an app from its package
+#   rk-apps package-remove ID          take such an app off again
 #
 # An update takes FireFly and the Stump from the main branch of their
 # repositories (their GitHub releases lag behind), and Ember and the
 # Provisioner from their newest release (Ember's binary is only built for
-# releases; the Provisioner's release carries its firmware). STUMP Recon
-# comes with the system (/usr/share/rk/bundled) and from its repository once
-# that publishes a higher version. Each app's own installer
+# releases; the Provisioner's release carries its firmware). Each app's own installer
 # does the work, so its data and settings are kept as that installer keeps
 # them.
 #
@@ -42,7 +48,6 @@ room_for() {        # room_for APP [update]
         stump)          mb=250; mem=60 ;;
         stump-update)   mb=40;  mem=60 ;;       # a few MB of files, and room to work in
         provisioner|provisioner-update) mb=90 ;; # the release, unpacked, and its copy in the home folder
-        stump-recon|stump-recon-update) mb=15 ;; # two Python files and a launcher, and a checkout when its repository has a newer one
         *)              return 0 ;;
     esac
     rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
@@ -155,52 +160,8 @@ install_provisioner() {     # also its update: the installer keeps what it shoul
     say "The Provisioner is now $(head -1 "$PROVISIONER_APP/VERSION" 2>/dev/null)."
 }
 
-# STUMP Recon (LoRa and 2.4 GHz recon with a Heltec V3 or another ESP32 board
-# on USB). A copy travels with the system, in /usr/share/rk/bundled: it is on
-# a fresh card, an OS update brings it to a card that is not flashed again,
-# and it installs with no network. Its repository's main branch is used
-# instead once it carries a higher VERSION and the same deploy/install.sh.
-RAW=https://raw.githubusercontent.com/ruderigo
-STUMP_RECON_REPO=stump-rf-recon
-STUMP_RECON_APP="$H/stump-rf-recon"
-STUMP_RECON_BUNDLED="${RK_BUNDLED:-/usr/share/rk/bundled}/stump-rf-recon"
-stump_recon_published() {   # the VERSION on its repository's main branch; nothing when there is none
-    online || return 0
-    curl -fsSL -m 10 "$RAW/$STUMP_RECON_REPO/main/VERSION" 2>/dev/null | head -1 | tr -d '\r' | grep -E '^[0-9][0-9A-Za-z.+-]*$'
-}
-stump_recon_newest() {      # "VERSION WHERE": the higher of the system's copy and the published one
-    local b p
-    b=$(head -1 "$STUMP_RECON_BUNDLED/VERSION" 2>/dev/null); p=$(stump_recon_published)
-    if [ -n "$p" ] && { [ -z "$b" ] || [ "$(printf '%s\n%s\n' "$b" "$p" | sort -V | tail -1)" != "$b" ]; }; then
-        echo "$p repository"
-    elif [ -n "$b" ]; then
-        echo "$b system"
-    fi
-}
-install_stump_recon() {     # also its update: the installer writes over the app and keeps the captures on /data
-    local v where src rc
-    read -r v where <<<"$(stump_recon_newest)"
-    [ -n "$v" ] || { say "STUMP Recon is not in this system and its repository has no version yet."; return 1; }
-    src=$STUMP_RECON_BUNDLED
-    if [ "$where" = repository ]; then
-        say "Fetching STUMP Recon $v from its repository..."
-        src="$H/.cache/rk-apps/$STUMP_RECON_REPO"
-        if ! sync_repo "$STUMP_RECON_REPO" "$src" || [ ! -f "$src/deploy/install.sh" ]; then
-            [ -f "$STUMP_RECON_BUNDLED/deploy/install.sh" ] || { say "could not fetch STUMP Recon."; return 1; }
-            say "could not fetch it: installing the copy that came with the system."
-            src=$STUMP_RECON_BUNDLED
-        fi
-    else
-        say "Installing STUMP Recon $v (the copy that came with the system)..."
-    fi
-    say "Running STUMP Recon's own installer..."
-    bash "$src/deploy/install.sh"; rc=$?
-    [ "$rc" -eq 0 ] || { say "STUMP Recon's installer stopped (its message is above)."; return 1; }
-    chmod +x "$STUMP_RECON_APP/STUMP-Recon.sh" 2>/dev/null
-    say "STUMP Recon is now $(head -1 "$STUMP_RECON_APP/VERSION" 2>/dev/null)."
-}
-
 # ------------------------------------------------------------ versions
+RAW=https://raw.githubusercontent.com/ruderigo
 # FireFly and Stump each have two repositories: the published one, and the
 # sandbox where new versions land first. "rk-apps source firefly|stump sandbox"
 # (or Y in the AppManager window) switches; the choice is kept in ~/.config/rk-apps.
@@ -246,10 +207,6 @@ versions() {        # one line each: id|name|installed|newest|source   ("-" not 
     i=$(head -1 "$PROVISIONER_APP/VERSION" 2>/dev/null)
     [ -x "$PROVISIONER_APP/RK3326_Provisioner.sh" ] || i=-
     echo "provisioner|Provisioner|${i:-?}|$(a=$(provisioner_latest); echo "${a:-?}")"
-    i=$(head -1 "$STUMP_RECON_APP/VERSION" 2>/dev/null)
-    [ -x "$STUMP_RECON_APP/STUMP-Recon.sh" ] || i=-
-    read -r a _ <<<"$(stump_recon_newest)"
-    echo "stump-recon|STUMP Recon|${i:-?}|${a:-?}"
 }
 
 # ------------------------------------------------------------- updates
@@ -297,28 +254,32 @@ update_stump() {
 
 status() {
     for f in "$H/ports/Ember.sh:Ember" "$H/firefly/deploy/FireFly.sh:FireFly" "$H/R36MAX-Stump/handheld/LaBuche_Stump.sh:Stump" \
-             "$PROVISIONER_APP/RK3326_Provisioner.sh:Provisioner" "$STUMP_RECON_APP/STUMP-Recon.sh:STUMP Recon"; do
+             "$PROVISIONER_APP/RK3326_Provisioner.sh:Provisioner"; do
         p=${f%%:*}; n=${f##*:}
         [ -x "$p" ] && echo "$n installed" || echo "$n absent"
     done
 }
 
+RK_PKG="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/rk-pkg"
 cmd=${1:-}; what=${2:-}
 case "$cmd" in
+    packages) exec "$RK_PKG" list ;;
+    package-install) [ -n "$what" ] || { echo "usage: rk-apps package-install FILE|ID" >&2; exit 2; }
+                     exec "$RK_PKG" install "$what" ;;
+    package-remove)  [ -n "$what" ] || { echo "usage: rk-apps package-remove ID" >&2; exit 2; }
+                     exec "$RK_PKG" remove "$what" ;;
     status) status ;;
     install)
-        # STUMP Recon installs from the system's own copy: no network needed
-        [ "$what" = stump-recon ] || online || { say "not online. Join Wi-Fi first."; exit 1; }
+        online || { say "not online. Join Wi-Fi first."; exit 1; }
         rc=0
         case "$what" in
             ember) room_for ember && install_ember || rc=1 ;;
             firefly) room_for firefly && install_firefly || rc=1 ;;
             stump) room_for stump && clone_stump || rc=1 ;;
             provisioner) room_for provisioner && install_provisioner || rc=1 ;;
-            stump-recon) room_for stump-recon && install_stump_recon || rc=1 ;;
-            all) for a in ember firefly stump provisioner stump-recon; do room_for "$a" || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; } ;;
-            *) echo "usage: rk-apps install ember|firefly|stump|provisioner|stump-recon|all" >&2; exit 2 ;;
+            all) for a in ember firefly stump provisioner; do room_for "$a" || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; install_provisioner || rc=1; } ;;
+            *) echo "usage: rk-apps install ember|firefly|stump|provisioner|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
     versions) versions ;;
@@ -331,18 +292,18 @@ case "$cmd" in
             *) echo "usage: rk-apps source firefly|stump stable|sandbox" >&2; exit 2 ;;
         esac ;;
     update)
-        [ "$what" = stump-recon ] || online || { say "not online. Join Wi-Fi first."; exit 1; }
+        online || { say "not online. Join Wi-Fi first."; exit 1; }
         rc=0
         case "$what" in
             ember) room_for ember && install_ember || rc=1 ;;
             firefly) room_for firefly update && update_firefly || rc=1 ;;
             stump) room_for stump update && update_stump || rc=1 ;;
             provisioner) room_for provisioner update && install_provisioner || rc=1 ;;
-            stump-recon) room_for stump-recon update && install_stump_recon || rc=1 ;;
-            all) for a in ember firefly stump provisioner stump-recon; do room_for "$a" update || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; } ;;
-            *) echo "usage: rk-apps update ember|firefly|stump|provisioner|stump-recon|all" >&2; exit 2 ;;
+            all) for a in ember firefly stump provisioner; do room_for "$a" update || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; install_provisioner || rc=1; } ;;
+            *) echo "usage: rk-apps update ember|firefly|stump|provisioner|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
-    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump provisioner stump-recon all)" >&2; exit 2 ;;
+    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump provisioner all)" >&2
+       echo "       rk-apps packages | package-install FILE|ID | package-remove ID" >&2; exit 2 ;;
 esac

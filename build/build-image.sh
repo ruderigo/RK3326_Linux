@@ -335,7 +335,7 @@ rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
 
-say "The dock apps (Ember, FireFly, the Stump's files, the Provisioner, STUMP Recon)"
+say "The dock apps (Ember, FireFly, the Stump's files, the Provisioner)"
 # Installed here, so a fresh card has them without a command being typed.
 # They are fetched as rk-apps fetches them on a running handheld (the latest
 # release of each), into ark's home, and handed to ark afterwards.
@@ -355,11 +355,6 @@ as_ark /usr/local/sbin/rk-apps install stump || die "the Stump's files could not
 # /etc/udev/rules.d. The dock entry is the image's own (overlay).
 as_ark /usr/local/sbin/rk-apps install provisioner || die "the Provisioner could not be installed"
 [ -x "$ROOTFS/home/ark/rk3326_provisioner/RK3326_Provisioner.sh" ] || die "the Provisioner is not complete in the image"
-# STUMP Recon needs no answers either. Its files are the system's own copy
-# (overlay/usr/share/rk/bundled), put in ark's home by its own installer.
-as_ark /usr/local/sbin/rk-apps install stump-recon || die "STUMP Recon could not be installed"
-[ -x "$ROOTFS/home/ark/stump-rf-recon/STUMP-Recon.sh" ] && [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/stump_gui.py" ] ||
-    die "STUMP Recon is not complete in the image"
 in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
     die "SandBox_Stump_On could not be fetched"
 mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"

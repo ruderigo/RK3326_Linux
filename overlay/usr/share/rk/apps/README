@@ -30,4 +30,8 @@ The app must draw with SDL2 (the desktop provides dArkOS's Mali driver and
 SDL2 on LD_LIBRARY_PATH and sets SDL_VIDEODRIVER=kmsdrm), quit on
 SELECT+START, and open the ALSA "default" device (not hw:0,0).
 
+An app that is not part of the system is installed from a package (a .zip
+in /data/ark/packages, through the AppManager window or rk-pkg); its entry
+goes to /data/ark/apps, never here.
+
 Full contract for builders: docs/building-apps.md in the RK3326 Linux repo.

@@ -2,7 +2,6 @@
 with stand-ins for git and the network."""
 import os
 import subprocess
-import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -95,136 +94,199 @@ with tempfile.TemporaryDirectory() as d:
     p, log = provisioner(d, [])
     assert p.returncode == 1 and "could not find a Provisioner release" in p.stdout and "curl" not in log, p.stdout
 
-# STUMP Recon travels with the system (/usr/share/rk/bundled): it installs
-# from that copy with no network, and from its repository only once that
-# publishes a higher version with the same installer.
-def recon(d, bundled="0.4.1-rk3326", published=None, online=True, command=("install", "stump-recon")):
-    """Run rk-apps with stand-ins: a bundled copy made here, curl answering with `published`."""
-    def release(root, version, tag):
-        os.makedirs(f"{root}/deploy", exist_ok=True)
-        open(f"{root}/VERSION", "w").write(version + "\n")
-        open(f"{root}/deploy/install.sh", "w").write(
-            'src=$(cd "$(dirname "$0")/.." && pwd)\n'
-            'mkdir -p "$HOME/stump-rf-recon" && cp "$src/VERSION" "$HOME/stump-rf-recon/VERSION" && '
-            'printf "#!/bin/sh\\n" > "$HOME/stump-rf-recon/STUMP-Recon.sh" && '
-            f'echo "installer ran from {tag}" >> {d}/LOG\n')
-    if bundled:
-        release(f"{d}/bundled/stump-rf-recon", bundled, "the system")
-    open(f"{d}/ip", "w").write("#!/bin/sh\n" + ("echo 'default via 10.0.0.1 dev wlan0'\n" if online else ""))
-    open(f"{d}/curl", "w").write("#!/bin/sh\n" + (f"echo {published}\n" if published else "exit 22\n"))
-    # git clone ... URL DIR: what its repository would hand out
-    open(f"{d}/git", "w").write(f"""#!/bin/sh
-echo "git $*" >> {d}/LOG
-for last; do :; done
-mkdir -p "$last/deploy" && cp {d}/repo/VERSION "$last/VERSION" && cp {d}/repo/deploy/install.sh "$last/deploy/install.sh"
-""")
-    if published:
-        release(f"{d}/repo", published, "the repository")
-    for tool in ("ip", "git", "curl"):
-        os.chmod(f"{d}/{tool}", 0o755)
-    p = subprocess.run(["bash", RK_APPS, *command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                       env=dict(os.environ, PATH=d + ":" + os.environ["PATH"], HOME=d, RK_BUNDLED=f"{d}/bundled"))
-    return p, (open(f"{d}/LOG").read() if os.path.exists(f"{d}/LOG") else "")
-
-
-def recon_line(out):
-    return next((ln for ln in out.splitlines() if ln.startswith("stump-recon|")), out)
-
-
-# nothing published: the system's copy, and no network is asked for
-with tempfile.TemporaryDirectory() as d:
-    p, log = recon(d, online=False)
-    assert p.returncode == 0, p.stdout
-    assert "installer ran from the system" in log and "git" not in log, log
-    assert "STUMP Recon is now 0.4.1-rk3326" in p.stdout, p.stdout
-    assert os.access(f"{d}/stump-rf-recon/STUMP-Recon.sh", os.X_OK)
-    p, _ = recon(d, online=False, command=("versions",))
-    assert recon_line(p.stdout) == "stump-recon|STUMP Recon|0.4.1-rk3326|0.4.1-rk3326", p.stdout
-    p, _ = recon(d, online=False, command=("status",))
-    assert "STUMP Recon installed" in p.stdout, p.stdout
-# not installed yet: the row says which version A would install
-with tempfile.TemporaryDirectory() as d:
-    p, _ = recon(d, command=("versions",))
-    assert recon_line(p.stdout) == "stump-recon|STUMP Recon|-|0.4.1-rk3326", p.stdout
-# its repository publishes a higher version: that one is fetched and installed
-with tempfile.TemporaryDirectory() as d:
-    p, log = recon(d, published="0.4.10-rk3326", command=("update", "stump-recon"))
-    assert p.returncode == 0, p.stdout
-    assert "clone" in log and "ruderigo/stump-rf-recon" in log and "installer ran from the repository" in log, log
-    assert "STUMP Recon is now 0.4.10-rk3326" in p.stdout, p.stdout
-# its repository is behind the system's copy: the system's copy stays the newest
-with tempfile.TemporaryDirectory() as d:
-    p, log = recon(d, published="0.4.0")
-    assert p.returncode == 0 and "installer ran from the system" in log and "git" not in log, p.stdout + log
-# neither a copy in the system nor a published version: said plainly
-with tempfile.TemporaryDirectory() as d:
-    p, log = recon(d, bundled=None)
-    assert p.returncode == 1 and "has no version yet" in p.stdout and log == "", p.stdout
-# the copy in this repository is whole, and its dock entry is the image's own
-BUNDLED = os.path.normpath(os.path.join(HERE, "..", "..", "overlay", "usr", "share", "rk", "bundled", "stump-rf-recon"))
-for f in ("VERSION", "deploy/install.sh", "host/STUMP-Recon.sh", "host/stump-recon/stump_gui.py", "host/stump-recon/stump_cli.py"):
-    assert os.path.isfile(f"{BUNDLED}/{f}"), f"missing from the bundled STUMP Recon: {f}"
-for f in ("deploy/install.sh", "host/STUMP-Recon.sh"):
-    assert os.access(f"{BUNDLED}/{f}", os.X_OK), f"not executable: {f}"
+# ---------------------------------------------------------------- packages
+# An app that is not the system's comes as a package: a .zip with VERSION,
+# deploy/install.sh and deploy/<id>.json. rk-pkg lists the ones in the
+# packages folder, runs a package's installer, notes what it added for root,
+# and takes all of it off again. The system's files are not touched.
 import json
-entry = json.load(open(os.path.join(BUNDLED, "..", "..", "apps", "stump-recon.json")))
-assert entry == json.load(open(f"{BUNDLED}/deploy/stump-recon.json")), "the dock entry differs from the app's own"
-assert entry["exec"] == ["/home/ark/stump-rf-recon/STUMP-Recon.sh"] and entry["mouse"] is False, entry
+import sys
+import zipfile
+RK_PKG = os.path.join(os.path.dirname(RK_APPS), "rk-pkg")
 
-# and it starts: with no screen and no board it draws its first frames,
-# writes under the data folder it is given, and stops when told to
-import time
+
+def make_package(path, app="demo-app", version="1.0.0", name="Demo App", wrap="", extra=None, leave_out=(), installer=None):
+    """A package as a team would hand it over. Its installer puts the app in
+    ~/demo, a helper in the first watched root folder, and saves data."""
+    installer = installer or (
+        'set -e\nsrc=$(cd "$(dirname "$0")/.." && pwd)\n'
+        'mkdir -p "$HOME/demo" "$DEMO_DATA"\ncp "$src/host/run.sh" "$HOME/demo/run.sh"\ncp "$src/VERSION" "$HOME/demo/VERSION"\n'
+        'echo saved > "$DEMO_DATA/capture.txt"\n'
+        'if [ "$(id -u)" -eq 0 ]; then cp "$src/host/helper" "$DEMO_ROOT/rk-demo-helper"\n'
+        'elif sudo -n true; then sudo cp "$src/host/helper" "$DEMO_ROOT/rk-demo-helper"; else echo "no root: helper skipped"; fi\n')
+    files = {"VERSION": version + "\n", "deploy/install.sh": installer, "host/run.sh": "#!/bin/sh\n", "host/helper": "#!/bin/sh\n",
+             f"deploy/{app}.json": json.dumps({"name": name, "exec": ["/home/ark/demo/run.sh"]})}
+    files.update(extra or {})
+    with zipfile.ZipFile(path, "w") as z:
+        for f, text in files.items():
+            if f not in leave_out:
+                z.writestr(wrap + f, text)
+
+
+def pkg(d, *command, askpass=True):
+    """Run rk-pkg (through rk-apps when asked as it is from the desktop) in a made-up handheld under d."""
+    for sub in ("packages", "dock", "home", "root-sbin", "sudoers", "data", "bin", "system-dock"):
+        os.makedirs(f"{d}/{sub}", exist_ok=True)
+    # sudo: note how it was asked, then do it (the test is whoever runs it)
+    open(f"{d}/bin/sudo", "w").write(f'#!/bin/sh\necho "sudo $*" >> {d}/SUDO\nwhile [ "$1" = -A ] || [ "$1" = -n ]; do shift; done\nexec "$@"\n')
+    os.chmod(f"{d}/bin/sudo", 0o755)
+    env = dict(os.environ, PATH=f"{d}/bin:" + os.environ["PATH"], HOME=f"{d}/home", RK_PKG_DIR=f"{d}/packages",
+               RK_PKG_DOCK=f"{d}/dock", RK_PKG_SYSTEM_DOCK=f"{d}/system-dock", RK_PKG_ROOT_DIRS=f"{d}/root-sbin:{d}/sudoers",
+               DEMO_ROOT=f"{d}/root-sbin", DEMO_DATA=f"{d}/data")
+    env.pop("SUDO_ASKPASS", None)
+    if askpass:
+        env["SUDO_ASKPASS"] = "/bin/true"
+    p = subprocess.run(list(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, stdin=subprocess.DEVNULL)
+    return p
+
+
 with tempfile.TemporaryDirectory() as d:
-    gui = subprocess.Popen([sys.executable, f"{BUNDLED}/host/stump-recon/stump_gui.py"], cwd=d,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", STUMP_RECON_DATA_DIR=d))
-    time.sleep(4)
-    still = gui.poll() is None
-    gui.terminate()
-    try:
-        out = gui.communicate(timeout=10)[0]
-    except subprocess.TimeoutExpired:
-        gui.kill()
-        out = gui.communicate()[0]
-    assert still, "STUMP Recon stopped by itself:\n" + out
-    assert os.path.isdir(f"{d}/exports"), "STUMP Recon did not use its data folder"
+    os.makedirs(f"{d}/packages")
+    exe = f"{d}/home/demo/run.sh"
+    entry = lambda: {"deploy/demo-app.json": json.dumps({"name": "Demo App", "group": "Comms", "exec": [exe]})}
+    make_package(f"{d}/packages/demo-app-1.0.0.zip", extra=entry())
+    make_package(f"{d}/packages/demo-app-1.0.10.zip", version="1.0.10", extra=entry(), wrap="demo-app-1.0.10/")   # a zip made of a folder
+    make_package(f"{d}/packages/demo-app-1.0.9.zip", version="1.0.9", extra=entry())
+    open(f"{d}/packages/holiday-photos.zip", "w").write("not a zip")
+    make_package(f"{d}/packages/no-version.zip", app="other", leave_out=("VERSION",))
+    # listed: the highest version of an app (1.0.10 is above 1.0.9), and why a zip is not a package
+    p = pkg(d, "bash", RK_APPS, "packages")
+    assert p.returncode == 0, p.stdout
+    assert "pkg|demo-app|Demo App|-|1.0.10|root|demo-app-1.0.10.zip\n" in p.stdout, p.stdout
+    assert "bad|holiday-photos.zip|not a zip file\n" in p.stdout and "bad|no-version.zip|no VERSION file\n" in p.stdout, p.stdout
+    # installed, as the desktop does it (no terminal, the password through askpass): the
+    # installer's "sudo -n" and its plain "sudo" both ask through askpass, so its root step is done
+    p = pkg(d, "bash", RK_APPS, "package-install", "demo-app")
+    assert p.returncode == 0 and "Demo App is now 1.0.10." in p.stdout, p.stdout
+    assert os.access(exe, os.X_OK), "the app's program is not executable"
+    assert json.load(open(f"{d}/dock/demo-app.json"))["name"] == "Demo App", "no dock entry"
+    assert os.path.exists(f"{d}/root-sbin/rk-demo-helper"), p.stdout
+    if os.geteuid() != 0:
+        asked = open(f"{d}/SUDO").read()
+        assert "sudo -A true" in asked and "sudo -A cp " in asked and "sudo -n" not in asked, asked
+    rec = json.load(open(f"{d}/dock/.packages/demo-app.json"))
+    assert rec["version"] == "1.0.10" and rec["root_files"] == [f"{d}/root-sbin/rk-demo-helper"], rec
+    assert os.path.realpath(rec["app_dir"]) == os.path.realpath(f"{d}/home/demo"), rec
+    assert f"added for root: {d}/root-sbin/rk-demo-helper" in p.stdout, p.stdout
+    assert "pkg|demo-app|Demo App|1.0.10|1.0.10|root|demo-app-1.0.10.zip\n" in pkg(d, sys.executable, RK_PKG, "list").stdout
+    # nothing of the system's changed, and the unpacked copy is gone
+    assert os.listdir(f"{d}/system-dock") == [] and os.listdir(f"{d}/sudoers") == []
+    # installed again (an update): the helper is still noted, though it was already there
+    p = pkg(d, sys.executable, RK_PKG, "install", f"{d}/packages/demo-app-1.0.9.zip")
+    assert p.returncode == 0 and "is now 1.0.9" in p.stdout, p.stdout
+    assert json.load(open(f"{d}/dock/.packages/demo-app.json"))["root_files"] == [f"{d}/root-sbin/rk-demo-helper"]
+    # removed: its files, its dock entry, what it added for root; its data stays
+    open(f"{d}/root-sbin/rk-wifi", "w").close()                 # the system's own, not this app's
+    p = pkg(d, "bash", RK_APPS, "package-remove", "demo-app")
+    assert p.returncode == 0 and "Demo App is removed" in p.stdout, p.stdout
+    assert not os.path.exists(f"{d}/home/demo") and not os.path.exists(f"{d}/dock/demo-app.json"), p.stdout
+    assert not os.path.exists(f"{d}/root-sbin/rk-demo-helper") and os.path.exists(f"{d}/root-sbin/rk-wifi")
+    assert open(f"{d}/data/capture.txt").read() == "saved\n" and os.path.isdir(f"{d}/home")
+    assert "pkg|demo-app|Demo App|-|1.0.10|" in pkg(d, sys.executable, RK_PKG, "list").stdout
+    assert pkg(d, sys.executable, RK_PKG, "remove", "demo-app").returncode == 1
+    # a registry entry cannot be made to remove a file from somewhere else, or the home folder
+    os.makedirs(f"{d}/dock/.packages", exist_ok=True)
+    open(f"{d}/keep", "w").close()
+    json.dump({"name": "Trick", "root_files": [f"{d}/keep", f"{d}/root-sbin/../keep", "/etc/passwd"], "app_dir": f"{d}/home"},
+              open(f"{d}/dock/.packages/trick.json", "w"))
+    p = pkg(d, sys.executable, RK_PKG, "remove", "trick")
+    assert p.returncode == 0 and os.path.exists(f"{d}/keep") and os.path.isdir(f"{d}/home") and os.path.exists("/etc/passwd"), p.stdout
+    # an installer that fails: said, nothing registered, no dock entry
+    make_package(f"{d}/packages/broken-2.0.zip", app="broken", version="2.0", installer="echo cannot; exit 3\n")
+    p = pkg(d, sys.executable, RK_PKG, "install", "broken")
+    assert p.returncode == 1 and "its installer stopped" in p.stdout and not os.path.exists(f"{d}/dock/broken.json"), p.stdout
+    # an installer that ends well but leaves no program: not called installed
+    make_package(f"{d}/packages/empty-1.zip", app="empty", version="1", installer="true\n",
+                 extra={"deploy/empty.json": json.dumps({"name": "Empty", "exec": [f"{d}/home/nowhere/run.sh"]})})
+    p = pkg(d, sys.executable, RK_PKG, "install", "empty")
+    assert p.returncode == 1 and "program is not there" in p.stdout and not os.path.exists(f"{d}/dock/.packages/empty.json"), p.stdout
 
-# The AppManager window: A installs an app that needs no setup, and STUMP
-# Recon (its files are in the system) without Wi-Fi.
+# what is refused before anything is unpacked
+with tempfile.TemporaryDirectory() as d:
+    os.makedirs(f"{d}/packages"); os.makedirs(f"{d}/system-dock")
+    make_package(f"{d}/packages/a.zip", app="escape", extra={"../outside.txt": "x"})
+    make_package(f"{d}/packages/b.zip", app="firefly")                      # an app of the system's own
+    open(f"{d}/system-dock/games2.json", "w").write("{}")
+    make_package(f"{d}/packages/c.zip", app="games2")                       # an entry the image carries
+    make_package(f"{d}/packages/d.zip", app="Bad Name")
+    make_package(f"{d}/packages/e.zip", app="two", extra={"deploy/second.json": "{}"})
+    make_package(f"{d}/packages/f.zip", app="noentry", extra={"deploy/noentry.json": "{not json"})
+    make_package(f"{d}/packages/g.zip", app="ver", version="latest; reboot")
+    with zipfile.ZipFile(f"{d}/packages/h.zip", "w") as z:                  # a symbolic link inside
+        make = zipfile.ZipInfo("VERSION"); z.writestr(make, "1.0\n")
+        z.writestr("deploy/install.sh", "true\n"); z.writestr("deploy/link.json", json.dumps({"name": "L", "exec": ["x"]}))
+        link = zipfile.ZipInfo("host/passwd"); link.external_attr = 0o120777 << 16; z.writestr(link, "/etc/passwd")
+    out = pkg(d, sys.executable, RK_PKG, "list").stdout
+    for f, why in (("a.zip", "points outside"), ("b.zip", "system's own"), ("c.zip", "system's own"), ("d.zip", "usable id"),
+                   ("e.zip", "more than one"), ("f.zip", "not valid"), ("g.zip", "not a version"), ("h.zip", "symbolic link")):
+        assert any(ln.startswith(f"bad|{f}|") and why in ln for ln in out.splitlines()), (f, out)
+    assert "pkg|" not in out, out
+    for f in "abcdefgh":
+        p = pkg(d, sys.executable, RK_PKG, "install", f"{d}/packages/{f}.zip")
+        assert p.returncode == 1 and "is not a package" in p.stdout, p.stdout
+    assert not os.path.exists(f"{d}/outside.txt") and not os.path.exists(f"{d}/dock/.packages")
+
+# The AppManager window and packages: a package row says what A does; A asks
+# before running an installer nobody checked; Y removes; a zip that is not
+# a package is shown with the reason.
 sys.path.insert(0, os.path.join(HERE, ".."))
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+from rkshell import system as rksystem
 from rkshell.pages.apps import AppsPage
+rows = rksystem.parse_packages("pkg|demo-app|Demo App|1.0.9|1.0.10|root|demo-app-1.0.10.zip\n"
+                               "pkg|plain|Plain|-|2.0|-|plain.zip\npkg|old|Old|3.1|-|-|-\nbad|photos.zip|not a zip file\nnoise\n")
+assert [r.get("id") for r in rows] == ["demo-app", "plain", "old", ""] and rows[0]["root"] and not rows[1]["root"], rows
 
 
 class _Sys:
-    asked = None
-    def online(self): return False
+    def __init__(self): self.calls, self.net = [], False
+    def online(self): return self.net
     def password_expired(self): return False
-    def app_versions(self): return None
+    def package_install(self, app, pw, old=None): self.calls.append(("install", app, pw)); return "job"
+    def package_remove(self, app, pw): self.calls.append(("remove", app, pw)); return "job"
+    def app_update(self, app, pw, old=None): self.calls.append(("update", app, pw)); return "job"
 
 
 class _App:
-    def __init__(self): self.system, self.toasts, self.pushed = _Sys(), [], []
+    def __init__(self): self.system, self.toasts, self.asked, self.keys = _Sys(), [], [], []
     def toast(self, text, *a, **k): self.toasts.append(text)
-    def push(self, screen): self.pushed.append(screen)
+    def confirm(self, title, detail, label, on_yes): self.asked.append((title, detail, label, on_yes))
+    def push(self, screen): self.keys.append(screen)
 
 
+import rkshell.pages.apps as apps_page
+apps_page.Keyboard = lambda app, title, go, **k: go          # "typing" is calling it
 assert AppsPage.title == "AppManager"
 page = AppsPage.__new__(AppsPage)
-page.app = _App()
-text, _, can = page.state({"id": "stump-recon", "name": "STUMP Recon", "installed": "-", "newest": "0.4.1-rk3326"})
-assert can and "A installs 0.4.1-rk3326" in text, text
-assert not page.state({"id": "stump", "name": "Stump", "installed": "-", "newest": "2.7.4"})[2]
-import rkshell.pages.apps as apps_page
-apps_page.Keyboard = lambda *a, **k: "keyboard"
+page.app, page.apps, page.sel, page.check, page.view = _App(), rows, 0, None, "list"
+assert page.state(rows[0])[::2] == ("1.0.9  →  1.0.10", True) and page.state(rows[1])[0] == "package 2.0  (A installs)"
+assert page.state(rows[2])[::2] == ("3.1  from a package", False) and "not a zip file" in page.state(rows[3])[0]
+page.update(rows[0])                                        # A: asked first, nothing run yet, and no Wi-Fi needed
+title, detail, label, yes = page.app.asked[-1]
+assert title == "Install Demo App?" and "demo-app-1.0.10.zip" in detail and "as root" in detail and not page.app.system.calls
+yes(); page.app.keys[-1]("secret")
+assert page.app.system.calls == [("install", "demo-app", "secret")] and AppsPage.job_kind == "install" and page.view == "running"
+page.view = "list"
+page.update(rows[1])
+assert "as root" not in page.app.asked[-1][1]               # a package whose installer has no root steps does not say so
+page.sel = 0
+assert ("Y", "remove") in page.hints
+page.handle("y")
+assert page.app.asked[-1][0] == "Remove Demo App?"
+page.app.asked[-1][3](); page.app.keys[-1]("secret")
+assert page.app.system.calls[-1] == ("remove", "demo-app", "secret") and AppsPage.job_kind == "remove"
+page.view, page.sel = "list", 1
+assert ("Y", "remove") not in page.hints                    # not installed: nothing to remove
+before = len(page.app.asked)
+page.handle("y"); page.update(rows[2]); page.update(rows[3])
+assert len(page.app.asked) == before and len(page.app.toasts) == 2, page.app.toasts
+# the system's own apps still want Wi-Fi
 page.update({"id": "provisioner", "name": "Provisioner", "installed": "-", "newest": "0.3.0"})
-assert page.app.toasts == ["Join Wi-Fi first"] and not page.app.pushed, page.app.toasts
-page.update({"id": "stump-recon", "name": "STUMP Recon", "installed": "-", "newest": "0.4.1-rk3326"})
-assert page.app.pushed == ["keyboard"], "STUMP Recon should install without Wi-Fi"
+assert page.app.toasts[-1] == "Join Wi-Fi first"
+AppsPage.job, AppsPage.job_kind = None, "update"
 
 # The dock: an app's installer may have left an entry on /data before the
 # image carried one of the same file name. The image's is kept: no icon twice.
-from rkshell import system as rksystem
 with tempfile.TemporaryDirectory() as d:
     os.makedirs(f"{d}/image"); os.makedirs(f"{d}/data")
     json.dump({"name": "Provisioner", "exec": ["sh"], "about": "the image's"}, open(f"{d}/image/provisioner.json", "w"))

@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""rk-pkg: app packages. An app that is not part of the system is installed
+from a package, the way a program is installed from a file: the system does
+not change, and neither does its version.
+
+A package is a .zip with, at its top (or inside one folder):
+
+    VERSION                 its version, on the first line
+    deploy/install.sh       its own installer, re-runnable, keeps the app's data
+    deploy/<id>.json        its dock entry (name, exec, ...); <id> names the app
+    ...                     the app's files, wherever its installer expects them
+
+Packages are looked for in /data/ark/packages. The AppManager window lists
+them and runs this; from a terminal:
+
+    rk-pkg list             every package found and every app installed from one
+    rk-pkg install FILE|ID  run its installer; the app is on the dock after
+    rk-pkg remove ID        take the app off: its files, its dock entry, and
+                            what its installer added for root
+
+Runs as ark. An installer's root steps go through sudo: from the desktop
+the password comes through sudo's askpass helper (SUDO_ASKPASS), and every
+sudo an installer calls is made to ask that way; in a terminal sudo asks.
+
+Nothing here vouches for a package. Its installer runs with the handheld's
+password and may add programs that run as root. What it added for root
+(in /usr/local/sbin, /usr/local/bin, /etc/sudoers.d, /etc/udev/rules.d) is
+noted, so that removing the app removes it too. The app's own data on
+/data is left alone.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import zipfile
+
+HOME = os.environ.get("HOME") or "/home/ark"
+PKG_DIR = os.environ.get("RK_PKG_DIR", "/data/ark/packages")
+DOCK_DIR = os.environ.get("RK_PKG_DOCK", "/data/ark/apps")
+REG_DIR = os.environ.get("RK_PKG_REG", os.path.join(DOCK_DIR, ".packages"))
+SYSTEM_DOCK = os.environ.get("RK_PKG_SYSTEM_DOCK", "/usr/share/rk/apps")
+# where an installer may put things for root; what appears there is noted
+ROOT_DIRS = [d for d in os.environ.get(
+    "RK_PKG_ROOT_DIRS", "/usr/local/sbin:/usr/local/bin:/etc/sudoers.d:/etc/udev/rules.d").split(":") if d]
+# the apps the system installs itself (rk-apps): a package may not take their names
+RESERVED = {"firefly", "stump", "ember", "provisioner", "games", "all"}
+
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,40}$")
+VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.+~-]{0,40}$")
+MAX_FILES, MAX_MB = 4000, 300
+
+
+def say(text):
+    print(f"rk-pkg: {text}", flush=True)
+
+
+class Refused(Exception):
+    pass
+
+
+def version_key(v):
+    """Ranked as versions are: 0.4.10 above 0.4.9, and 1.0.0 above 1.0.0-rc.1."""
+    m = re.match(r"^(\d+(?:\.\d+)*)(.*)$", v)
+    if not m:
+        return ((), False, [(1, 0, v)])
+    rest = m.group(2).lstrip("-+~.")
+    suffix = [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in re.split(r"[.+~-]", rest) if p]
+    # a plain version outranks the same one with a pre-release suffix; a
+    # build suffix that is not one (-rk3326) ranks as written
+    pre = bool(rest) and re.match(r"^(a|alpha|b|beta|rc|pre|dev)", rest) is not None
+    return (tuple(int(n) for n in m.group(1).split(".")), not pre, suffix)
+
+
+def inspect(path):
+    """What a .zip holds, without unpacking it: a dict, or Refused with the reason."""
+    try:
+        z = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile):
+        raise Refused("not a zip file")
+    with z:
+        infos = z.infolist()
+        if len(infos) > MAX_FILES:
+            raise Refused("too many files")
+        if sum(i.file_size for i in infos) > MAX_MB * 1024 * 1024:
+            raise Refused(f"more than {MAX_MB} MB unpacked")
+        names = [i.filename for i in infos]
+        for n in names:
+            parts = n.replace("\\", "/").split("/")
+            if n.startswith(("/", "\\")) or ".." in parts or (len(n) > 1 and n[1] == ":"):
+                raise Refused("a file in it points outside the package")
+        for i in infos:
+            if (i.external_attr >> 16) & 0o170000 == 0o120000:
+                raise Refused("it holds a symbolic link")
+        # at the top, or inside one folder (a zip made of a folder)
+        tops = {n.split("/")[0] for n in names if n.strip("/")}
+        prefix = ""
+        if "VERSION" not in names and len(tops) == 1:
+            prefix = tops.pop() + "/"
+        if prefix + "VERSION" not in names:
+            raise Refused("no VERSION file")
+        if prefix + "deploy/install.sh" not in names:
+            raise Refused("no deploy/install.sh")
+        entries = [n for n in names if re.fullmatch(re.escape(prefix) + r"deploy/[^/]+\.json", n)]
+        if len(entries) != 1:
+            raise Refused("no dock entry (one deploy/<id>.json)" if not entries else "more than one deploy/*.json")
+        app_id = os.path.basename(entries[0])[:-5]
+        if not ID_RE.match(app_id):
+            raise Refused("its dock entry's file name is not a usable id (a-z, 0-9, . _ -)")
+        if app_id in RESERVED or os.path.exists(os.path.join(SYSTEM_DOCK, app_id + ".json")):
+            raise Refused(f"'{app_id}' is an app of the system's own")
+        lines = z.read(prefix + "VERSION").decode("utf-8", "replace").splitlines()
+        version = lines[0].strip() if lines else ""
+        if not VERSION_RE.match(version):
+            raise Refused("its VERSION is not a version")
+        try:
+            entry = json.loads(z.read(entries[0]).decode("utf-8"))
+            name, exe = entry["name"], entry["exec"]
+            if not (isinstance(name, str) and name.strip() and isinstance(exe, list) and exe and isinstance(exe[0], str)):
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            raise Refused("its dock entry is not valid (name, exec)")
+        installer = z.read(prefix + "deploy/install.sh").decode("utf-8", "replace")
+        asks_root = bool(re.search(r"sudoers|NOPASSWD|/usr/local/s?bin|\bsudo\b", installer))
+        return {"id": app_id, "name": " ".join(name.split())[:40], "version": version, "exec": exe[0],
+                "prefix": prefix, "entry": entries[0], "root": asks_root, "file": path}
+
+
+def found():
+    """(packages by id: the highest version of each, [(file, reason)] for zips that are not packages)."""
+    best, bad = {}, []
+    try:
+        files = sorted(f for f in os.listdir(PKG_DIR) if f.lower().endswith(".zip"))
+    except OSError:
+        files = []
+    for f in files:
+        try:
+            p = inspect(os.path.join(PKG_DIR, f))
+        except Refused as e:
+            bad.append((f, str(e)))
+            continue
+        cur = best.get(p["id"])
+        if cur is None or version_key(p["version"]) > version_key(cur["version"]):
+            best[p["id"]] = p
+    return best, bad
+
+
+def registry():
+    out = {}
+    try:
+        files = sorted(os.listdir(REG_DIR))
+    except OSError:
+        files = []
+    for f in files:
+        if f.endswith(".json") and ID_RE.match(f[:-5]):
+            try:
+                with open(os.path.join(REG_DIR, f)) as fh:
+                    rec = json.load(fh)
+                if isinstance(rec, dict):
+                    out[f[:-5]] = rec
+            except (OSError, ValueError):
+                continue
+    return out
+
+
+def clean(text):
+    return " ".join(str(text).replace("|", "/").split())
+
+
+def cmd_list():
+    """One line each: pkg|id|name|installed|available|root or -|file   ("-" none),
+    and bad|file|reason for a .zip in the folder that is not a package."""
+    try:
+        os.makedirs(PKG_DIR, exist_ok=True)     # so the folder is there to copy a package into
+    except OSError:
+        pass
+    best, bad = found()
+    reg = registry()
+    for app_id in sorted(set(best) | set(reg)):
+        p, r = best.get(app_id), reg.get(app_id, {})
+        print("|".join(["pkg", app_id, clean((p or r).get("name", app_id)), clean(r.get("version", "-")),
+                        p["version"] if p else "-", "root" if (p or r).get("root") else "-",
+                        os.path.basename(p["file"]) if p else "-"]))
+    for f, why in bad:
+        print(f"bad|{clean(f)}|{clean(why)}")
+    return 0
+
+
+def work_dir():
+    """A folder to unpack in: the data partition (most room), not /tmp (memory)."""
+    for base in ("/data/tmp", "/var/tmp"):
+        if base.startswith("/data") and not os.path.ismount("/data"):
+            continue
+        try:
+            os.makedirs(base, exist_ok=True)
+            return tempfile.mkdtemp(prefix="rk-pkg.", dir=base)
+        except OSError:
+            continue
+    return tempfile.mkdtemp(prefix="rk-pkg.")
+
+
+def root_files():
+    seen = set()
+    for d in ROOT_DIRS:
+        try:
+            seen.update(os.path.join(d, f) for f in os.listdir(d))
+        except OSError:
+            pass
+    return seen
+
+
+SUDO_SHIM = """#!/bin/sh
+# No terminal here (the desktop started this): every sudo an installer calls
+# asks through the askpass helper, also one written as "sudo -n" or plain.
+while [ "$1" = -n ] || [ "$1" = -A ]; do shift; done
+exec %s -A "$@"
+"""
+
+
+def under_home(path):
+    """`path` when it is a folder inside the home folder (not the home folder), else ""."""
+    home = os.path.realpath(HOME)
+    real = os.path.realpath(path)
+    return real if real.startswith(home + os.sep) and real != home else ""
+
+
+def cmd_install(what):
+    path = what if os.path.sep in what or what.lower().endswith(".zip") else ""
+    if path and not os.path.isabs(path) and not os.path.exists(path):
+        path = os.path.join(PKG_DIR, path)
+    try:
+        if path:
+            p = inspect(path)
+        else:
+            best, _ = found()
+            if what not in best:
+                say(f"no package for '{what}' in {PKG_DIR}.")
+                return 1
+            p = best[what]
+    except Refused as e:
+        say(f"{os.path.basename(path)} is not a package: {e}.")
+        return 1
+
+    size_mb = sum(i.file_size for i in zipfile.ZipFile(p["file"]).infolist()) // (1024 * 1024) + 1
+    tmp = work_dir()
+    try:
+        for where, need in ((tmp, size_mb + 16), (HOME, size_mb + 16)):
+            free = shutil.disk_usage(where).free // (1024 * 1024)
+            if free < need:
+                say(f"not enough room: {need} MB needed in {where}, {free} MB free. Nothing was changed.")
+                return 1
+        say(f"{p['name']} {p['version']}: unpacking {os.path.basename(p['file'])}...")
+        with zipfile.ZipFile(p["file"]) as z:
+            z.extractall(tmp)
+        src = os.path.join(tmp, p["prefix"]) if p["prefix"] else tmp
+
+        env = dict(os.environ, HOME=HOME)
+        if os.geteuid() != 0:
+            sudo = shutil.which("sudo")
+            if env.get("SUDO_ASKPASS") and sudo:
+                shim = os.path.join(tmp, ".rk-sudo")
+                os.makedirs(shim)
+                with open(os.path.join(shim, "sudo"), "w") as f:
+                    f.write(SUDO_SHIM % sudo)
+                os.chmod(os.path.join(shim, "sudo"), 0o755)
+                env["PATH"] = shim + os.pathsep + env.get("PATH", os.defpath)
+            elif sudo and p["root"] and sys.stdin.isatty():
+                say("its installer has steps for root: sudo asks for this handheld's password.")
+                subprocess.call([sudo, "-v"])
+
+        before = root_files()
+        say("running its own installer...")
+        rc = subprocess.call(["bash", "deploy/install.sh"], cwd=src, env=env, stdin=subprocess.DEVNULL
+                             if not sys.stdin.isatty() else None)
+        added = sorted(root_files() - before)
+        if rc != 0:
+            say("its installer stopped (its message is above).")
+            if added:
+                say("it had already added: " + ", ".join(added))
+            return 1
+
+        os.makedirs(DOCK_DIR, exist_ok=True)
+        dock = os.path.join(DOCK_DIR, p["id"] + ".json")
+        if not os.path.exists(dock):
+            shutil.copyfile(os.path.join(tmp, p["entry"]), dock)
+        exe = os.path.expanduser(p["exec"])
+        if os.path.isabs(exe):
+            if not os.path.isfile(exe):
+                say(f"its installer ended, but the app's program is not there: {exe}")
+                return 1
+            os.chmod(exe, os.stat(exe).st_mode | 0o755)     # a zip does not keep the executable bit
+
+        old = registry().get(p["id"], {})
+        rec = {"id": p["id"], "name": p["name"], "version": p["version"], "root": p["root"],
+               "from": os.path.basename(p["file"]), "installed": time.strftime("%Y-%m-%d %H:%M"),
+               "app_dir": under_home(os.path.dirname(exe)) if os.path.isabs(exe) else "",
+               "root_files": sorted(set(old.get("root_files", [])) | set(added))}
+        os.makedirs(REG_DIR, exist_ok=True)
+        with open(os.path.join(REG_DIR, p["id"] + ".json"), "w") as f:
+            json.dump(rec, f, indent=1)
+        for path in added:
+            say(f"added for root: {path}")
+        say(f"{p['name']} is now {p['version']}.")
+        return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def cmd_remove(app_id):
+    rec = registry().get(app_id) if ID_RE.match(app_id) else None
+    if not rec:
+        say(f"'{app_id}' was not installed from a package.")
+        return 1
+    name = rec.get("name", app_id)
+    # only what was noted, and only in the folders watched: never a path from elsewhere
+    roots = [f for f in rec.get("root_files", [])
+             if isinstance(f, str) and os.path.dirname(f) in ROOT_DIRS and os.path.basename(f) not in ("", ".", "..")
+             and os.path.lexists(f)]
+    if roots:
+        say(f"removing what {name} added for root...")
+        if os.geteuid() == 0:
+            cmd = ["rm", "-f", "--"]
+        elif os.environ.get("SUDO_ASKPASS"):
+            cmd = ["sudo", "-A", "rm", "-f", "--"]
+        else:
+            cmd = ["sudo", "rm", "-f", "--"]
+        if subprocess.call(cmd + roots) != 0:
+            say("could not remove them: nothing else was changed.")
+            return 1
+        for f in roots:
+            say(f"removed {f}")
+    app_dir = under_home(rec.get("app_dir", "")) if rec.get("app_dir") else ""
+    if app_dir and os.path.isdir(app_dir):
+        shutil.rmtree(app_dir, ignore_errors=True)
+        say(f"removed {app_dir}")
+    for f in (os.path.join(DOCK_DIR, app_id + ".json"), os.path.join(REG_DIR, app_id + ".json")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    say(f"{name} is removed. What it saved on /data is still there.")
+    return 0
+
+
+def main(argv):
+    if len(argv) == 2 and argv[1] == "list":
+        return cmd_list()
+    if len(argv) == 3 and argv[1] == "install":
+        return cmd_install(argv[2])
+    if len(argv) == 3 and argv[1] == "remove":
+        return cmd_remove(argv[2])
+    print("usage: rk-pkg list | install FILE|ID | remove ID", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
