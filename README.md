@@ -13,17 +13,18 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first desktop and FireFly, the Stump, Ember and the Provisioner built
 in, for teaching and authorised testing on your own equipment.
 
-> **Status: 1.2.8 runs on an R36MAX (type 1 board), tested through 2026-11-25: its first start on a flashed card (as 1.2.0), and the rest as updates of that card (the CH340 driver, the Provisioner, AppManager and an app installed from a package, opened and removed). Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
+> **Status: 1.3.0 runs on an R36MAX (type 1 board), tested through 2026-11-26: its first start on a new card and on a card flashed again (RKSHARE and `/data` made, then kept), a 1.2.8 card given RKSHARE from Settings, RKSHARE opened on a Mac, `rk-paths`, and the boot logo. Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
 > *Works on that handheld:* kernel 5.10, the screen, the desktop and its
 > pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data
-> partition, power-off and restart, charging, updating from Settings, the
+> partition and RKSHARE, power-off and restart, charging, updating from
+> Settings, the CH340 serial driver, the Provisioner, AppManager, the
 > FireFly, Stump and Ember apps, the volume keys, the speaker and 3.5 mm jack
 > switching, a USB microphone, and the Wi-Fi adapter-readiness check.
 >
 > *In the image but not yet tried on a handheld:* Wi-Fi dongles other than
-> the RT3070, USB Ethernet, a USB mouse, and the 4.4 fallback kernel's
-> drivers for them.
+> the RT3070, USB Ethernet, a USB mouse, the 4.4 fallback kernel's drivers
+> for them, and RKSHARE under the 4.4 kernel.
 >
 > *Not tried at all:* any other handheld, the R36S included.
 >
