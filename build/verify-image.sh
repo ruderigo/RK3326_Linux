@@ -101,7 +101,7 @@ has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
 filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-share /usr/local/bin/rk-paths /usr/sbin/mkfs.exfat /usr/sbin/resize2fs /share /etc/systemd/system/sysinit.target.wants/rk-share.service /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps /usr/local/sbin/rk-pkg /usr/local/sbin/rk-update /usr/local/sbin/rk-migrate \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-share /usr/lib/rk/bootlogo.py /usr/share/rk/boot-logo/logo.jpg /usr/share/rk/boot-logo/turns.txt /usr/lib/rk/migrations/0004-boot-logo.sh /usr/local/bin/rk-paths /usr/sbin/mkfs.exfat /usr/sbin/resize2fs /share /etc/systemd/system/sysinit.target.wants/rk-share.service /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps /usr/local/sbin/rk-pkg /usr/local/sbin/rk-update /usr/local/sbin/rk-migrate \
          /usr/lib/rk/migrations/0001-state-to-data.sh \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
