@@ -6,17 +6,24 @@
 #   rk-games where      print the games folder
 #
 # No game and no BIOS file comes with the system. Copy your own into the
-# folder for their machine (over SSH/SFTP, or from a USB stick in Files).
+# folder for their machine: with the card in a computer (the RKSHARE
+# partition, folder roms), over SSH/SFTP, or from a USB stick in Files.
+#
+# /data/ark/roms is a link to /share/roms, the part of the card a computer
+# can read, once the card has one (rk-share): RetroArch keeps one path.
 set -u
 ROMS=/data/ark/roms
 [ -d /data/ark ] || ROMS="${HOME:-/home/ark}/roms"
+# the link with the visible partition not mounted: do not write under it
+[ -L "$ROMS" ] && [ ! -d "$ROMS" ] && ROMS="${HOME:-/home/ark}/roms"
+[ -L "$ROMS" ] && ROMS=$(readlink -f "$ROMS")
 
 case "${1:-}" in
     prepare)
         for d in psx n64 psp nes snes gb gbc gba megadrive mastersystem gamegear pcengine bios saves states; do
             mkdir -p "$ROMS/$d"
         done
-        [ -e "$ROMS/README.txt" ] || cat > "$ROMS/README.txt" <<TXT
+        [ -e "$ROMS/README.txt" ] || cat > "$ROMS/README.txt" 2>/dev/null <<TXT
 Your games go here, one folder per machine:
 
   psx  n64  psp  nes  snes  gb  gbc  gba  megadrive  mastersystem  gamegear  pcengine

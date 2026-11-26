@@ -318,7 +318,13 @@ even a kernel reflash loses nothing. See [`docs/updates.md`](docs/updates.md).
 | sectors 64, 16384, 24576 | boot chain (idbloader, u-boot, trust) |
 | partition 1, FAT32 `BOOT`, 256 MiB | kernel, device tree, `boot.ini`, settings files, boot files for every handheld in `consoles/` |
 | partition 2, ext4 `RKROOT`, 3 GiB | the system |
-| partition 3, ext4 `RKDATA`, rest of the card | your data, on `/data`. Made at the first start. Flashing a new image keeps it. |
+| partition 3, ext4 `RKDATA`, 16 GiB | your data, on `/data`. Made at the first start. Flashing a new image keeps it. |
+| partition 4, exFAT `RKSHARE`, rest of the card | **the part a computer shows** when the card is in its reader: `roms/` for games and BIOS files, `packages/` for apps. `/share` on the handheld. Made at the first start; flashing a new image keeps it. |
+
+A card whose `/data` fills it (flashed before the visible partition existed)
+gets one from **Settings → Show the card on a computer**, or `sudo rk-share
+request`: `/data` is made smaller at the next start, with what is in it
+kept. On a card too small for both, `/data` keeps all of it.
 
 ## Build
 

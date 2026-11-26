@@ -87,8 +87,13 @@ numbered step that runs on their next update or boot.
 
 ## What survives a reflash, and why
 
-The card has three partitions; a reflash replaces only the root partition and
-**keeps RKDATA (`/data`)**. The persistence rule is therefore: all adopter
+The card has four partitions; a reflash replaces only the boot and root
+partitions and **keeps RKDATA (`/data`) and RKSHARE (`/share`, the one a
+computer shows)**: the first start finds both and puts them back in the
+partition table without formatting anything. A card updated from a version
+without RKSHARE keeps its layout until its owner asks for the change in
+**Settings → Show the card on a computer** (the exFAT tools, `exfatprogs`,
+are fetched then: an update does not install packages). The persistence rule is therefore: all adopter
 state lives on `/data`. Migration **0001** moves the apps' folders — the
 FireFly/Stump Reticulum **identity** (the node's address on the mesh), their
 config, and the Stump's working data — onto `/data/ark` and leaves a symlink

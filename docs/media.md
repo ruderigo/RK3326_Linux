@@ -95,11 +95,20 @@ this handheld's GPU, with cores built for its processor by the
 Two cores for the Nintendo 64 because neither runs every game: when one
 stutters or shows a game wrongly, try the other.
 
-**No game and no BIOS file comes with the system.** Copy your own into
-`/data/ark/roms/<folder>` (over SFTP, or from a USB stick with Files). The
-folders are made the first time Games is opened, and they are on the data
-partition, so a reflash keeps them along with saves and save states. The
-PlayStation core plays better with a BIOS file in `/data/ark/roms/bios`.
+**No game and no BIOS file comes with the system.** Copy your own with the
+card in a computer: the `RKSHARE` partition is the one a Mac or a PC shows
+beside `BOOT`, and games go in its `roms/<folder>` (eject the card before
+pulling it out). On the handheld that partition is `/share`, and
+`/data/ark/roms` is a link to `/share/roms`, so SFTP and a USB stick with
+Files work as before. A reflash keeps it, along with saves and save states.
+The PlayStation core plays better with a BIOS file in `roms/bios`.
+
+Only `BOOT` shows on the computer: the card was set up before the visible
+partition existed. **Settings → Show the card on a computer** makes it
+(`/data` becomes 16 GB, what is in it is kept, the games already in
+`/data/ark/roms` move over). It is done at the next restart and takes a few
+minutes: plug the charger in and do not switch off. From a terminal:
+`sudo rk-share request`, `rk-share status`.
 
 In RetroArch: **Load Content**, pick the file, then the core when asked.
 **SELECT+START leaves. SELECT+X opens the menu** (save states, options).

@@ -1,0 +1,74 @@
+#!/bin/bash
+# rk-paths: where things are on this card. The one place that knows.
+#
+# An app asks here instead of writing a path of its own: when the card's
+# layout changes, this changes and every app follows.
+#
+#   rk-paths share            the partition a computer can read (RKSHARE), if this
+#                             card has one and it is mounted; else nothing, exit 1
+#   rk-paths data             the folder for apps' own files and state (/data/ark)
+#   rk-paths roms             the games folder
+#   rk-paths packages         the folders AppManager finds app packages in
+#   rk-paths inbox APP        the folders APP finds files its owner gave it, one a
+#                             line, the first to look in first. They are made if
+#                             missing. On a card with RKSHARE the first is on it:
+#                             the owner drops files there with the card in a
+#                             computer. The other is on /data (SFTP, a USB stick).
+#   rk-paths find APP [GLOB]  the files in APP's inbox folders, full paths, one a
+#                             line (GLOB: a name pattern like '*.bin', any letter
+#                             case). Not what a Mac leaves beside the files it
+#                             copies (names that start with a dot).
+#   rk-paths env              all of it as NAME=value lines, for a program to read
+#   rk-paths list             all of it, for a person to read
+#
+# Runs as any user, changes nothing but the inbox folders it makes, and
+# answers at once: nothing stays running.
+#
+# RKSHARE is exFAT: no owners, no permissions, no links, and the owner edits
+# it on a computer. Read what is put there; keep state on "rk-paths data".
+set -u
+SHARE="${RK_PATHS_SHARE:-/share}"               # RK_PATHS_*: for the tests
+DATA="${RK_PATHS_DATA:-/data/ark}"
+HOME_="${HOME:-/home/ark}"
+
+share() { [ -n "${RK_PATHS_MOUNTED:-}" ] || mountpoint -q "$SHARE" 2>/dev/null || return 1; echo "$SHARE"; }
+data() { if [ -d "$DATA" ]; then echo "$DATA"; else echo "$HOME_"; fi; }    # no data partition: the home folder
+roms() {
+    local r; r="$(data)/roms"
+    [ -L "$r" ] && [ ! -d "$r" ] && r="$HOME_/roms"         # the link, with RKSHARE not mounted
+    [ -L "$r" ] && r=$(readlink -f "$r")
+    echo "$r"
+}
+packages() { echo "$(data)/packages"; local s; s=$(share) && echo "$s/packages"; return 0; }
+app_ok() { case "${1:-}" in ""|*[!a-z0-9_-]*|[!a-z0-9]*) echo "rk-paths: an app's name is small letters, digits, - and _ (got '${1:-}')" >&2; return 1 ;; esac; }
+inbox() {
+    local s d
+    app_ok "$1" || return 2
+    if s=$(share); then mkdir -p "$s/$1" 2>/dev/null; [ -d "$s/$1" ] && echo "$s/$1"; fi
+    d="$(data)/inbox/$1"; mkdir -p "$d" 2>/dev/null; [ -d "$d" ] && echo "$d"
+    return 0
+}
+
+case "${1:-}" in
+    share) share ;;
+    data) data ;;
+    roms) roms ;;
+    packages) packages ;;
+    inbox) inbox "${2:-}" ;;
+    find)
+        app_ok "${2:-}" || exit 2
+        inbox "$2" | while IFS= read -r d; do
+            find "$d" -name '.*' -prune -o -type f -iname "${3:-*}" -print 2>/dev/null | sort
+        done ;;
+    env)
+        echo "RK_SHARE=$(share)"; echo "RK_DATA=$(data)"; echo "RK_ROMS=$(roms)"
+        echo "RK_PACKAGES=$(packages | paste -sd:)" ;;
+    list)
+        if s=$(share); then echo "share     $s   (a computer shows it: RKSHARE)"
+        else echo "share     none on this card (Settings, Show the card on a computer)"; fi
+        echo "data      $(data)   (apps' own files and state)"
+        echo "roms      $(roms)"
+        echo "packages  $(packages | paste -sd' ')"
+        echo "inbox     rk-paths inbox APP: where APP finds files from its owner" ;;
+    *) sed -n '2,/^# Runs as/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

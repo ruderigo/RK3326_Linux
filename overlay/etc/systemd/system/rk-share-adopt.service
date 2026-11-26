@@ -1,0 +1,14 @@
+[Unit]
+Description=Move the games folder to the part of the card a computer can read
+ConditionPathExists=/var/lib/rk/share-adopt
+After=local-fs.target
+# both are "nofail" in fstab, so local-fs.target does not wait for them
+RequiresMountsFor=/data /share
+Before=rkshell.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk-share adopt
+
+[Install]
+WantedBy=multi-user.target

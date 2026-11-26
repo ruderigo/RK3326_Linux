@@ -18,6 +18,8 @@ window says where it comes from and asks before running it.
 The handheld's password is asked because the installers need root for a few
 steps; it goes to sudo and is not kept.
 """
+import os
+
 import pygame
 
 from .. import gfx as G
@@ -28,7 +30,7 @@ from .base import Page
 
 # apps that need no setup of their own: A on their row installs them when the card has none
 INSTALLS = ("provisioner",)
-PACKAGES = "/data/ark/packages"
+PACKAGES = "/share/packages" if os.path.isdir("/share/packages") else "/data/ark/packages"
 # (while it runs, when it worked) for what a job is doing
 WORDS = {"update": ("Updating {}", "{} is up to date"), "install": ("Installing {}", "{} is installed"),
          "remove": ("Removing {}", "{} is removed")}

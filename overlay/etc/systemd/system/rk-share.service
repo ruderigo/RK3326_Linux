@@ -1,0 +1,17 @@
+[Unit]
+Description=Make the part of the card a computer can read (asked for with rk-share request)
+DefaultDependencies=no
+ConditionPathExists=/var/lib/rk/share-requested
+After=systemd-remount-fs.service systemd-udevd.service systemd-udev-trigger.service
+# before anything on the card is checked or mounted: /data is resized unmounted
+Before=local-fs-pre.target rk-firstboot.service
+Wants=local-fs-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk-share boot
+StandardOutput=journal+console
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=sysinit.target

@@ -8,8 +8,15 @@ Before the first start
   3. Eject the card, put it in the handheld, switch on.
 
 First start
-  The first start takes a minute longer: the card gets its own SSH keys and
-  a data partition that fills the rest of the card.
+  The first start takes a minute longer: the card gets its own SSH keys, a
+  data partition, and RKSHARE, a partition your computer can read.
+
+Games and apps
+  Not here. After the first start, put the card back in the computer: a
+  second disk named RKSHARE shows up beside this one. Games go in its
+  roms folder, BIOS files in roms/bios, app packages (.zip) in packages.
+  Only BOOT shows up? The card was set up before RKSHARE existed. On the
+  handheld: Settings, "Show the card on a computer".
 
 Log in over SSH
   ssh ark@HOSTNAME.local        (HOSTNAME is in hostname.txt on this partition)

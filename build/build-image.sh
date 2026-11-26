@@ -34,7 +34,9 @@
 #   sector 24576   trust.img      (12 MiB)
 #   16 MiB         partition 1, FAT32 "BOOT", 256 MiB: kernel, device tree, boot.ini
 #   272 MiB        partition 2, ext4 "RKROOT": the system
-#   after it       partition 3, ext4 "RKDATA": made at the first start, fills the card
+#   after it       partition 3, ext4 "RKDATA": made at the first start, 16 GiB
+#   after it       partition 4, exFAT "RKSHARE": made at the first start, the rest
+#                  of the card; the one a computer shows, for games and packages
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -302,7 +304,7 @@ FSTAB
 # A line for it made every first start wait 8 seconds and print TIME and
 # DEPEND failures for /data. rk-firstboot adds the line once the partition is
 # there.
-mkdir -p "$ROOTFS/boot" "$ROOTFS/data"
+mkdir -p "$ROOTFS/boot" "$ROOTFS/data" "$ROOTFS/share"
 cat >> "$ROOTFS/etc/os-release.rk" <<REL
 RK_NAME="RK3326 Linux"
 RK_VERSION="$VERSION"
@@ -326,7 +328,7 @@ rm -f "$ROOTFS"/etc/ssh/ssh_host_*
 : > "$ROOTFS/etc/machine-id"
 rm -f "$ROOTFS/var/lib/dbus/machine-id"
 
-in_root systemctl enable rk-firstboot.service rk-bootcfg.service rk-audio.service rk-audiod.service rk-mouse.service rk-migrate.service ssh.service NetworkManager.service \
+in_root systemctl enable rk-share.service rk-share-adopt.service rk-firstboot.service rk-bootcfg.service rk-audio.service rk-audiod.service rk-mouse.service rk-migrate.service ssh.service NetworkManager.service \
     avahi-daemon.service systemd-timesyncd.service rkshell.service
 # the desktop has the first console; a text login is on the others (Ctrl+Alt+F2)
 in_root systemctl disable getty@tty1.service 2>/dev/null || true

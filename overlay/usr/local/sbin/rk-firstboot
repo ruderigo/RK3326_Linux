@@ -7,6 +7,10 @@
 # without it, but leaves its contents alone: when a card is flashed again the
 # partition is put back at the same place and, if a RKDATA filesystem is
 # already there, it is kept as it is.
+#
+# After /data comes the partition a computer can read (exFAT, label RKSHARE,
+# mounted on /share): rk-share makes it, or puts it back, here too. /data is
+# 16 GiB and the visible partition takes the rest; see rk-share.
 set -u
 log() { echo "rk-firstboot: $*"; }
 FSTAB=/etc/fstab
@@ -26,13 +30,22 @@ if [ -b "$disk" ] && [ "$disk" != /dev/ ]; then
     if /usr/local/sbin/rk-data-partition "$disk"; then
         [ -b "$part" ] || { partx -a -n 3 "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null; }
         udevadm settle --timeout=10
+        share=1
         if [ ! -b "$part" ]; then
             log "partition 3 did not appear; /data stays on the system partition"
-        elif [ "$(blkid -s TYPE -o value "$part" 2>/dev/null)" = ext4 ] &&
-             [ "$(blkid -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
-            log "kept the existing data partition"
         else
-            mkfs.ext4 -q -F -L RKDATA -O ^orphan_file,^metadata_csum_seed "$part" && log "made the data partition"
+            # the visible partition first: it sets the size of partition 3
+            # (and, on a card whose /data filled it, makes /data smaller)
+            /usr/local/sbin/rk-share convert "$disk"; share=$?
+            if [ "$(blkid -p -s TYPE -o value "$part" 2>/dev/null)" = ext4 ] &&
+               [ "$(blkid -p -s LABEL -o value "$part" 2>/dev/null)" = RKDATA ]; then
+                log "kept the existing data partition"
+            else
+                # the size is given, from the table: the kernel may still
+                # hold the size partition 3 had before the visible one
+                n3=$(sfdisk -d "$disk" 2>/dev/null | grep ' : start=' | sed -n 3p | sed -n 's/.*size= *\([0-9]*\).*/\1/p')
+                mkfs.ext4 -q -F -L RKDATA -O ^orphan_file,^metadata_csum_seed "$part" ${n3:+$(( n3 / 2 ))k} && log "made the data partition"
+            fi
         fi
         udevadm settle --timeout=10
         mkdir -p /data
@@ -44,6 +57,14 @@ if [ -b "$disk" ] && [ "$disk" != /dev/ ]; then
             mountpoint -q /data || mount /data || log "could not mount /data"
             mountpoint -q /data && { mkdir -p /data/ark; chown ark:ark /data/ark; }
         fi
+        case $share in
+            0) /usr/local/sbin/rk-share adopt || log "the visible partition is made but not set up yet" ;;
+            # 4: no room on this card, 5: /data holds too much. Otherwise the
+            # partition is in the table and not formatted yet (the kernel has
+            # to read the table again): the next start finishes it
+            4|5) ;;
+            *) [ -f /var/lib/rk/share-format ] && : > /var/lib/rk/share-requested ;;
+        esac
     else
         log "no data partition made; /data stays on the system partition"
     fi

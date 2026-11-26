@@ -1,4 +1,6 @@
 """SYSTEM: sound, screen, power, and what this handheld is running."""
+import time
+
 import pygame
 
 from .. import gfx as G
@@ -12,9 +14,44 @@ class SystemPage(Page):
     title, icon = "Settings", "settings"
     hints = [("←→", "adjust"), ("A", "choose"), ("B", "close")]
 
+    share_job = None                # asking for the part of the card a computer reads
+    share_said, share_at = "", 0.0
+
     def __init__(self, app):
         super().__init__(app)
         self.list = ListView()
+        self.enter()
+
+    @property
+    def live(self):
+        return SystemPage.share_job is not None
+
+    def poll(self):
+        job = SystemPage.share_job
+        if not job:
+            return
+        if not job.done:
+            # it can take a minute (the exFAT tools are fetched): say so the
+            # whole time, or it looks finished and a restart cuts it short
+            said = [ln.split(": ", 1)[-1] for ln in job.lines if ln.startswith("rk-share: ")]
+            text = "Preparing the card. Wait, do not restart yet. " + (said[-1] if said else "")
+            if text != self.share_said or time.time() - self.share_at >= 1:
+                self.share_said, self.share_at = text, time.time()
+                self.app.toast(text.strip(), 3)
+            return
+        SystemPage.share_job = None
+        said = [ln.split(": ", 1)[-1] for ln in job.lines if ln.startswith("rk-share: ")]
+        self.enter()
+        if job.ok:
+            self.app.confirm("Restart now?", "The card is changed while the handheld starts: a few minutes. "
+                             "Plug the charger in and do not switch off.", "Restart", self.restart)
+        else:
+            self.app.toast(said[-1] if said else "Could not prepare the card", 8, error=True)
+
+    def share(self):
+        if SystemPage.share_job:
+            return
+        SystemPage.share_job = self.app.system.share_request()
         self.enter()
 
     def enter(self):
@@ -28,6 +65,18 @@ class SystemPage(Page):
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
         if s.mouse_enabled() is not None:
             rows.append({"name": "Left-stick mouse", "on": s.mouse_enabled, "flip": s.set_mouse})
+        share = s.share_state()
+        if SystemPage.share_job:
+            rows.append({"name": "Preparing the card… wait", "do": lambda: None})
+        elif share == "none":
+            # /data fills the card: a computer shows only the boot files
+            rows.append({"name": "Show the card on a computer", "do": lambda: self.app.confirm(
+                "Show the card on a computer?",
+                "Makes a part of the card that a Mac or PC opens, for games and app packages. "
+                "/data becomes 16 GB; what is in it is kept. Done at the next restart.", "Prepare", self.share)})
+        elif share == "requested":
+            rows.append({"name": "Card: changed at the next restart", "do": lambda: self.app.confirm(
+                "Restart now?", "A few minutes. Plug the charger in and do not switch off.", "Restart", self.restart)})
         rows += [{"name": "Update this handheld", "do": lambda: self.app.push(OsUpdatePage(self.app))},
                  {"name": "About this handheld", "do": self.about},
                  {"name": "Restart", "do": lambda: self.app.confirm("Restart?", "The handheld starts again.", "Restart", self.restart)},
@@ -35,11 +84,22 @@ class SystemPage(Page):
                                                                      "Power off", self.power_off)}]
         self.list.set(rows)
 
+    def busy(self):
+        """True, with a word to the owner, while the card is being prepared: a restart now would cut it short."""
+        if SystemPage.share_job and not SystemPage.share_job.done:
+            self.app.toast("The card is being prepared. Wait for it to finish.", 5, error=True)
+            return True
+        return False
+
     def restart(self):
+        if self.busy():
+            return
         self.app.toast("Restarting…", 30)
         self.app.system.restart()
 
     def power_off(self):
+        if self.busy():
+            return
         self.app.toast("Powering off…", 30)
         self.app.system.power_off()
 

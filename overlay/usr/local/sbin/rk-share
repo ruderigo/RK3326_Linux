@@ -1,0 +1,344 @@
+#!/bin/bash
+# rk-share: the part of the card a computer can read.
+#
+# The system and /data are ext4: a Mac or a Windows computer does not show
+# them. So the card gets one more partition, in exFAT, that every computer
+# opens when the card is in its reader: games, BIOS files and app packages
+# are copied there. On the handheld it is /share.
+#
+#   partition 3   ext4  RKDATA    /data    16 GiB (half the room on a small card)
+#   partition 4   exFAT RKSHARE   /share   the rest of the card
+#
+#   rk-share state      one word: ready, requested, none, small (no room for it)
+#   rk-share status     the same, in a sentence, with the free space
+#   rk-share request    (a card whose /data fills it) ask for the change; it is
+#                       made at the next start, before /data is mounted
+#   rk-share cancel     take the request back
+#   rk-share boot       (rk-share.service, early in a start) make the change asked for
+#   rk-share convert DISK   (rk-firstboot) the same on a card being set up
+#   rk-share adopt      move the games folder to /share and leave a link in its place
+#
+# Making room: /data is checked, made smaller with what is in it kept
+# (resize2fs), then the partition table is changed, then the new partition
+# is formatted. In that order, an interruption between two steps leaves a
+# card that still starts and a change that can be asked for again. Only an
+# interruption while /data is being made smaller can damage it: the screen
+# says not to switch off.
+#
+# A card flashed again keeps both: the image's table has neither partition,
+# and the first start finds /data, sees the exFAT filesystem right after it
+# and puts both partitions back where they were without formatting anything.
+#
+# Exit status of convert: 0 done, 4 no room for a visible partition (the card
+# is left as it was), 5 /data holds too much, 6 the kernel has to read the
+# new table (a restart finishes it), 1 anything else.
+set -u
+say() { echo "rk-share: $*"; }
+die() { echo "rk-share: $*" >&2; exit "${2:-1}"; }
+
+STATE="${RK_SHARE_STATE:-/var/lib/rk}"         # RK_SHARE_*: for the tests
+REQUEST="$STATE/share-requested"
+FORMAT="$STATE/share-format"                    # holds the first sector of a partition 4 we made and have not formatted yet
+ADOPT="$STATE/share-adopt"
+FSTAB="${RK_SHARE_FSTAB:-/etc/fstab}"
+MNT="${RK_SHARE_MNT:-/share}"
+DATA="${RK_SHARE_DATA:-/data}"
+PARTS="${RK_SHARE_PARTS:-}"                     # tests: a folder with files p3 and p4 standing for the partitions of an image file
+LABEL=RKSHARE
+MIB=2048                                        # sectors
+DATA_MAX=$(( ${RK_SHARE_DATA_MB:-16384} * MIB ))
+SHARE_MIN=$(( ${RK_SHARE_MIN_MB:-1024} * MIB ))
+
+card() {        # the disk the system started from
+    [ -n "${RK_SHARE_CARD:-}" ] && { echo "$RK_SHARE_CARD"; return; }
+    local root
+    root=$(sed -n 's/.*\broot=\([^ ]*\).*/\1/p' /proc/cmdline)
+    case $root in /dev/*) ;; *) root=$(findmnt -n -o SOURCE /) ;; esac
+    echo "/dev/$(lsblk -n -o PKNAME "$root" 2>/dev/null | head -n 1)"
+}
+
+part() {        # part DISK N -> "start size" in sectors, in table order
+    sfdisk -d "$1" 2>/dev/null | grep ' : start=' | sed -n "${2}p" |
+        sed -n 's/.*start= *\([0-9]*\), *size= *\([0-9]*\).*/\1 \2/p'
+}
+
+pdev() {        # pdev DISK N -> the partition's device
+    if [ -n "$PARTS" ]; then echo "$PARTS/p$2"; return; fi
+    case $1 in *[0-9]) echo "${1}p$2" ;; *) echo "$1$2" ;; esac
+}
+
+usable() { [ -b "$1" ] || { [ -n "$PARTS" ] && [ -f "$1" ]; }; }
+probe() { blkid -p -s "$1" -o value "$2" 2>/dev/null; }
+is_data() { [ "$(probe TYPE "$1")" = ext4 ] && [ "$(probe LABEL "$1")" = RKDATA ]; }
+is_share() { [ "$(probe TYPE "$1")" = exfat ]; }
+sectors() { if [ -b "$1" ]; then blockdev --getsz "$1"; else echo $(( $(stat -c %s "$1") / 512 )); fi; }
+
+fs_sectors() {  # size of the ext4 filesystem on $1, in sectors
+    dumpe2fs -h "$1" 2>/dev/null | awk -F: '/^Block count/ {c=$2} /^Block size/ {s=$2} END {if (c && s) printf "%d\n", c * s / 512}'
+}
+
+exfat_at() {    # is there an exFAT filesystem at sector $2 of disk $1?
+    [ "$(dd if="$1" bs=512 skip="$2" count=1 status=none 2>/dev/null | dd bs=1 skip=3 count=8 status=none 2>/dev/null)" = "EXFAT   " ]
+}
+
+data_size() {   # data_size FREE -> sectors for /data out of FREE after the system; nothing when a share has no room
+    local free=$1 want
+    want=$(( free / 2 / MIB * MIB ))
+    [ "$want" -gt "$DATA_MAX" ] && want=$DATA_MAX
+    [ $(( free - want )) -ge "$SHARE_MIN" ] && [ "$want" -ge $(( 64 * MIB )) ] || return 1
+    echo "$want"
+}
+
+ark_ids() { echo "uid=$(id -u ark 2>/dev/null || echo 1000),gid=$(id -g ark 2>/dev/null || echo 1000)"; }
+
+fstab_line() {
+    grep -q "^LABEL=$LABEL[[:space:]]" "$FSTAB" 2>/dev/null && return 0
+    # no check at the start (fsck pass 0): a card pulled out of a computer
+    # without "eject" must not hold the start up; nofail: nor a missing card
+    echo "LABEL=$LABEL   $MNT  exfat  defaults,noatime,nofail,$(ark_ids),umask=0022,x-systemd.device-timeout=8s 0 0" >> "$FSTAB"
+}
+
+format_share() {    # format_share DEV: only ever called for a partition this script has just made
+    command -v mkfs.exfat >/dev/null || { say "mkfs.exfat is missing (package exfatprogs)"; return 1; }
+    mkfs.exfat -L "$LABEL" "$1" >/dev/null 2>&1 || { say "could not format $1"; return 1; }
+    rm -f "$FORMAT"
+    say "formatted the visible partition (exFAT, $LABEL)"
+}
+
+README() {
+    cat <<'TXT'
+RK3326 Linux - the part of the card your computer can read
+
+Put the card in a computer and copy your files here. Eject it before
+you pull it out.
+
+  roms/       your games, one folder per machine:
+              psx  n64  psp  nes  snes  gb  gbc  gba  megadrive
+              mastersystem  gamegear  pcengine
+  roms/bios/  the files some machines need to start (yours to supply)
+  packages/   apps for AppManager: copy an app's .zip here, then open
+              AppManager on the handheld and install it
+
+On the handheld this is the folder /share.
+Saves and save states are in roms/saves and roms/states: copy them to keep them.
+TXT
+}
+
+mounted() { [ -n "${RK_SHARE_MOUNTED:-}" ] || mountpoint -q "$MNT"; }    # RK_SHARE_MOUNTED: for the tests
+
+fill() {        # the folders and the note, on a mounted share
+    mounted || return 1
+    mkdir -p "$MNT/roms" "$MNT/packages"
+    for d in psx n64 psp nes snes gb gbc gba megadrive mastersystem gamegear pcengine bios saves states; do mkdir -p "$MNT/roms/$d"; done
+    [ -e "$MNT/README.txt" ] || README | sed 's/$/\r/' > "$MNT/README.txt"
+}
+
+mount_share() {
+    mkdir -p "$MNT"
+    mounted && return 0
+    modprobe exfat 2>/dev/null
+    mount "$MNT" 2>/dev/null || mount -t exfat -o "noatime,$(ark_ids),umask=0022" "LABEL=$LABEL" "$MNT" 2>/dev/null
+    mountpoint -q "$MNT"
+}
+
+# ---------------------------------------------------------------- convert
+convert() {
+    local disk=$1 s2 n2 s3 n3 s4 n4 end2 total free dev3 dev4 want fs have min keep=0 dump rc
+    read -r s2 n2 < <(part "$disk" 2) || true
+    [ -n "${n2:-}" ] || die "cannot read partition 2 of $disk"
+    end2=$(( s2 + n2 )); total=$(sectors "$disk")
+    read -r s3 n3 < <(part "$disk" 3) || true
+    read -r s4 n4 < <(part "$disk" 4) || true
+    dev3=$(pdev "$disk" 3); dev4=$(pdev "$disk" 4)
+
+    if [ -n "${s4:-}" ]; then
+        # the partition is there: finish a formatting that waited for a restart
+        if [ -f "$FORMAT" ] && [ "$(cat "$FORMAT")" = "$s4" ]; then
+            usable "$dev4" || { say "partition 4 is in the table but the kernel does not show it yet"; return 6; }
+            format_share "$dev4" || return 1
+        fi
+        fstab_line
+        return 0
+    fi
+    [ -n "${s3:-}" ] || die "no data partition on $disk yet (rk-data-partition makes it)"
+    [ "$s3" = "$end2" ] || die "partition 3 does not start right after the system: not touching it"
+    [ $(( s3 + n3 )) -le "$total" ] || die "partition 3 ends after the end of the card"
+    usable "$dev3" || die "the kernel does not show partition 3 ($dev3)"
+    if [ -b "$dev3" ] && findmnt -n -S "$dev3" >/dev/null 2>&1; then die "$dev3 is mounted: this is done before /data is mounted (rk-share request)"; fi
+    free=$(( total - s3 ))
+
+    if is_data "$dev3"; then
+        fs=$(fs_sectors "$dev3"); [ -n "$fs" ] || die "cannot read the size of the filesystem on $dev3"
+        have=$(( (fs + MIB - 1) / MIB * MIB ))
+        if [ "$have" -lt "$n3" ] && exfat_at "$disk" $(( s3 + have )); then
+            # a card flashed again: /data and the visible partition are both
+            # still there, only the table lost them
+            want=$have; keep=1
+            say "found the visible partition after /data: putting both back as they were"
+        else
+            want=$(data_size "$free") || { say "no room on this card for a visible partition: /data keeps it all"; return 4; }
+            say "checking /data"
+            e2fsck -f -y "$dev3" >/dev/null 2>&1; rc=$?
+            [ "$rc" -lt 4 ] || die "/data has errors a check could not repair (e2fsck $rc): nothing changed"
+            min=$(resize2fs -P "$dev3" 2>/dev/null | sed -n 's/.*minimum size of the filesystem: *//p')
+            [ -n "$min" ] || die "cannot tell how much /data holds: nothing changed"
+            # room to work in: a quarter more than the least it can be
+            min=$(( min * $(dumpe2fs -h "$dev3" 2>/dev/null | awk -F: '/^Block size/ {print $2+0}') / 512 * 5 / 4 ))
+            if [ "$min" -gt "$want" ]; then
+                want=$(( (min + 1024 * MIB - 1) / (1024 * MIB) * 1024 * MIB ))
+                [ $(( free - want )) -ge "$SHARE_MIN" ] ||
+                    { say "/data holds too much to make room for a visible partition: free some of it first. Nothing changed."; return 5; }
+                say "/data holds more than the usual size: it keeps $(( want / MIB / 1024 )) GiB"
+            fi
+            if [ "$fs" != "$want" ]; then
+                say "making /data $(( want / MIB )) MiB (it was $(( fs / MIB )) MiB). This takes a few minutes. DO NOT SWITCH OFF."
+                resize2fs "$dev3" "${want}s" >/dev/null 2>&1 || die "could not resize /data (resize2fs): the partition table was not changed"
+                [ "$(fs_sectors "$dev3")" = "$want" ] || die "/data is not the size asked for after resize2fs: the partition table was not changed"
+            fi
+        fi
+    else
+        # nothing on it yet (a new card): rk-firstboot formats it after this
+        want=$(data_size "$free") || { say "no room on this card for a visible partition: /data keeps it all"; return 4; }
+    fi
+
+    # the table: partition 3 becomes its filesystem's size, partition 4 takes the rest
+    dump=$(sfdisk -d "$disk") || die "cannot read the partition table"
+    mkdir -p "$STATE" && echo "$dump" > "$STATE/partition-table.before-share"
+    [ "$keep" = 1 ] || echo $(( s3 + want )) > "$FORMAT"
+    {   echo "start=$s3, size=$want, type=83" | sfdisk --quiet --force --no-reread --wipe never -N 3 "$disk" &&
+        echo "start=$(( s3 + want )), type=7" | sfdisk --quiet --force --no-reread --wipe never --append "$disk"
+    } >/dev/null 2>&1
+    read -r s4 n4 < <(part "$disk" 4) || true
+    if [ "$(part "$disk" 3)" != "$s3 $want" ] || [ "${s4:-}" != $(( s3 + want )) ] ||
+       [ "$(part "$disk" 1)" != "$(echo "$dump" | grep ' : start=' | sed -n 1p | sed -n 's/.*start= *\([0-9]*\), *size= *\([0-9]*\).*/\1 \2/p')" ] ||
+       [ "$(part "$disk" 2)" != "$s2 $n2" ]; then
+        echo "$dump" | sfdisk --quiet --force --no-reread --wipe never "$disk" >/dev/null 2>&1
+        rm -f "$FORMAT"
+        die "the partition table did not come out as planned: the old one was put back"
+    fi
+    say "partition 3 (/data): $(( want / MIB )) MiB. Partition 4 (visible): $(( n4 / MIB )) MiB."
+    fstab_line
+
+    if [ -b "$disk" ]; then
+        partx -u -n 3 "$disk" 2>/dev/null
+        partx -a -n 4 "$disk" 2>/dev/null || partx -u -n 4 "$disk" 2>/dev/null
+        udevadm settle --timeout=10 2>/dev/null
+        if [ ! -b "$dev4" ] || [ "$(sectors "$dev4")" != "$n4" ] || [ "$(sectors "$dev3")" != "$want" ]; then
+            say "the kernel still has the old table: a restart finishes this"
+            return 6
+        fi
+    fi
+    if [ "$keep" = 1 ]; then
+        is_share "$dev4" || say "partition 4 is back but no exFAT filesystem answers on it: left as it is"
+    else
+        format_share "$dev4" || return 1
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------------ adopt
+same_files() {  # every file under $1 is under $2 with the same content
+    ( cd "$1" && find . -type f -print0 | while IFS= read -r -d '' f; do cmp -s "$f" "$2/$f" || exit 1; done )
+}
+
+adopt() {       # the games folder moves to the share; /data/ark/roms stays as a link to it
+    local old="$DATA/ark/roms" new="$MNT/roms"
+    mount_share || { say "the visible partition is not mounted: nothing moved"; return 1; }
+    fill
+    if [ -d "$DATA/ark" ]; then
+        if [ -d "$old" ] && [ ! -L "$old" ]; then
+            # exFAT keeps no owner and no mode: copy the files and their dates
+            if cp -r --preserve=timestamps "$old/." "$new/" 2>/dev/null && same_files "$old" "$new"; then
+                rm -rf "$old"; say "moved the games in $old to the visible partition"
+            else
+                say "could not copy $old to the visible partition (room? a link in it?): it stays where it is"
+                rm -f "$ADOPT"; return 1
+            fi
+        fi
+        [ -e "$old" ] || [ -L "$old" ] || { ln -s "$new" "$old" && chown -h ark:ark "$old" 2>/dev/null; }
+    fi
+    rm -f "$ADOPT"
+    return 0
+}
+
+# ------------------------------------------------------------ the commands
+state() {       # read from /sys: the desktop asks without being root
+    local disk name s3 total
+    disk=$(card); name=${disk#/dev/}
+    case $name in *[0-9]) name=${name}p ;; esac
+    if [ -e "/sys/class/block/${name}4" ] && [ ! -f "$FORMAT" ]; then echo ready
+    elif [ -f "$REQUEST" ]; then echo requested
+    elif s3=$(cat "/sys/class/block/${name}3/start" 2>/dev/null) && total=$(cat "/sys/block/${disk#/dev/}/size" 2>/dev/null) &&
+         data_size $(( total - s3 )) >/dev/null; then echo none
+    else echo small; fi
+}
+
+case "${1:-}" in
+    state) state ;;
+    status)
+        case $(state) in
+            ready) if mounted; then
+                       say "the visible partition is $MNT: $(df -h --output=avail "$MNT" | tail -1 | tr -d ' ') free. Games in $MNT/roms, app packages in $MNT/packages."
+                   else say "the visible partition is on the card but not mounted (sudo mount $MNT)"; fi ;;
+            requested) say "asked for: it is made at the next start (sudo rk-share cancel takes that back)" ;;
+            none) say "this card has no visible partition: /data fills it. sudo rk-share request makes one."
+                  [ -s "$STATE/share.log" ] && { say "the last try:"; sed 's/^/    /' "$STATE/share.log"; } ;;
+            small) say "this card has no room for a visible partition" ;;
+        esac ;;
+    request)
+        [ "$(id -u)" = 0 ] || die "run it with sudo"
+        case $(state) in
+            ready) say "the visible partition is already there ($MNT)"; exit 0 ;;
+            small) die "this card has no room for a visible partition" ;;
+        esac
+        if ! command -v mkfs.exfat >/dev/null; then
+            ip route 2>/dev/null | grep -q '^default' || die "the exFAT tools are not installed yet: join Wi-Fi first, they are fetched once"
+            RK_WHO=rk-share; . /usr/lib/rk/preflight.sh
+            rk_need_apt "the exFAT tools" exfatprogs || exit 1
+            say "fetching the exFAT tools..."
+            # what apt said is kept and shown when it fails: "could not" alone left no way to tell why
+            apt_log=$(mktemp); APT="apt-get -o DPkg::Lock::Timeout=600"
+            export DEBIAN_FRONTEND=noninteractive
+            if ! $APT install -y -q exfatprogs >"$apt_log" 2>&1; then
+                $APT update -q >"$apt_log" 2>&1
+                $APT install -y -q exfatprogs >>"$apt_log" 2>&1 || {
+                    grep -E '^(E|W|Err):?' "$apt_log" | tail -4 | sed 's/^/rk-share: apt: /'
+                    reason=$(grep -m1 -E '^E:' "$apt_log" | cut -c4-90); rm -f "$apt_log"
+                    die "could not install the exFAT tools (exfatprogs)${reason:+: $reason}"; }
+            fi
+            rm -f "$apt_log"
+        fi
+        # what /data holds must fit in its new size (checked again, exactly, at the start)
+        used=$(df -Pm "$DATA" 2>/dev/null | awk 'NR==2 {print $3}')
+        want=$(data_size $(( $(sectors "$(card)") - $(part "$(card)" 3 | cut -d' ' -f1) )))
+        size="$(( want / MIB / 1024 )) GiB"
+        [ -z "$used" ] || [ $(( used * 5 / 4 * MIB )) -le "$want" ] || size="more than $size: it holds $used MB"
+        mkdir -p "$STATE" && : > "$REQUEST"
+        say "Ready. Restart the handheld: /data is made smaller ($size; what is in it is kept)"
+        say "and the rest of the card becomes the part a computer can read."
+        say "It takes a few minutes. Plug the charger in, and do not switch off while it works." ;;
+    cancel)
+        [ "$(id -u)" = 0 ] || die "run it with sudo"
+        [ -f "$FORMAT" ] && die "the change is already under way: restart to finish it"
+        rm -f "$REQUEST"; say "request taken back" ;;
+    boot)
+        echo; say "Making the part of the card a computer can read."
+        # in a subshell: a step that gives up ends convert, not this
+        mkdir -p "$STATE"
+        ( convert "$(card)" ) > >(tee "$STATE/share.log") 2>&1; rc=$?
+        echo "result $rc, $(date -u +%FT%TZ)" >> "$STATE/share.log"
+        case $rc in
+            0) rm -f "$REQUEST"; : > "$ADOPT"
+               say "Done. Restarting once more..."
+               systemctl --no-block reboot ;;
+            6) # once only: a card that still shows the old table after a restart is left alone
+               if [ -f "$STATE/share-retried" ]; then rm -f "$REQUEST" "$STATE/share-retried"; say "the kernel does not take the new table: see docs/card.md"
+               else : > "$STATE/share-retried"; say "Restarting to finish..."; systemctl --no-block reboot; fi ;;
+            *) rm -f "$REQUEST"; say "Not done (see above). The handheld starts as before." ;;
+        esac
+        [ "$rc" = 0 ] && rm -f "$STATE/share-retried"
+        exit 0 ;;
+    convert) convert "${2:?usage: rk-share convert DISK}" ;;
+    adopt) adopt ;;
+    *) echo "usage: rk-share state | status | request | cancel" >&2; exit 2 ;;
+esac
