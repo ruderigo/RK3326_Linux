@@ -20,7 +20,7 @@ skipped at build time; the build log lists any that were skipped.
   macchanger
 - **In the middle**: ettercap, proxychains
 
-## Heavy tools — fetched on first online boot
+## Heavy tools — fetched when you ask
 
 Metasploit (about a gigabyte with its Ruby stack) and a local copy of
 Exploit-DB are too big to flash, so they are pulled when you ask. In
