@@ -331,9 +331,35 @@ not need `rk-apps` to know it: see [Packages](#packages) below.
 | `/data/ark/` | **the place for an app's own files on RK3326 Linux**: user data on the data partition (survives reflashing). `/data/ark/apps/` for a dock entry added at install time. |
 | `/roms/ports/<app>/` | a port's working/drop folders, kept for apps that also run on arkos4clone and dArkOS. Don't put new state here. |
 | `/data/opt/` | large optional payloads (Exploit-DB lives here). |
+| `/share/` | **files the owner copies from a computer.** The `RKSHARE` partition (exFAT), the one a Mac or PC shows when the card is in its reader. `/share/roms` for games, `/share/packages` for app packages, `/share/<your app>/` for files your app takes from the owner. See below. |
 | `/usr/lib/rk-gpu/` | the GPU driver and SDL2 the launcher puts on `LD_LIBRARY_PATH`. Read-only; don't ship your own copies. |
 
 The handheld runs as user **`ark`**. Install into `ark`'s home, not root's.
+
+### `/share`: files that come from a computer
+
+`/data` is ext4: a Mac or a Windows PC does not show it. An owner who wants
+to hand your app a file (a firmware `.bin`, a key, a list) with the card in
+a computer can only reach `BOOT` and `RKSHARE`. So an app that takes files
+from the owner looks in a folder of its own on `/share`, beside wherever it
+looked before.
+
+- **It may not be there.** A card set up before 1.3 has no `RKSHARE` until
+  its owner asks for it (Settings → Show the card on a computer), and a card
+  under about 2 GB of free room never gets one. Test with
+  `mountpoint -q /share`, and keep your other folder working.
+- **It is exFAT.** No owners and no permissions (every file belongs to `ark`
+  and `chmod` does nothing), no symlinks, no sockets or FIFOs, and names
+  differ by more than letter case or they are the same file. Do not run
+  programs from it and do not keep a database there.
+- **Input, not state.** The owner pulls the card and edits this partition on
+  a computer. Read what they put there; keep your identity, settings and
+  working data on `/data/ark`, as before.
+- **A Mac leaves files behind**: `._name` beside each file it copies,
+  `.Spotlight-V100`, `.fseventsd`, `.DS_Store`. Skip every name that starts
+  with a dot when you list a folder.
+- Make your folder if it is missing (`mkdir -p /share/<your app>`), so the
+  owner sees where to put things.
 
 <a name="baking-in"></a>
 ## Baking an app into the image
