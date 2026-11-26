@@ -4,7 +4,7 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
-## Next
+## 1.2.8 — 2026-11-25
 
 - **Apps is now AppManager, and it installs apps from packages.** An app
   that is not part of the system comes as a package, a `.zip` from whoever
