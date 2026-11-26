@@ -5,9 +5,10 @@ cover: watching a video and playing their own games. Both use the same road
 to the screen as the other dock apps (SDL2 on dArkOS's Mali driver), and
 both leave with **SELECT+START**.
 
-> **Status: new, and not yet proven on a handheld.** The desktop side is
-> tested in CI with made-up data. Playing a video and starting RetroArch on
-> the panel have to be confirmed on an R36MAX before a release says they work.
+> **Status, on an R36MAX:** Video searches and plays; it is slow to start.
+> Games opens RetroArch and runs fast; no game has been played through yet.
+> Neither has run on another handheld. The desktop side is tested in CI with
+> made-up data.
 
 ## Video
 

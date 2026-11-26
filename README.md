@@ -2,15 +2,16 @@
 
 A small Linux system for RK3326 handhelds (R36MAX first, R36S next), built
 as one SD card image: flash it, put it in the handheld, switch on. The
-current release is **1.0.0**; what changed is in [`CHANGELOG.md`](CHANGELOG.md).
+current release is on the [Releases](../../releases) page; what changed in
+each one is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ![The desktop: a dusk wallpaper with fireflies, the time, and a dock of icons](docs/desktop.png)
 
 It is our own system, not a desktop distribution squeezed onto a 4-inch
 screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 [arkos4clone](https://github.com/lcdyk0517/arkos4clone), with a
-gamepad-first desktop and FireFly, the Stump and Ember built in, for teaching
-and authorised testing on your own equipment.
+gamepad-first desktop and FireFly, the Stump, Ember and the Provisioner built
+in, for teaching and authorised testing on your own equipment.
 
 > **Status: 1.2.8 runs on an R36MAX (type 1 board), tested through 2026-11-25: its first start on a flashed card (as 1.2.0), and the rest as updates of that card (the CH340 driver, the Provisioner, AppManager and an app installed from a package, opened and removed). Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
@@ -48,7 +49,7 @@ and authorised testing on your own equipment.
   costs in time and noise, launch.
 - **Arsenal**: the security toolset, grouped, showing what is installed. The
   light tools are in the image; the heavy ones (Metasploit, exploitdb) are
-  fetched on first online boot.
+  fetched when you ask: X in Arsenal, on Wi-Fi.
 - **Survey**: every Wi-Fi access point in range, with its channel, signal
   and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
@@ -56,7 +57,11 @@ and authorised testing on your own equipment.
   or hub connects by itself.
 - **Updates itself** from Settings, without a reflash and without touching
   your data ([`docs/updates.md`](docs/updates.md)).
-- Makes its own SSH host keys and a data partition at the first start.
+- Makes its own SSH host keys, a data partition and **RKSHARE** at the
+  first start. RKSHARE is the part of the card a Mac or a PC opens: games,
+  BIOS files and app packages are copied there with the card in a computer
+  (see [The card](#the-card)).
+- Shows its own picture at switch-on, in every panel's size.
 
 On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
 built into the image. FireFly and Ember are ready on a fresh card; the Stump
@@ -67,9 +72,10 @@ is added, updated or removed without the system changing. That, and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
 
-New and not yet tried on a handheld: **Video** (search YouTube and watch,
-with the pad) and **Games** (RetroArch, for your own game files). Both are in
-[`docs/media.md`](docs/media.md).
+Also on the dock: **Video** (search YouTube and watch, with the pad) and
+**Games** (RetroArch, for your own game files). On the R36MAX, Video searches
+and plays (it is slow to start) and Games opens and runs fast; no game has
+been played through yet. Both are in [`docs/media.md`](docs/media.md).
 
 **Wi-Fi auditing** (monitor mode, injection) needs a USB adapter: the onboard
 radio is client-only, as on any RK3326 device. Arsenal shows whether the
@@ -237,10 +243,25 @@ the same as someone having held it. Reports are welcome.
 1. Download `rk3326-linux-r36max-<version>.img.xz` from the latest
    [build](../../actions/workflows/build.yml) (the **Artifacts** of a run) or
    from [Releases](../../releases).
-2. Write it to an SD card of 8 GB or more with
-   [balenaEtcher](https://etcher.balena.io) or Raspberry Pi Imager
-   (*Use custom*). Both read the `.xz` file directly.
+2. Write it to an SD card with [balenaEtcher](https://etcher.balena.io) or
+   Raspberry Pi Imager (*Use custom*). Both read the `.xz` file directly.
+   The image needs 8 GB; **16 GB or more** is the size to use, because a
+   card needs about 2 GB free after the system to get the partition a
+   computer can read.
+
+   From a Mac's Terminal instead (`diskutil list` names the card: the
+   external disk of the card's size; a wrong number erases another disk).
+   Give the file's whole name, not `*`: with two images in the folder, a
+   pattern writes both.
+
+   ```sh
+   diskutil unmountDisk /dev/diskN
+   xz -dc rk3326-linux-r36max-<version>.img.xz | sudo dd of=/dev/rdiskN bs=4m
+   diskutil eject /dev/diskN
+   ```
 3. Take the card out and put it back in. A partition named **BOOT** shows up.
+   (After the first start there is a second one, **RKSHARE**, for your
+   games and app packages.)
 4. Open `wifi.txt` on it, fill in `SSID` and `PASSWORD`, save, eject.
    Optional: add a file named `authorized_keys` with your SSH public key.
    From a Mac's Terminal, the same in one line (double quotes, so that a
@@ -308,8 +329,9 @@ handheld**, or `rk-update apply`. An update replaces only the desktop and
 system files (never the kernel, your apps or your data), checks the new
 version draws before swapping it in, backs up the old one, and rolls back by
 itself if the desktop doesn't come back. Adopter state — the mesh identity,
-apps and settings — lives on the `/data` partition, which a reflash keeps, so
-even a kernel reflash loses nothing. See [`docs/updates.md`](docs/updates.md).
+apps and settings — lives on the `/data` partition, which a reflash keeps
+(as it keeps RKSHARE, with your games), so even a kernel reflash loses
+nothing. See [`docs/updates.md`](docs/updates.md).
 
 ## The card
 
@@ -317,7 +339,7 @@ even a kernel reflash loses nothing. See [`docs/updates.md`](docs/updates.md).
 |---|---|
 | sectors 64, 16384, 24576 | boot chain (idbloader, u-boot, trust) |
 | partition 1, FAT32 `BOOT`, 256 MiB | kernel, device tree, `boot.ini`, settings files, boot files for every handheld in `consoles/` |
-| partition 2, ext4 `RKROOT`, 3 GiB | the system |
+| partition 2, ext4 `RKROOT`, 6 GiB | the system |
 | partition 3, ext4 `RKDATA`, 16 GiB | your data, on `/data`. Made at the first start. Flashing a new image keeps it. |
 | partition 4, exFAT `RKSHARE`, rest of the card | **the part a computer shows** when the card is in its reader: `roms/` for games and BIOS files, `packages/` for apps. `/share` on the handheld. Made at the first start; flashing a new image keeps it. |
 
@@ -326,10 +348,21 @@ gets one from **Settings → Show the card on a computer**, or `sudo rk-share
 request`: `/data` is made smaller at the next start, with what is in it
 kept. On a card too small for both, `/data` keeps all of it.
 
+Flashing an image from before RKSHARE existed (1.2.8 or older) over a card
+that has one loses what is on RKSHARE: that system does not know the
+partition and takes its room back for `/data`.
+
+An app does not write these paths into its code. It asks `rk-paths`
+(`rk-paths list` shows what it answers): see
+[`docs/building-apps.md`](docs/building-apps.md#where-files-live).
+
 ## Build
 
-GitHub builds the image on every push ([workflow](.github/workflows/build.yml)).
-To build by hand, on an arm64 Linux machine with Debian trixie's tools:
+GitHub builds the image for every pull request, every push to `main` and
+every `v*` tag ([workflow](.github/workflows/build.yml)); a branch with no
+pull request is not built. To build by hand, on an arm64 Linux machine with
+Debian trixie's tools (the workflow's `apt-get install` line lists them;
+`python3-pil` makes the boot logos):
 
 ```sh
 . build/upstream.env
@@ -347,10 +380,13 @@ sudo CONSOLE="r36max type1" KERNEL=5.10 KMODS="$PWD/kmods" build/build-image.sh 
 | `build/verify-image.sh` | the checks that need no handheld; the build fails if one fails |
 | `build/kernel-modules.env`, `build-kernel-modules.sh` | kernel modules arkos4clone's 5.10 kernel is built without (the CH340 serial driver), built from its source; also made into `rk-kernel-modules-<n>.tar.xz` for the releases |
 | `build/dtb-fixes.txt` | our changes to arkos4clone's device trees, applied at build time |
-| `build/packages.txt`, `packages-optional.txt` | what is installed |
-| `overlay/` | our files in the system: `rk-boot-select`, `rk-firstboot`, `rk-bootcfg`, the desktop's service and its permissions |
-| `shell/rkshell/` | the desktop |
-| `boot-files/` | `wifi.txt` and the README that go on the BOOT partition |
+| `build/make-logos.py`, `logo-turns.txt` | the boot logo, made from `boot-files/logo.jpg` for every panel's size and turn |
+| `build/check-consoles.py` | reads every handheld's device tree and writes [`docs/devices.md`](docs/devices.md) |
+| `build/emulators.env`, `build-emulators.sh` | RetroArch and its cores, for Games |
+| `build/packages.txt`, `packages-tools.txt`, `packages-media.txt`, `packages-optional.txt` | what is installed |
+| `overlay/` | our files in the system: the first start (`rk-firstboot`, `rk-data-partition`, `rk-share`), the boot files (`rk-boot-select`, `rk-bootcfg`), updates (`rk-update`, `rk-migrate`), apps (`rk-apps`, `rk-pkg`, `rk-paths`), the desktop's service and its permissions |
+| `shell/rkshell/`, `shell/tests/` | the desktop, and the tests the build runs (`test_share.sh`: what `rk-share` does to a card) |
+| `boot-files/` | `wifi.txt`, the README and the logo that go on the BOOT partition |
 
 ## Where the parts come from
 
