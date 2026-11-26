@@ -13,7 +13,7 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first desktop and FireFly, the Stump, Ember and the Provisioner built
 in, for teaching and authorised testing on your own equipment.
 
-> **Status: 1.3.0 runs on an R36MAX (type 1 board), tested through 2026-11-26: its first start on a new card and on a card flashed again (RKSHARE and `/data` made, then kept), a 1.2.8 card given RKSHARE from Settings, RKSHARE opened on a Mac, `rk-paths`, and the boot logo. Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
+> **Status: 1.3.1 runs on an R36MAX (type 1 board), tested through 2026-11-26: its first start on a new card and on a card flashed again (RKSHARE and `/data` made, then kept), a 1.2.8 card given RKSHARE from Settings, RKSHARE opened on a Mac, `rk-paths`, and the boot logo on a flashed card (as 1.3.0; the logo arriving with an update, new in 1.3.1, is checked by the build only). Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
 > *Works on that handheld:* kernel 5.10, the screen, the desktop and its
 > pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data

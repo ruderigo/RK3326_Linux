@@ -4,6 +4,24 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## 1.3.1 — 2026-11-26
+
+- **An update brings the picture at switch-on.** 1.3.0 had our logo only on
+  a newly flashed card: an update does not replace the boot partition, so
+  an updated card kept arkos4clone's. Every update now writes the system's
+  logo to BOOT, for the handheld the card starts and for every other one on
+  the card. Nothing is kept: a `logo.bmp` you put there yourself lasts until
+  the next update, and is copied back by hand after it.
+- **MIT licence.** The repository had none. What is written here (the
+  desktop, the `rk-*` programs, the build scripts, the docs, the logo
+  picture) is under the MIT licence, in [`LICENSE`](LICENSE). The README
+  says what keeps its own terms: what the image carries (the kernel, u-boot,
+  Debian's packages, Wi-Fi firmware, RetroArch), the two RetroArch patches,
+  and arkos4clone's files.
+
+The logo step is tested in the build on a stand-in boot partition, for
+every panel size. Not yet seen on a handheld's screen after an update.
+
 ## 1.3.0 — 2026-11-26
 
 - **A part of the card your computer can read: RKSHARE.** With the card in
