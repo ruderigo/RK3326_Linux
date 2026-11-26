@@ -335,7 +335,7 @@ rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
 in_root systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
 in_root systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
 
-say "The dock apps (Ember, FireFly, the Stump's files, the Provisioner, STUMP Recon)"
+say "The dock apps (Ember, FireFly, the Stump's files, the Provisioner, STUMP Recon, Field Deck)"
 # Installed here, so a fresh card has them without a command being typed.
 # They are fetched as rk-apps fetches them on a running handheld (the latest
 # release of each), into ark's home, and handed to ark afterwards.
@@ -363,7 +363,15 @@ as_ark /usr/local/sbin/rk-apps install stump-recon || die "STUMP Recon could not
 [ -x "$ROOTFS/home/ark/stump-rf-recon/STUMP-Recon.sh" ] && [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/stump_gui.py" ] &&
     [ -f "$ROOTFS/home/ark/stump-rf-recon/stump-recon/wifi_mon.py" ] && [ -x "$ROOTFS/usr/local/sbin/rk-stump-wifi" ] ||
     die "STUMP Recon is not complete in the image"
-in_root visudo -c -q || die "the sudoers files do not pass visudo's check after STUMP Recon's installer"
+# Field Deck: from the system's own copy too. Its installer runs as root
+# (two helpers in /usr/local/sbin and their sudoers file) and must leave
+# nothing in /data, which is the data partition's mount point.
+as_ark /usr/local/sbin/rk-apps install field-deck || die "Field Deck could not be installed"
+[ -x "$ROOTFS/home/ark/rk-field-deck/RK-Field-Deck.sh" ] && [ -f "$ROOTFS/home/ark/rk-field-deck/field-deck/field_deck.py" ] &&
+    [ -x "$ROOTFS/usr/local/sbin/rk-field-tool" ] && [ -x "$ROOTFS/usr/local/sbin/rk-field-wifi" ] &&
+    [ -f "$ROOTFS/etc/sudoers.d/rk-field-deck" ] || die "Field Deck is not complete in the image"
+[ ! -e "$ROOTFS/data/ark" ] || die "an app's installer left files in /data/ark of the image"
+in_root visudo -c -q || die "the sudoers files do not pass visudo's check after the apps' installers"
 in_root git clone --depth 1 https://github.com/ruderigo/SandBox_Stump_On /home/ark/SandBox_Stump_On ||
     die "SandBox_Stump_On could not be fetched"
 mkdir -p "$ROOTFS/roms/ports/stump_r36max/drop" "$ROOTFS/roms/ports/stump_r36max/tf_backup"

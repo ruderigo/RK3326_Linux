@@ -1,0 +1,23 @@
+{
+  "name": "Field Deck",
+  "icon": "radar",
+  "group": "Comms",
+  "about": "Device cards with Scan & diagnostic Arsenal actions",
+  "exec": [
+    "/home/ark/rk-field-deck/RK-Field-Deck.sh"
+  ],
+  "before": [
+    "/usr/local/bin/rk-stump-pause",
+    "pause"
+  ],
+  "after": [
+    "/usr/local/bin/rk-stump-pause",
+    "resume"
+  ],
+  "mouse": false,
+  "needs": [
+    "~/rk-field-deck/RK-Field-Deck.sh",
+    "~/rk-field-deck/field-deck/field_deck.py",
+    "~/rk-field-deck/field-deck/tool_runner.py"
+  ]
+}

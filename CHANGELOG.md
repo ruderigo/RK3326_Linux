@@ -21,10 +21,21 @@ replace is in [`docs/updates.md`](docs/updates.md).
   once one is published there. Captures go to
   `/data/ark/stump-recon/exports`. It pauses the Stump while it is open. Not
   yet opened on a handheld.
+- **Field Deck is on the dock** (Comms → Field Deck, version 1.0.0-rk3326):
+  a card for each device found on the network, on Wi-Fi and on LoRa, and on
+  each card the scans and diagnostic tools that fit it (the Scan window's
+  scans, tcpdump, tshark, arp-scan, fping, sslscan, dig, whatweb and others;
+  Arsenal's attack tools are left out). It travels with the system like
+  STUMP Recon and installs from AppManager with A. Its installer adds two
+  helpers that run as root without a password: one runs tcpdump, tshark,
+  ngrep or arp-scan as fixed commands, the other is STUMP Recon's Wi-Fi
+  capture. Known limit of 1.0.0: it starts the Wi-Fi capture when it opens,
+  so on a handheld whose only Wi-Fi is a dongle that can monitor, the
+  network is gone while it is open and its network tools reach nothing.
 - **Apps is now AppManager.** The window that shows the dock apps' versions
   and updates them has the new name on the dock, in its title and in the
   guides. Nothing else about it changed, except that its list now scrolls on
-  a small screen (five apps did not fit 480×320).
+  a small screen (the apps no longer fit 480×320).
 
 ## 1.2.0 — 2026-11-25
 

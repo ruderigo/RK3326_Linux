@@ -210,6 +210,109 @@ installer = open(f"{BUNDLED}/deploy/install.sh").read()
 assert "NOPASSWD: /usr/local/sbin/rk-stump-wifi\n" in installer and installer.count("NOPASSWD") == 1, "the installer's sudoers line changed"
 assert "sudo -S" not in installer.replace("never uses sudo -S", "")
 
+# Field Deck: only the system's copy (it has no repository). Its installer
+# is run as root, through sudo when rk-apps is not root already, with the
+# home folder named; with no data partition (the image being built) its data
+# folder and dock entry are sent to a scratch folder, not to /data.
+FIELD = os.path.normpath(os.path.join(BUNDLED, "..", "rk-field-deck"))
+
+
+def field(d, command=("install", "field-deck"), data=True, bundled=True):
+    if bundled:
+        os.makedirs(f"{d}/bundled/rk-field-deck/deploy", exist_ok=True)
+        open(f"{d}/bundled/rk-field-deck/VERSION", "w").write("1.0.0-rk3326\n")
+        open(f"{d}/bundled/rk-field-deck/deploy/install.sh", "w").write(
+            'src=$(cd "$(dirname "$0")/.." && pwd)\n'
+            'mkdir -p "$ARK_HOME/rk-field-deck" && cp "$src/VERSION" "$ARK_HOME/rk-field-deck/VERSION" && '
+            'printf "#!/bin/sh\\n" > "$ARK_HOME/rk-field-deck/RK-Field-Deck.sh" && chmod +x "$ARK_HOME/rk-field-deck/RK-Field-Deck.sh" && '
+            f'echo "installer: home=$ARK_HOME data=${{RK_FIELD_DECK_DATA_DIR:-default}} dock=${{RK_DOCK_DIR:-default}}" >> {d}/LOG\n')
+    if data:
+        os.makedirs(f"{d}/data-ark", exist_ok=True)
+    open(f"{d}/ip", "w").write("#!/bin/sh\n")                     # not online
+    # sudo: note how it was asked, then run the rest (skipping -A)
+    open(f"{d}/sudo", "w").write(f'#!/bin/sh\necho "sudo $1" >> {d}/LOG\n[ "$1" = -A ] && shift\nexec "$@"\n')
+    for tool in ("ip", "sudo"):
+        os.chmod(f"{d}/{tool}", 0o755)
+    env = dict(os.environ, PATH=d + ":" + os.environ["PATH"], HOME=d, RK_BUNDLED=f"{d}/bundled", RK_DATA_ARK=f"{d}/data-ark",
+               SUDO_ASKPASS="/bin/true")
+    p = subprocess.run(["bash", RK_APPS, *command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+    return p, (open(f"{d}/LOG").read() if os.path.exists(f"{d}/LOG") else "")
+
+
+with tempfile.TemporaryDirectory() as d:
+    p, log = field(d)
+    assert p.returncode == 0 and "Field Deck is now 1.0.0-rk3326" in p.stdout, p.stdout
+    assert f"installer: home={d} data=default dock=default" in log, log
+    assert os.geteuid() == 0 or "sudo -A" in log, "not root, and the installer was not run through sudo's askpass:\n" + log
+    p, _ = field(d, command=("versions",))
+    assert "field-deck|Field Deck|1.0.0-rk3326|1.0.0-rk3326" in p.stdout, p.stdout
+    p, _ = field(d, command=("status",))
+    assert "Field Deck installed" in p.stdout, p.stdout
+with tempfile.TemporaryDirectory() as d:            # no data partition: nothing goes to /data
+    p, log = field(d, data=False)
+    assert p.returncode == 0, p.stdout
+    assert "data=default" not in log and "dock=default" not in log and "/data" in log and "/apps" in log, log
+with tempfile.TemporaryDirectory() as d:            # not in this system: said plainly
+    p, log = field(d, bundled=False)
+    assert p.returncode == 1 and "not in this system" in p.stdout and log == "", p.stdout
+    p, _ = field(d, bundled=False, command=("versions",))
+    assert "field-deck|Field Deck|-|?" in p.stdout, p.stdout
+# the copy in this repository is whole, and its dock entry is the image's own
+for f in ("VERSION", "deploy/install.sh", "host/RK-Field-Deck.sh", "host/field-deck/field_deck.py", "host/field-deck/tool_runner.py",
+          "host/field-deck/wifi_mon.py"):
+    assert os.path.isfile(f"{FIELD}/{f}"), f"missing from the bundled Field Deck: {f}"
+for f in ("deploy/install.sh", "host/RK-Field-Deck.sh"):
+    assert os.access(f"{FIELD}/{f}", os.X_OK), f"not executable: {f}"
+entry = json.load(open(os.path.join(FIELD, "..", "..", "apps", "rk-field-deck.json")))
+assert entry == json.load(open(f"{FIELD}/deploy/rk-field-deck.json")), "the dock entry differs from the app's own"
+assert entry["exec"] == ["/home/ark/rk-field-deck/RK-Field-Deck.sh"] and entry["mouse"] is False, entry
+# its Wi-Fi helper is the one read for STUMP Recon, byte for byte
+assert open(f"{FIELD}/host/field-deck/wifi_mon.py", "rb").read() == open(f"{BUNDLED}/host/stump-recon/wifi_mon.py", "rb").read()
+# Its other helper runs tools as root. What was read, held here: only four
+# tools, each a fixed command with checked values; no shell; one sudoers line.
+sys.path.insert(0, f"{FIELD}/host/field-deck")
+import tool_runner
+assert tool_runner.PRIVILEGED_HELPER_IDS == {"tcpdump_host", "tshark_host", "ngrep_host", "arp_scan_lan"}
+runner = open(f"{FIELD}/host/field-deck/tool_runner.py").read()
+for risky in ("shell=True,", "shell=True)", "os.system(", "os.popen(", "eval(", "exec("):
+    assert risky not in runner, f"the tool helper has {risky}"
+for tool in sorted(tool_runner.PRIVILEGED_HELPER_IDS):
+    argv = tool_runner.build_tool_command(tool, target_ip="10.0.0.5", target_mac="aa:bb:cc:dd:ee:ff", iface="wlan0")["argv"]
+    assert argv[0] in ("tcpdump", "tshark", "ngrep", "arp-scan"), argv
+    # nothing that makes these tools run a program or read a script or file
+    for opt in ("-z", "-X", "-r", "-F", "-V", "-G", "-O", "--script", "-I-"):
+        assert opt not in argv[1:] or (tool == "arp_scan_lan" and opt == "-I"), (tool, argv)
+for bad_ip in ("10.0.0.5; reboot", "-oN", "10.0.0.5 -w /etc/x", "$(reboot)", "host"):
+    for tool in ("tcpdump_host", "tshark_host", "ngrep_host"):
+        try:
+            tool_runner.build_tool_command(tool, target_ip=bad_ip)
+            raise AssertionError(f"{tool} took {bad_ip!r}")
+        except ValueError:
+            pass
+for bad_name in ("../x.pcap", "a/b.pcap", "/etc/passwd", "x" * 65, "a b"):
+    try:
+        tool_runner.safe_capture_path(bad_name, base_dir=tempfile.gettempdir())
+        raise AssertionError(f"capture name {bad_name!r} taken")
+    except ValueError:
+        pass
+finstaller = open(f"{FIELD}/deploy/install.sh").read()
+assert finstaller.count("NOPASSWD") == 1 and "NOPASSWD: /usr/local/sbin/rk-field-tool run, /usr/local/sbin/rk-field-wifi\n" in finstaller, \
+    "Field Deck's sudoers line changed: read the helpers again"
+# and it starts with no screen, no adapter and no board
+with tempfile.TemporaryDirectory() as d:
+    gui = subprocess.Popen([sys.executable, "-B", f"{FIELD}/host/field-deck/field_deck.py"], cwd=d,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", RK_FIELD_DECK_DATA_DIR=d))
+    time.sleep(4)
+    still = gui.poll() is None
+    gui.terminate()
+    try:
+        out = gui.communicate(timeout=10)[0]
+    except subprocess.TimeoutExpired:
+        gui.kill()
+        out = gui.communicate()[0]
+    assert still, "Field Deck stopped by itself:\n" + out
+
 # The AppManager window: A installs an app that needs no setup, and STUMP
 # Recon (its files are in the system) without Wi-Fi.
 sys.path.insert(0, os.path.join(HERE, ".."))

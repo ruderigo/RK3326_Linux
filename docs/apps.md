@@ -1,7 +1,7 @@
-# The dock apps: FireFly, Stump, Ember, Provisioner, STUMP Recon
+# The dock apps: FireFly, Stump, Ember, Provisioner, STUMP Recon, Field Deck
 
 > Making an app of your own? The builder's contract is in
-> [`building-apps.md`](building-apps.md). This page is about using these five.
+> [`building-apps.md`](building-apps.md). This page is about using these six.
 
 > Video and Games (mpv and RetroArch) are in [`media.md`](media.md).
 
@@ -16,7 +16,7 @@ helps with all of them. A card that came from an older image and has since been
 updated may still show one as **(not installed)**; fetch it over Wi-Fi from
 the Terminal:
 
-    rk-apps install all        # or: ember | firefly | stump | provisioner | stump-recon
+    rk-apps install all        # or: ember | firefly | stump | provisioner | stump-recon | field-deck
     rk-apps status
 
 ## Ember — analog pads and a vocoder
@@ -128,6 +128,45 @@ branch, AppManager offers that one.
 Not yet tried on a handheld: the build starts it with no screen and no board, and
 nobody has opened it on an R36MAX with a board plugged in.
 
+## Field Deck — device cards, with the tools that fit each
+
+**Comms → Field Deck** on the dock. It shows a card for each device it
+finds: on the network the handheld is on (its neighbour table, `arp-scan`),
+on Wi-Fi (a USB Wi-Fi adapter, as STUMP Recon uses one) and on LoRa (a board
+on USB). A on a card lists the tools that fit that device and the command
+each would run; A again runs it and shows its output. SELECT+START quits.
+For your own network and equipment you are allowed to test.
+
+- **The tools**: the Scan window's own scans (Quick look, Identify, Quiet,
+  a host sweep, through `rk-scan`); `tcpdump`, `tshark`, `ngrep`; `arp-scan`,
+  `fping`, `nbtscan`, `sslscan`, `dig`, `whois`, `snmpwalk`; `httpie`,
+  `whatweb`, `wafw00f`. A tool that is not installed is shown as missing:
+  most come with **Arsenal**. The attack tools in Arsenal are left out.
+- **Reports and captures** go to `/data/ark/field-deck`.
+- **Two helpers run as root** without a password, added by the app's
+  installer with their own sudoers file (`/etc/sudoers.d/rk-field-deck`):
+  `/usr/local/sbin/rk-field-tool run`, which runs `tcpdump`, `tshark`,
+  `ngrep` or `arp-scan` (those four only, each as a fixed command with the
+  address checked), and `/usr/local/sbin/rk-field-wifi`, the same Wi-Fi
+  capture helper as STUMP Recon's.
+- **With one Wi-Fi adapter that can monitor, the network half does not
+  work.** Field Deck starts the Wi-Fi capture as soon as it opens, and the
+  capture takes such an adapter off the network (see STUMP Recon above). On
+  an R36MAX with a single RT3070 dongle that is the handheld's only link:
+  Wi-Fi and SSH stop while Field Deck is open, and the scans and network
+  tools have nothing to reach. It needs a second adapter, a wired adapter,
+  or a dongle that cannot monitor. Version 1.0.0 has no setting for this.
+- While it is open the Stump is paused and the left stick is not a mouse.
+
+Its files travel with the system (`/usr/share/rk/bundled/rk-field-deck`, as
+delivered); it has no repository yet, so a new version arrives with an OS
+update. A flashed card has it installed. On a card that is updated, open
+**AppManager**, go to its row and press A (no Wi-Fi needed; it asks for the
+handheld's password, since its installer runs as root for the two helpers).
+From a terminal: `rk-apps install field-deck`.
+
+Not yet tried on a handheld.
+
 ## Updating them
 
 The **AppManager** window on the dock (named Apps until 1.2.0) shows each
@@ -150,7 +189,7 @@ a new version lands first. Press Y on FireFly's row to switch; the row shows
 which one is in use, and the choice is kept in `~/.config/rk-apps`.
 
 The same from a terminal: `rk-apps versions`,
-`rk-apps update firefly|stump|ember|provisioner|stump-recon|all` and
+`rk-apps update firefly|stump|ember|provisioner|stump-recon|field-deck|all` and
 `rk-apps source firefly stable|sandbox`.
 
 ## Sound and volume

@@ -277,7 +277,7 @@ request to this repo. Until then, use `chip` or the letter fallback.
 ## Shipping updates through rk-apps
 
 `rk-apps` installs, versions and updates the dock apps (FireFly, Stump,
-Ember, the Provisioner, STUMP Recon), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
+Ember, the Provisioner, STUMP Recon, Field Deck), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
 it is optional for a brand-new app, but it's how FireFly, Stump and Ember stay
 current, and the pattern is worth matching.
 
@@ -368,7 +368,13 @@ it, an OS update carries it to cards that are not flashed again
 (`/usr/share/rk` is replaced by an update), and it installs with no network.
 When the app's repository publishes a higher `VERSION` with the same
 `deploy/install.sh`, `rk-apps` fetches that instead. To bring in a new
-version here, replace the folder with the new release. This suits an app of
+version here, replace the folder with the new release. Field Deck travels
+the same way (`bundled/rk-field-deck/`) and has no repository yet. Its
+installer decides whether it may use root with `sudo -n`, which the desktop
+cannot answer (the password comes through askpass, `sudo -A`), so `rk-apps`
+runs that installer as root itself. An installer that calls `sudo -A` for
+its own root steps when `SUDO_ASKPASS` is set, as STUMP Recon's does, needs
+no such help. This suits an app of
 a few hundred kilobytes; anything larger belongs in a release that is
 fetched, like the others.
 

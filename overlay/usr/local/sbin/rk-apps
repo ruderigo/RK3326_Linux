@@ -1,12 +1,12 @@
 #!/bin/bash
-# The dock apps (Ember, FireFly, Stump, the Provisioner, STUMP Recon): fetch
+# The dock apps (Ember, FireFly, Stump, the Provisioner, STUMP Recon, Field Deck): fetch
 # them, see their versions, update them. Over Wi-Fi, into /home/ark where the
 # dock's launchers look. The AppManager window on the dock runs this.
 #
 #   rk-apps status                     what is installed
 #   rk-apps versions                   installed and newest version of each
-#   rk-apps install ember|firefly|stump|provisioner|stump-recon|all     (from each one's latest release)
-#   rk-apps update ember|firefly|stump|provisioner|stump-recon|all
+#   rk-apps install ember|firefly|stump|provisioner|stump-recon|field-deck|all     (from each one's latest release)
+#   rk-apps update ember|firefly|stump|provisioner|stump-recon|field-deck|all
 #   rk-apps source firefly|stump stable|sandbox  where FireFly/Stump updates come from
 #
 # An update takes FireFly and the Stump from the main branch of their
@@ -43,6 +43,7 @@ room_for() {        # room_for APP [update]
         stump-update)   mb=40;  mem=60 ;;       # a few MB of files, and room to work in
         provisioner|provisioner-update) mb=90 ;; # the release, unpacked, and its copy in the home folder
         stump-recon|stump-recon-update) mb=15 ;; # three Python files and a launcher, and a checkout when its repository has a newer one
+        field-deck|field-deck-update) mb=5 ;;   # three Python files and a launcher
         *)              return 0 ;;
     esac
     rk_need_space "$mb" "$(readlink -f "$H" 2>/dev/null || echo "$H")" "$1" || return 1
@@ -202,6 +203,39 @@ install_stump_recon() {     # also its update: the installer writes over the app
     say "STUMP Recon is now $(head -1 "$STUMP_RECON_APP/VERSION" 2>/dev/null)."
 }
 
+# Field Deck (device cards for the LAN, Wi-Fi and LoRa, with the scan and
+# diagnostic tools that fit each). It has no repository yet: the copy in
+# /usr/share/rk/bundled is its only source. Its installer does everything as
+# root or nothing of its root part (two helpers in /usr/local/sbin and their
+# sudoers file), and tells the two apart with "sudo -n", which the desktop
+# cannot answer: so the installer is run as root here, through sudo (askpass
+# from the desktop, the terminal over SSH). It hands the app's files to ark.
+FIELD_DECK_APP="$H/rk-field-deck"
+FIELD_DECK_BUNDLED="${RK_BUNDLED:-/usr/share/rk/bundled}/rk-field-deck"
+install_field_deck() {      # also its update
+    local v src=$FIELD_DECK_BUNDLED rc scratch=""
+    v=$(head -1 "$src/VERSION" 2>/dev/null)
+    [ -n "$v" ] && [ -f "$src/deploy/install.sh" ] || { say "Field Deck is not in this system."; return 1; }
+    say "Installing Field Deck $v (the copy that came with the system)..."
+    set -- env "ARK_HOME=$H"
+    if [ ! -d "${RK_DATA_ARK:-/data/ark}" ]; then
+        # no data partition here (the image being built): the installer's data
+        # folder and dock entry go to a scratch folder, not into /data of the
+        # image. The launcher makes the data folder itself; the dock entry is the image's.
+        scratch=$(rk_tmpdir rk-field-deck)
+        set -- "$@" "RK_FIELD_DECK_DATA_DIR=$scratch/data" "RK_DOCK_DIR=$scratch/apps"
+    fi
+    say "Running Field Deck's own installer (as root: it adds its two helpers)..."
+    if [ "$(id -u)" -eq 0 ]; then "$@" bash "$src/deploy/install.sh"; rc=$?
+    elif [ -n "${SUDO_ASKPASS:-}" ]; then sudo -A "$@" bash "$src/deploy/install.sh"; rc=$?
+    else sudo "$@" bash "$src/deploy/install.sh"; rc=$?
+    fi
+    [ -z "$scratch" ] || rm -rf "$scratch"
+    [ "$rc" -eq 0 ] || { say "Field Deck's installer stopped (its message is above)."; return 1; }
+    [ -x "$FIELD_DECK_APP/RK-Field-Deck.sh" ] || { say "Field Deck's files are not in $FIELD_DECK_APP."; return 1; }
+    say "Field Deck is now $(head -1 "$FIELD_DECK_APP/VERSION" 2>/dev/null)."
+}
+
 # ------------------------------------------------------------ versions
 # FireFly and Stump each have two repositories: the published one, and the
 # sandbox where new versions land first. "rk-apps source firefly|stump sandbox"
@@ -252,6 +286,10 @@ versions() {        # one line each: id|name|installed|newest|source   ("-" not 
     [ -x "$STUMP_RECON_APP/STUMP-Recon.sh" ] || i=-
     read -r a _ <<<"$(stump_recon_newest)"
     echo "stump-recon|STUMP Recon|${i:-?}|${a:-?}"
+    i=$(head -1 "$FIELD_DECK_APP/VERSION" 2>/dev/null)
+    [ -x "$FIELD_DECK_APP/RK-Field-Deck.sh" ] || i=-
+    a=$(head -1 "$FIELD_DECK_BUNDLED/VERSION" 2>/dev/null)
+    echo "field-deck|Field Deck|${i:-?}|${a:-?}"
 }
 
 # ------------------------------------------------------------- updates
@@ -299,7 +337,8 @@ update_stump() {
 
 status() {
     for f in "$H/ports/Ember.sh:Ember" "$H/firefly/deploy/FireFly.sh:FireFly" "$H/R36MAX-Stump/handheld/LaBuche_Stump.sh:Stump" \
-             "$PROVISIONER_APP/RK3326_Provisioner.sh:Provisioner" "$STUMP_RECON_APP/STUMP-Recon.sh:STUMP Recon"; do
+             "$PROVISIONER_APP/RK3326_Provisioner.sh:Provisioner" "$STUMP_RECON_APP/STUMP-Recon.sh:STUMP Recon" \
+             "$FIELD_DECK_APP/RK-Field-Deck.sh:Field Deck"; do
         p=${f%%:*}; n=${f##*:}
         [ -x "$p" ] && echo "$n installed" || echo "$n absent"
     done
@@ -309,8 +348,8 @@ cmd=${1:-}; what=${2:-}
 case "$cmd" in
     status) status ;;
     install)
-        # STUMP Recon installs from the system's own copy: no network needed
-        [ "$what" = stump-recon ] || online || { say "not online. Join Wi-Fi first."; exit 1; }
+        # STUMP Recon and Field Deck install from the system's own copy: no network needed
+        case "$what" in stump-recon|field-deck) ;; *) online || { say "not online. Join Wi-Fi first."; exit 1; } ;; esac
         rc=0
         case "$what" in
             ember) room_for ember && install_ember || rc=1 ;;
@@ -318,9 +357,10 @@ case "$cmd" in
             stump) room_for stump && clone_stump || rc=1 ;;
             provisioner) room_for provisioner && install_provisioner || rc=1 ;;
             stump-recon) room_for stump-recon && install_stump_recon || rc=1 ;;
-            all) for a in ember firefly stump provisioner stump-recon; do room_for "$a" || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; } ;;
-            *) echo "usage: rk-apps install ember|firefly|stump|provisioner|stump-recon|all" >&2; exit 2 ;;
+            field-deck) room_for field-deck && install_field_deck || rc=1 ;;
+            all) for a in ember firefly stump provisioner stump-recon field-deck; do room_for "$a" || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; install_firefly || rc=1; clone_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; install_field_deck || rc=1; } ;;
+            *) echo "usage: rk-apps install ember|firefly|stump|provisioner|stump-recon|field-deck|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
     versions) versions ;;
@@ -333,7 +373,7 @@ case "$cmd" in
             *) echo "usage: rk-apps source firefly|stump stable|sandbox" >&2; exit 2 ;;
         esac ;;
     update)
-        [ "$what" = stump-recon ] || online || { say "not online. Join Wi-Fi first."; exit 1; }
+        case "$what" in stump-recon|field-deck) ;; *) online || { say "not online. Join Wi-Fi first."; exit 1; } ;; esac
         rc=0
         case "$what" in
             ember) room_for ember && install_ember || rc=1 ;;
@@ -341,10 +381,11 @@ case "$cmd" in
             stump) room_for stump update && update_stump || rc=1 ;;
             provisioner) room_for provisioner update && install_provisioner || rc=1 ;;
             stump-recon) room_for stump-recon update && install_stump_recon || rc=1 ;;
-            all) for a in ember firefly stump provisioner stump-recon; do room_for "$a" update || rc=1; done
-                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; } ;;
-            *) echo "usage: rk-apps update ember|firefly|stump|provisioner|stump-recon|all" >&2; exit 2 ;;
+            field-deck) room_for field-deck update && install_field_deck || rc=1 ;;
+            all) for a in ember firefly stump provisioner stump-recon field-deck; do room_for "$a" update || rc=1; done
+                 [ "$rc" -ne 0 ] || { install_ember || rc=1; update_firefly || rc=1; update_stump || rc=1; install_provisioner || rc=1; install_stump_recon || rc=1; install_field_deck || rc=1; } ;;
+            *) echo "usage: rk-apps update ember|firefly|stump|provisioner|stump-recon|field-deck|all" >&2; exit 2 ;;
         esac
         exit "$rc" ;;
-    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump provisioner stump-recon all)" >&2; exit 2 ;;
+    *) echo "usage: rk-apps status | versions | install APP | update APP   (APP: ember firefly stump provisioner stump-recon field-deck all)" >&2; exit 2 ;;
 esac

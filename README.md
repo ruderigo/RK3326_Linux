@@ -62,7 +62,9 @@ On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
 built into the image. FireFly and Ember are ready on a fresh card; the Stump
 asks a few questions the first time you open it. With them: the
 **Provisioner** (flashes ESP32 boards) and **STUMP Recon** (LoRa and 2.4 GHz
-recon with a board on USB; new, not yet tried on a handheld). Updating them
+recon with a board on USB or a USB Wi-Fi adapter) and **Field Deck** (a
+card for each device found, with the scan and diagnostic tools that fit it).
+Both are new and not yet tried on a handheld. Updating them
 (the **AppManager** window), and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).

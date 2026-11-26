@@ -7,6 +7,8 @@ updated and not flashed again (an update replaces /usr/share/rk), and
 installs with no network.
 
   stump-rf-recon   STUMP Recon, the RK3326 Linux port (its VERSION file says which)
+  rk-field-deck    Field Deck (its VERSION file says which); it has no repository yet,
+                   so this copy is the only source
 
 To bring in a new version: replace the folder with the app's release and
 keep VERSION as its first line reads. Once the app's repository carries the

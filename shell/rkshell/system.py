@@ -1469,7 +1469,8 @@ class DemoSystem(System):
                 {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Games", "icon": "games", "group": "Play", "about": "RetroArch, for your own game files", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False},
-                {"name": "STUMP Recon", "icon": "chip", "group": "Comms", "about": "Dual-band LoRa & 2.4 GHz RF recon", "ready": True}]
+                {"name": "STUMP Recon", "icon": "chip", "group": "Comms", "about": "Dual-band LoRa & 2.4 GHz RF recon", "ready": True},
+                {"name": "Field Deck", "icon": "radar", "group": "Comms", "about": "Device cards with Scan & diagnostic Arsenal actions", "ready": False}]
 
     def video_status(self): return dict(getattr(self, "_video", {"mpv": True, "ytdlp": "2026.11.18", "js": "quickjs"}))
 
@@ -1502,7 +1503,8 @@ class DemoSystem(System):
                                     {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.4-b.87", "source": "stable"},
                                     {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"},
                                     {"id": "provisioner", "name": "Provisioner", "installed": "-", "newest": "0.3.0-beta.24"},
-                                    {"id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326", "newest": "0.6.0-rk3326"}]
+                                    {"id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326", "newest": "0.6.0-rk3326"},
+                                    {"id": "field-deck", "name": "Field Deck", "installed": "-", "newest": "1.0.0-rk3326"}]
         return job
 
     def app_source(self, app, source):

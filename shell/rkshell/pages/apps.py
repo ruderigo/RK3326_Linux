@@ -1,5 +1,5 @@
-"""AppManager: the versions of FireFly, Stump, Ember, the Provisioner and
-STUMP Recon here and the newest ones, and their updates.
+"""AppManager: the versions of FireFly, Stump, Ember, the Provisioner, STUMP
+Recon and Field Deck here and the newest ones, and their updates.
 
 An update runs the app's own installer (through rk-apps), so its data and
 settings are kept as that installer keeps them. FireFly and the Stump come
@@ -20,9 +20,9 @@ from ..widgets import Keyboard
 from .base import Page
 
 # apps that need no setup of their own: A on their row installs them when the card has none
-INSTALLS = ("provisioner", "stump-recon")
+INSTALLS = ("provisioner", "stump-recon", "field-deck")
 # those whose files came with the system: no network needed to install them
-OFFLINE = ("stump-recon",)
+OFFLINE = ("stump-recon", "field-deck")
 
 
 class AppsPage(Page):
