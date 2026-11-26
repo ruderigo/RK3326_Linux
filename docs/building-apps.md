@@ -22,6 +22,7 @@ this particular screen and sharing this particular hardware.
 - [Shipping updates through rk-apps](#updates)
 - [Where files live](#where-files-live)
 - [Baking an app into the image](#baking-in)
+- [Packages: an app that installs itself](#packages)
 - [Checklist](#checklist)
 
 <a name="the-dock-entry"></a>
@@ -277,7 +278,7 @@ request to this repo. Until then, use `chip` or the letter fallback.
 ## Shipping updates through rk-apps
 
 `rk-apps` installs, versions and updates the dock apps (FireFly, Stump,
-Ember, the Provisioner, STUMP Recon), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
+Ember, the Provisioner), over Wi-Fi, into `/home/ark`. It is also how the image bakes them in at build time. Supporting
 it is optional for a brand-new app, but it's how FireFly, Stump and Ember stay
 current, and the pattern is worth matching.
 
@@ -299,10 +300,6 @@ against the newest published one. The three apps expose "newest" differently:
   `0.3.0-beta.24` above `0.3.0-beta.8`, and a plain `0.3.0` above both. The
   release's `.tar.gz` is checked against its `SHA256SUMS`; the installed
   version is the `VERSION` file in `~/rk3326_provisioner`.
-- **STUMP Recon** — a `VERSION` file at the top of its release. A copy of the
-  release travels with the system (`overlay/usr/share/rk/bundled/`, see
-  [below](#bundled)); the same file on its repository's `main` branch is
-  compared with it, and the higher version is the newest.
 
 Pick whichever fits how you release, and keep it somewhere `rk-apps` can read
 without cloning the whole repo.
@@ -321,9 +318,8 @@ own installer so the app decides what to preserve. The shared conventions:
   text up to the `?` — so the desktop's setup screen can drive it. A plain
   app that needs no questions can ignore this.
 
-If an app does none of this, it still runs from the dock; it just won't appear
-in the AppManager window's version list, and it's updated by re-running its own
-installer by hand.
+This is for an app the image carries. An app that is not in the image does
+not need `rk-apps` to know it: see [Packages](#packages) below.
 
 <a name="where-files-live"></a>
 ## Where files live
@@ -357,20 +353,54 @@ To ship an app on the card (as FireFly, Stump and Ember are):
 An app that is only *offered* (fetched later over Wi-Fi) needs just step 1 and
 a working `rk-apps install`.
 
-<a name="bundled"></a>
-### A small app can travel with the system
+<a name="packages"></a>
+## Packages: an app that installs itself
 
-STUMP Recon is three small files and an installer, so its release is kept
-whole in `overlay/usr/share/rk/bundled/stump-rf-recon/` (its `host/`,
-`deploy/install.sh`, `VERSION`). `rk-apps install stump-recon` runs that
-installer from there. What this buys: the image build needs no download for
-it, an OS update carries it to cards that are not flashed again
-(`/usr/share/rk` is replaced by an update), and it installs with no network.
-When the app's repository publishes a higher `VERSION` with the same
-`deploy/install.sh`, `rk-apps` fetches that instead. To bring in a new
-version here, replace the folder with the new release. This suits an app of
-a few hundred kilobytes; anything larger belongs in a release that is
-fetched, like the others.
+The four apps above are in the image and `rk-apps` knows each by name. Any
+other app needs none of that. Hand people a **package** and AppManager
+installs it, updates it and removes it; this repository does not change and
+no release of the system is needed for your app or its next version.
+
+A package is a `.zip` with these at its top (or inside one folder):
+
+| File | What it is |
+|---|---|
+| `VERSION` | the version, on the first line: `1.0.0`, `0.6.0-rk3326`. |
+| `deploy/install.sh` | your installer. Run with `bash`, from the package's top folder, as `ark`. Re-runnable: it is also your update. |
+| `deploy/<id>.json` | your dock entry ([the JSON above](#the-dock-entry)). The file name is your app's id: lower case, digits, `.`, `_`, `-`. Exactly one. |
+| anything else | your app's files, where your installer expects them. |
+
+What happens when someone presses A on your package:
+
+1. The `.zip` is checked before anything is unpacked: the three files are
+   there, the version is a version, the dock entry has `name` and `exec`, the
+   id is not one of the system's (`firefly`, `stump`, `ember`,
+   `provisioner`, or an entry the image carries), no file points outside the
+   package, and there are no symbolic links. At most 300 MB unpacked.
+2. The window says where the package comes from and, when your installer
+   mentions `sudo`, a sudoers file or `/usr/local/sbin`, that it has steps
+   for root. The person confirms and gives the handheld's password.
+3. Your installer runs. **Root steps go through `sudo`.** There is no
+   terminal: the password comes through sudo's askpass helper, and every
+   `sudo` your installer calls is made to ask that way, whether it is
+   written `sudo`, `sudo -A` or `sudo -n`. Never `sudo -S`.
+4. If your installer did not put the dock entry in `/data/ark/apps`, it is
+   put there for you. The program your entry's `exec` names must exist by
+   then (an absolute path), or the app is not counted as installed.
+5. What your installer added in `/usr/local/sbin`, `/usr/local/bin`,
+   `/etc/sudoers.d` and `/etc/udev/rules.d` is noted.
+
+Removing the app (Y) deletes the folder your `exec` program is in (when it
+is inside `/home/ark`), the dock entry, and the files noted in step 5.
+Anything your installer puts elsewhere is not removed: keep to those
+places. Data under `/data/ark/<your-app>/` is left on purpose.
+
+A zip does not keep the executable bit: have your installer `chmod` what
+needs it (the `exec` program is made executable for you).
+
+To try one: `rk-apps package-install /path/to/your.zip` over SSH shows your
+installer's output; `rk-apps packages` lists what is found and why a zip is
+refused.
 
 <a name="checklist"></a>
 ## Checklist

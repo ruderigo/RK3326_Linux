@@ -6,20 +6,22 @@ replace is in [`docs/updates.md`](docs/updates.md).
 
 ## Next
 
-- **STUMP Recon is on the dock** (Comms → STUMP Recon, version 0.4.1-rk3326):
-  LoRa and 2.4 GHz recon through a Heltec V3 or another ESP32 board on USB,
-  from its team's RK3326 port. Its files travel with the system
-  (`/usr/share/rk/bundled/stump-rf-recon`, the port as delivered), so a
-  flashed card has it installed, and a card that is updated installs it from
-  AppManager with A, with no Wi-Fi needed. `rk-apps install|update
-  stump-recon` does the same, and takes a higher version from its repository
-  once one is published there. Captures go to
-  `/data/ark/stump-recon/exports`. It pauses the Stump while it is open. Not
-  yet opened on a handheld.
-- **Apps is now AppManager.** The window that shows the dock apps' versions
-  and updates them has the new name on the dock, in its title and in the
-  guides. Nothing else about it changed, except that its list now scrolls on
-  a small screen (five apps did not fit 480×320).
+- **Apps is now AppManager, and it installs apps from packages.** An app
+  that is not part of the system comes as a package, a `.zip` from whoever
+  makes it (its version, its own installer, its dock entry). Copied to
+  `/data/ark/packages`, it is listed in AppManager with its name and
+  version; A installs it, or a newer one over the one in place; Y removes
+  it, with its dock entry and what its installer added for root. The system
+  does not change when an app is added, and neither does its version: a new
+  app or a new version of one needs no release of the system. Nothing
+  checks a package, as nothing checks a program installed on a computer:
+  the window says where it comes from, says when its installer has steps
+  for root, and asks before running it. From a terminal: `rk-apps packages`,
+  `package-install`, `package-remove`. What a package holds is in
+  [`docs/building-apps.md`](docs/building-apps.md#packages). FireFly, the
+  Stump, Ember and the Provisioner stay in the image and are updated as
+  before.
+- The AppManager list scrolls on a small screen.
 
 ## 1.2.0 — 2026-11-25
 

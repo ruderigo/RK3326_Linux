@@ -476,6 +476,21 @@ class Steps:
 RK_UPDATE = "/usr/local/sbin/rk-update"
 
 
+def parse_packages(out):
+    """`rk-apps packages` -> rows for AppManager. An app from a package:
+    {"pkg": True, "id", "name", "installed", "newest" (the package found), "root", "file"};
+    a .zip that is not a package: {"bad": True, "name" (the file), "why"}."""
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("|")
+        if parts[0] == "pkg" and len(parts) == 7:
+            rows.append({"pkg": True, "id": parts[1], "name": parts[2], "installed": parts[3], "newest": parts[4],
+                         "root": parts[5] == "root", "file": parts[6]})
+        elif parts[0] == "bad" and len(parts) == 3:
+            rows.append({"bad": True, "id": "", "name": parts[1], "why": parts[2], "installed": "-", "newest": "-"})
+    return rows
+
+
 class AppVersions:
     """`rk-apps versions` in the background (it asks GitHub): `apps` once
     `done`, a list of {"id", "name", "installed", "newest"}; "-" is not
@@ -491,6 +506,8 @@ class AppVersions:
             parts = line.split("|")
             if len(parts) in (4, 5):
                 self.apps.append(dict(zip(("id", "name", "installed", "newest", "source"), parts)))
+        ok, out = run([RK_APPS, "packages"], timeout=30)
+        self.apps += parse_packages(out) if ok else []
         self.done = True
 
 
@@ -501,8 +518,9 @@ class AppUpdate:
     that lives only while it runs (replaces: the starting password, when
     `password` is a new one to set first)."""
 
-    def __init__(self, app, password, replaces=None):
+    def __init__(self, app, password, replaces=None, action="update"):
         self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        self.action = action        # "update", or for an app from a package "package-install" / "package-remove"
         threading.Thread(target=self._run, args=(app, password, replaces), daemon=True).start()
 
     def _run(self, app, password, replaces):
@@ -521,7 +539,7 @@ class AppUpdate:
                     f.write(text)
             env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
             env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
-            p = subprocess.Popen([RK_APPS, "update", app], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            p = subprocess.Popen([RK_APPS, self.action, app], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  stdin=subprocess.DEVNULL, text=True, errors="replace", bufsize=1, env=env)
             for raw in p.stdout:
                 line = ANSI.sub("", raw.rstrip("\n")).split("\r")[-1].strip()
@@ -1329,6 +1347,13 @@ class System:
     def app_update(self, app, password, replaces=None):
         return AppUpdate(app, password, replaces)
 
+    def package_install(self, app, password, replaces=None):
+        """Install or update an app from its package in /data/ark/packages."""
+        return AppUpdate(app, password, replaces, action="package-install")
+
+    def package_remove(self, app, password):
+        return AppUpdate(app, password, action="package-remove")
+
     def app_source(self, app, source):
         """Where an app's updates come from ("stable" or "sandbox"); FireFly has both."""
         return run([RK_APPS, "source", app, source])[0]
@@ -1469,7 +1494,7 @@ class DemoSystem(System):
                 {"name": "Ember", "icon": "ember", "group": "Audio", "about": "Analog pads and a vocoder", "ready": True},
                 {"name": "Games", "icon": "games", "group": "Play", "about": "RetroArch, for your own game files", "ready": True},
                 {"name": "Provisioner", "icon": "chip", "group": "Workshop", "about": "Flash ESP32 boards and radios", "ready": False},
-                {"name": "STUMP Recon", "icon": "chip", "group": "Comms", "about": "Dual-band LoRa & 2.4 GHz RF recon", "ready": True}]
+                {"name": "STUMP Recon", "icon": "chip", "group": "Comms", "about": "Dual-band LoRa & 2.4 GHz RF recon", "ready": True}]   # from a package
 
     def video_status(self): return dict(getattr(self, "_video", {"mpv": True, "ytdlp": "2026.11.18", "js": "quickjs"}))
 
@@ -1502,12 +1527,18 @@ class DemoSystem(System):
                                     {"id": "stump", "name": "Stump", "installed": "2.7.3-b.87", "newest": "2.7.4-b.87", "source": "stable"},
                                     {"id": "ember", "name": "Ember", "installed": "?", "newest": "0.4.0"},
                                     {"id": "provisioner", "name": "Provisioner", "installed": "-", "newest": "0.3.0-beta.24"},
-                                    {"id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326", "newest": "0.4.1-rk3326"}]
+                                    {"pkg": True, "id": "stump-recon", "name": "STUMP Recon", "installed": "0.4.1-rk3326",
+                                     "newest": "0.6.0-rk3326", "root": True, "file": "stump-rf-recon-rk3326-v0.6.0-rk3326.zip"},
+                                    {"pkg": True, "id": "rk-field-deck", "name": "Field Deck", "installed": "-",
+                                     "newest": "1.0.0-rk3326", "root": True, "file": "rk-field-deck-v1.0.0-rk3326.zip"}]
         return job
 
     def app_source(self, app, source):
         self._src = source
         return True
+
+    def package_install(self, app, password, replaces=None): return self.app_update(app, password)
+    def package_remove(self, app, password): return self.app_update(app, password)
 
     def app_update(self, app, password, replaces=None):
         job = AppUpdate.__new__(AppUpdate)

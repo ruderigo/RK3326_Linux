@@ -60,10 +60,10 @@ and authorised testing on your own equipment.
 
 On the dock as well: **FireFly**, **Stump** and **Ember** — our own apps,
 built into the image. FireFly and Ember are ready on a fresh card; the Stump
-asks a few questions the first time you open it. With them: the
-**Provisioner** (flashes ESP32 boards) and **STUMP Recon** (LoRa and 2.4 GHz
-recon with a board on USB; new, not yet tried on a handheld). Updating them
-(the **AppManager** window), and the
+asks a few questions the first time you open it. With them, the
+**Provisioner** (flashes ESP32 boards). **AppManager** updates these, and
+installs any other app from a package, a `.zip` copied to the card: an app
+is added, updated or removed without the system changing. That, and the
 **Sound** window (jack, USB audio, a mic recorder), are in
 [`docs/apps.md`](docs/apps.md).
 
