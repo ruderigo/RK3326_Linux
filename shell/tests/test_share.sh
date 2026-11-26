@@ -121,4 +121,22 @@ python3 mk.py share/packages/demo-1.2.3.zip 2>/dev/null; cp share/packages/demo-
 out=$(RK_PKG_DIR=$W/none RK_PKG_MORE=$W/share/packages python3 "$R/rk-pkg" list 2>&1)
 echo "$out" | grep -q '^bad|\._' && bad "rk-pkg lists a Mac's ._ file: $out"
 echo "$out" | grep -q 'demo-1.2.3.zip' || echo "note: rk-pkg did not list the made-up package (its layout is checked in test_apps.py): $out" | head -3
+
+# rk-paths: the one place an app asks where things are
+P="$R/../bin/rk-paths"; rm -rf pt; mkdir -p pt/share pt/data
+export RK_PATHS_SHARE=$W/pt/share RK_PATHS_DATA=$W/pt/data; unset RK_PATHS_MOUNTED
+"$P" share >/dev/null && bad "rk-paths: a share on a card that has none"
+[ "$("$P" inbox provisioner)" = "$W/pt/data/inbox/provisioner" ] && [ -d pt/data/inbox/provisioner ] || bad "rk-paths: inbox without a share"
+[ ! -e pt/share/provisioner ] || bad "rk-paths: wrote under /share while it is not mounted"
+export RK_PATHS_MOUNTED=1
+[ "$("$P" share)" = "$W/pt/share" ] || bad "rk-paths share"
+[ "$("$P" inbox provisioner | paste -sd,)" = "$W/pt/share/provisioner,$W/pt/data/inbox/provisioner" ] || bad "rk-paths: the share is not first in the inbox"
+touch pt/share/provisioner/Fw.BIN pt/share/provisioner/._Fw.BIN pt/share/provisioner/notes.txt pt/data/inbox/provisioner/old.bin
+mkdir pt/share/provisioner/.Spotlight-V100; touch pt/share/provisioner/.Spotlight-V100/x.bin
+[ "$("$P" find provisioner '*.bin' | paste -sd,)" = "$W/pt/share/provisioner/Fw.BIN,$W/pt/data/inbox/provisioner/old.bin" ] || bad "rk-paths find: $("$P" find provisioner '*.bin' | paste -sd,)"
+[ "$("$P" find provisioner | wc -l)" = 3 ] || bad "rk-paths find without a pattern"
+"$P" env | grep -qx "RK_PACKAGES=$W/pt/data/packages:$W/pt/share/packages" || bad "rk-paths env"
+"$P" inbox "../etc" 2>/dev/null; [ $? = 2 ] || bad "rk-paths: a name that is a path was accepted"
+mkdir -p pt/share/roms; ln -s "$W/pt/share/roms" pt/data/roms; [ "$("$P" roms)" = "$W/pt/share/roms" ] || bad "rk-paths roms does not follow the link"
+echo "ok  rk-paths: share, data, roms, packages; an app's inbox (the share first), its files without a Mac's leftovers"
 echo "test_share: ok"
