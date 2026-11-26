@@ -56,7 +56,8 @@ Your own picture at switch-on
   Replace logo.bmp here. Only one kind of file is shown: a BMP, 24 bits,
   not compressed, exactly the size of the screen in pixels (720 x 720 on an
   R36MAX, 640 x 480 on an R36S). A JPG or PNG, or another size, shows
-  nothing. Choosing another handheld puts our picture back.
+  nothing. An update of the system, or choosing another handheld, puts
+  the system's picture back: copy yours again after it.
 
 Files here
   boot.ini, Image, *.dtb, logo.bmp   what the handheld starts

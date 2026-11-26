@@ -255,6 +255,11 @@ apply() {
     [ -n "$ROOT" ] || /usr/local/sbin/rk-sysconf >/dev/null 2>&1 || true     # the settings files that came with it
     say "running migrations..."
     /usr/local/sbin/rk-migrate run || say "a migration reported a problem (continuing)"
+    # the picture at switch-on comes with the system: every update writes it
+    # to the boot partition, over whatever logo is there
+    if [ -z "$ROOT" ] && mountpoint -q /boot 2>/dev/null && [ -f /usr/lib/rk/bootlogo.py ]; then
+        python3 /usr/lib/rk/bootlogo.py boot /boot >/dev/null 2>&1 || say "the boot logo was not written (continuing)"
+    fi
     say "restarting the desktop..."
     if restart_desktop; then
         prune_backups

@@ -62,7 +62,10 @@ with tempfile.TemporaryDirectory() as t:
     ours = open(f"{t}/logo.bmp", "rb").read()
     assert ours != before and ours == open(f"{t}/consoles/logo/720P/logo.bmp", "rb").read()
     assert not [f for f in os.listdir(t) if "logo-new" in f], "a work file was left on the boot partition"
-    assert os.path.exists(f"{t}/consoles/logo/ours.txt")
+    # nothing is kept: a logo put there by hand is written over at the next run
+    stock(f"{t}/logo.bmp", (720, 720))
+    rc, out = run("boot", t)
+    assert rc == 0 and open(f"{t}/logo.bmp", "rb").read() == ours, out
 
     # the turn: the eye (the only green in the picture) is in the top half of an upright
     # logo, so in the left half of one turned 90 counter-clockwise, the right half at 270,

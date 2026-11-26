@@ -16,9 +16,10 @@ with the colour of the picture's top corners around it. A folder that is not
 in turns.txt keeps the logo it has, and that is said.
 
 An update does not replace the boot partition, so a card flashed before our
-logo existed kept arkos4clone's. Migration 0004 runs "boot" once on such a
-card. After that the logo.bmp on BOOT is the owner's: they replace the file
-themselves, and no later update writes over it.
+logo existed kept arkos4clone's. Every update runs "boot" (rk-update, and
+migration 0004 for the update that first brings this file): the system's
+logo is written each time, whatever logo.bmp was there. A logo of the
+owner's own lasts until the next update.
 """
 import os
 import struct
@@ -100,10 +101,6 @@ def make(logo_dir):
             say(f"{name}: {e}: the logo it has is kept")
             continue
         made[name] = path
-    if made:
-        # so the update step can tell a boot partition that has ours already
-        with open(os.path.join(logo_dir, "ours.txt"), "w", encoding="utf-8") as f:
-            f.write("These logos are RK3326 Linux's own. Replace logo.bmp at the top of BOOT with yours.\r\n")
     say(f"{len(made)} boot logos made")
     return made
 
