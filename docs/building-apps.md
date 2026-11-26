@@ -344,7 +344,7 @@ a computer can only reach `BOOT` and `RKSHARE`. So an app that takes files
 from the owner looks in a folder of its own on `/share`, beside wherever it
 looked before.
 
-- **It may not be there.** A card set up before 1.3 has no `RKSHARE` until
+- **It may not be there.** A card set up before `RKSHARE` existed has none until
   its owner asks for it (Settings → Show the card on a computer), and a card
   under about 2 GB of free room never gets one. Test with
   `mountpoint -q /share`, and keep your other folder working.
