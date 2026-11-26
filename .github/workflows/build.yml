@@ -32,9 +32,10 @@ jobs:
       - name: Draw the desktop and its windows with made-up data
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core >/dev/null
+          sudo apt-get install -y -qq --no-install-recommends python3-pygame python3-pyte fonts-dejavu-core exfatprogs fdisk e2fsprogs >/dev/null
           cd shell
           python3 -m compileall -q rkshell
+          bash tests/test_share.sh
           python3 tests/test_apps.py
           python3 tests/test_device.py
           python3 tests/test_sound.py

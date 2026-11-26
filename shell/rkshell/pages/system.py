@@ -12,10 +12,35 @@ class SystemPage(Page):
     title, icon = "Settings", "settings"
     hints = [("←→", "adjust"), ("A", "choose"), ("B", "close")]
 
+    share_job = None                # asking for the part of the card a computer reads
+
     def __init__(self, app):
         super().__init__(app)
         self.list = ListView()
         self.enter()
+
+    @property
+    def live(self):
+        return SystemPage.share_job is not None
+
+    def poll(self):
+        job = SystemPage.share_job
+        if not job or not job.done:
+            return
+        SystemPage.share_job = None
+        said = [ln.split(": ", 1)[-1] for ln in job.lines if ln.startswith("rk-share: ")]
+        self.enter()
+        if job.ok:
+            self.app.confirm("Restart now?", "The card is changed while the handheld starts: a few minutes. "
+                             "Plug the charger in and do not switch off.", "Restart", self.restart)
+        else:
+            self.app.toast(said[-1] if said else "Could not prepare the card", 8, error=True)
+
+    def share(self):
+        if SystemPage.share_job:
+            return
+        self.app.toast("Preparing…", 4)
+        SystemPage.share_job = self.app.system.share_request()
 
     def enter(self):
         s = self.app.system
@@ -28,6 +53,16 @@ class SystemPage(Page):
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
         if s.mouse_enabled() is not None:
             rows.append({"name": "Left-stick mouse", "on": s.mouse_enabled, "flip": s.set_mouse})
+        share = s.share_state()
+        if share == "none":
+            # /data fills the card: a computer shows only the boot files
+            rows.append({"name": "Show the card on a computer", "do": lambda: self.app.confirm(
+                "Show the card on a computer?",
+                "Makes a part of the card that a Mac or PC opens, for games and app packages. "
+                "/data becomes 16 GB; what is in it is kept. Done at the next restart.", "Prepare", self.share)})
+        elif share == "requested":
+            rows.append({"name": "Card: changed at the next restart", "do": lambda: self.app.confirm(
+                "Restart now?", "A few minutes. Plug the charger in and do not switch off.", "Restart", self.restart)})
         rows += [{"name": "Update this handheld", "do": lambda: self.app.push(OsUpdatePage(self.app))},
                  {"name": "About this handheld", "do": self.about},
                  {"name": "Restart", "do": lambda: self.app.confirm("Restart?", "The handheld starts again.", "Restart", self.restart)},

@@ -10,7 +10,8 @@ A package is a .zip with, at its top (or inside one folder):
     deploy/<id>.json        its dock entry (name, exec, ...); <id> names the app
     ...                     the app's files, wherever its installer expects them
 
-Packages are looked for in /data/ark/packages. The AppManager window lists
+Packages are looked for in /data/ark/packages and in /share/packages (the
+partition a computer can read). The AppManager window lists
 them and runs this; from a terminal:
 
     rk-pkg list             every package found and every app installed from one
@@ -40,6 +41,9 @@ import zipfile
 
 HOME = os.environ.get("HOME") or "/home/ark"
 PKG_DIR = os.environ.get("RK_PKG_DIR", "/data/ark/packages")
+# also looked in: the part of the card a computer can read (rk-share), where a
+# package is copied with the card in the computer's reader
+PKG_DIRS = [PKG_DIR] + [d for d in os.environ.get("RK_PKG_MORE", "/share/packages").split(":") if d]
 DOCK_DIR = os.environ.get("RK_PKG_DOCK", "/data/ark/apps")
 REG_DIR = os.environ.get("RK_PKG_REG", os.path.join(DOCK_DIR, ".packages"))
 SYSTEM_DOCK = os.environ.get("RK_PKG_SYSTEM_DOCK", "/usr/share/rk/apps")
@@ -131,14 +135,17 @@ def inspect(path):
 
 def found():
     """(packages by id: the highest version of each, [(file, reason)] for zips that are not packages)."""
-    best, bad = {}, []
-    try:
-        files = sorted(f for f in os.listdir(PKG_DIR) if f.lower().endswith(".zip"))
-    except OSError:
-        files = []
-    for f in files:
+    best, bad, files = {}, [], []
+    for d in PKG_DIRS:
         try:
-            p = inspect(os.path.join(PKG_DIR, f))
+            # not the "._name.zip" files a Mac leaves beside what it copies to exFAT
+            files += sorted(os.path.join(d, f) for f in os.listdir(d) if f.lower().endswith(".zip") and not f.startswith("."))
+        except OSError:
+            pass
+    for path in files:
+        f = os.path.basename(path)
+        try:
+            p = inspect(path)
         except Refused as e:
             bad.append((f, str(e)))
             continue
@@ -230,14 +237,15 @@ def under_home(path):
 def cmd_install(what):
     path = what if os.path.sep in what or what.lower().endswith(".zip") else ""
     if path and not os.path.isabs(path) and not os.path.exists(path):
-        path = os.path.join(PKG_DIR, path)
+        path = next((os.path.join(d, path) for d in PKG_DIRS if os.path.exists(os.path.join(d, path))),
+                    os.path.join(PKG_DIR, path))
     try:
         if path:
             p = inspect(path)
         else:
             best, _ = found()
             if what not in best:
-                say(f"no package for '{what}' in {PKG_DIR}.")
+                say(f"no package for '{what}' in {' or '.join(PKG_DIRS)}.")
                 return 1
             p = best[what]
     except Refused as e:

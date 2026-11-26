@@ -16,8 +16,9 @@ gnupg
 ca-certificates
 unzip
 
-# the card and its partitions
+# the card and its partitions (exfatprogs: the partition a computer can read)
 parted
+exfatprogs
 
 # devices
 usbutils

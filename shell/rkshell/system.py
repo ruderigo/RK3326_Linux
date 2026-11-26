@@ -474,6 +474,7 @@ class Steps:
                 break
         self.ok, self.done = ok, True
 RK_UPDATE = "/usr/local/sbin/rk-update"
+RK_SHARE = "/usr/local/sbin/rk-share"
 
 
 def parse_packages(out):
@@ -1264,10 +1265,10 @@ class System:
 
     def storage(self):
         out = []
-        for mount, label in (("/", "System"), ("/data", "Data"), ("/boot", "Boot files")):
+        for mount, label in (("/", "System"), ("/data", "Data"), ("/share", "Computer"), ("/boot", "Boot files")):
             try:
                 u = shutil.disk_usage(mount)
-                if mount == "/data" and not os.path.ismount(mount):
+                if mount in ("/data", "/share") and not os.path.ismount(mount):
                     continue
                 out.append({"label": label, "mount": mount, "used": u.used, "total": u.total})
             except OSError:
@@ -1373,6 +1374,16 @@ class System:
 
     def restart(self):
         return run(["reboot"], root=True)
+
+    # ------------------------------------- the part of the card a computer reads
+    def share_state(self):
+        """"ready", "requested", "none" (the card can get one) or "small"; "" without rk-share."""
+        ok, out = run([RK_SHARE, "state"])
+        return out.strip() if ok else ""
+
+    def share_request(self):
+        """Ask for the visible partition: a job (`lines`, `done`, `ok`). It is made at the next start."""
+        return Steps([["sudo", "-n", RK_SHARE, "request"]])
 
     # --------------------------------------------------------------- files
     def listdir(self, path):
@@ -1484,7 +1495,8 @@ class DemoSystem(System):
     def storage(self):
         g = 1024 ** 3
         return [{"label": "System", "mount": "/", "used": int(0.7 * g), "total": int(2.9 * g)},
-                {"label": "Data", "mount": "/data", "used": int(1.2 * g), "total": 83 * g},
+                {"label": "Data", "mount": "/data", "used": int(1.2 * g), "total": 16 * g},
+                {"label": "Computer", "mount": "/share", "used": int(4.6 * g), "total": 67 * g},
                 {"label": "Boot files", "mount": "/boot", "used": int(0.11 * g), "total": int(0.25 * g)}]
 
     def apps(self):
@@ -1616,6 +1628,14 @@ class DemoSystem(System):
     def boot_selection(self): return {"console": "r36max type1", "kernel": "5.10"}
     def power_off(self): return True, ""
     def restart(self): return True, ""
+
+    def share_state(self): return getattr(self, "_share", "ready")
+
+    def share_request(self):
+        job = Steps.__new__(Steps)
+        job.lines, job.done, job.ok = ["rk-share: Ready. Restart the handheld."], True, True
+        self._share = "requested"
+        return job
 
     def listdir(self, path):
         if path == "/data/ark":

@@ -115,7 +115,10 @@ way a program is installed on a computer from its installer file. The
 system is not changed by it and its version stays what it was.
 
 1. Get the app's package, a `.zip`, from whoever makes the app.
-2. Copy it to `/data/ark/packages` on the handheld. From a computer:
+2. Copy it to the handheld. With the card in a computer: into the
+   `packages` folder of the `RKSHARE` partition (see
+   [media.md](media.md) if only `BOOT` shows). Or over the network, to
+   `/data/ark/packages`:
 
        scp the-app-1.0.0.zip ark@r36max.local:/data/ark/packages/
 

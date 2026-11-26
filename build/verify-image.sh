@@ -87,7 +87,7 @@ has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
 filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
-         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps /usr/local/sbin/rk-pkg /usr/local/sbin/rk-update /usr/local/sbin/rk-migrate \
+         /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-share /usr/sbin/mkfs.exfat /usr/sbin/resize2fs /share /etc/systemd/system/sysinit.target.wants/rk-share.service /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps /usr/local/sbin/rk-pkg /usr/local/sbin/rk-update /usr/local/sbin/rk-migrate \
          /usr/lib/rk/migrations/0001-state-to-data.sh \
          /etc/fstab /etc/hostname /home/ark /boot /data \
          /usr/lib/modules/$KVER/modules.dep /usr/lib/modules/4.4.189/modules.dep \
@@ -194,6 +194,12 @@ cmp -s <(head -c $(( 32768 * 512 )) "$IMG" | tail -c +513) <(head -c $(( 32768 *
     fail "adding the data partition changed the boot chain area"
 "$HERE/../overlay/usr/local/sbin/rk-data-partition" "$T/card.img" >/dev/null || fail "a second run of rk-data-partition failed"
 ok "first-start data partition: sector $P3S, after the system; boot chain untouched; a second run changes nothing"
+filecat /etc/fstab | grep -q 'RKSHARE' && fail "fstab waits for the visible partition, which the first start has not made yet"
+filecat /usr/local/sbin/rk-firstboot | grep -q 'rk-share convert "$disk"' || fail "rk-firstboot does not make the visible partition"
+for k in "$UP"/rootfs/dArkOS/usr/lib/modules/*/; do
+    grep -q 'fs/exfat/exfat.ko' "$k/modules.order" "$k/modules.builtin" 2>/dev/null || fail "kernel $(basename "$k") has no exFAT driver"
+done
+ok "the visible partition: rk-share and mkfs.exfat are in the image, both kernels have the exFAT driver (what rk-share does to a card: shell/tests/test_share.sh)"
 # a partition 3 in the wrong place must be refused, not formatted
 cp --sparse=always "$IMG" "$T/bad.img"; truncate -s +1G "$T/bad.img"
 echo 'start=2048, size=30720, type=83' | sfdisk --quiet --force --append "$T/bad.img" >/dev/null 2>&1
