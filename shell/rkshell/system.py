@@ -1176,8 +1176,12 @@ class System:
             if k in info:
                 info[k] = v.strip()
         if info["installed"] in ("", "unknown"):
-            info["installed"] = os_release_version(read("/etc/os-release.rk"))
+            info["installed"] = self.os_installed()
         return info
+
+    def os_installed(self):
+        """The version on this card, read from its file: no waiting."""
+        return os_release_version(read("/etc/os-release.rk"))
 
     def os_newest(self):
         """The newest version there is to update to, or "" when it cannot be
@@ -1604,6 +1608,7 @@ class DemoSystem(System):
         return {"installed": "0.9.0", "newest": "", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
 
     def os_newest(self): return "v1.0.0"
+    def os_installed(self): return "0.9.0"
 
     def os_update(self, password):
         job = OsUpdate.__new__(OsUpdate)

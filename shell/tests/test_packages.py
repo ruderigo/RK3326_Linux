@@ -148,6 +148,8 @@ class Slow(S.DemoSystem):
     """The network answers late, or not at all."""
     answer, wait = "v1.4.0", 0.3
 
+    def os_installed(self): return "1.3.1"
+
     def os_status(self):
         return dict(super().os_status(), installed="1.3.1")
 
@@ -157,10 +159,14 @@ class Slow(S.DemoSystem):
 
 
 def window(system):
+    """Opened the way the owner opens it: Settings, then "Update this handheld"."""
+    from rkshell.pages.system import SystemPage
     app = A.App(system, pygame.Surface((720, 720)))
-    page = OsUpdatePage(app)
-    app.push(page)
-    page.enter()
+    app.window = SystemPage(app)
+    app.window.list.sel = next(i for i, it in enumerate(app.window.list.items) if it["name"] == "Update this handheld")
+    app.handle("a")
+    page = app.stack[-1]
+    assert isinstance(page, OsUpdatePage)
     return app, page
 
 
@@ -170,7 +176,6 @@ def shown(app):
     drawn, real = [], G.text
     G.text = lambda surf, font, s, *a, **k: (drawn.append(s), real(surf, font, s, *a, **k))[1]
     try:
-        app.window = app.window or type("W", (), {"title": "Settings", "draw": lambda *a: None, "hints": []})()
         app.draw()
     finally:
         G.text = real

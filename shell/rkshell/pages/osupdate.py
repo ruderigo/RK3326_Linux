@@ -28,17 +28,24 @@ class OsUpdatePage(Page):
         self.view = "running" if OsUpdatePage.job else "info"
         self.told = False
         self.looking = False
+        # Settings pushes this window over itself, and a pushed window is not
+        # "opened" by the desktop: without this nothing was ever looked up,
+        # and both versions stayed "unknown"
+        self.enter()
 
     def enter(self):
         if self.view != "running":
             # what this card has is shown at once; the newest version is
             # asked of the network beside it, and fills in when it answers
-            self.info = self.app.system.os_status()
+            s = self.app.system
+            self.info = info = {"installed": s.os_installed()}
             self.looking = True
-            info = self.info
 
             def look():
-                info["newest"] = self.app.system.os_newest()
+                rest = s.os_status()
+                info.update({k: v for k, v in rest.items() if v and (k != "installed" or not info["installed"])})
+                self.app.dirty = True
+                info["newest"] = s.os_newest()
                 if info is self.info:
                     self.looking = False
                     self.app.dirty = True
