@@ -145,7 +145,7 @@ class SystemPage(Page):
         def go(pw):
             if pw:
                 SystemPage.reset_job = s.reset(kind, pw)
-        self.app.push(Keyboard(self.app, "This handheld's password (SELECT shows it)", go, secret=True))
+        self.app.push(Keyboard(self.app, "This handheld's password", go, secret=True))
 
     def poll(self):
         self.poll_reset()

@@ -178,14 +178,15 @@ class VideoPage(Page):
         G.text(surf, f.mono, G.fit(f.mono, head, area.w - 32), (x, y), T.EMBER_BRIGHT if self.list.items else T.MUTED)
         y += f.line + 8
         pygame.draw.line(surf, T.BORDER, (area.x + 12, y - 4), (area.right - 12, y - 4))
-        foot = 2 * f.small_line + 8
+        notes = [f"yt-dlp {self.status['ytdlp']}" + ("" if self.status["js"] else "  ·  no JavaScript runtime: YouTube may refuse"),
+                 "If videos stop playing, press Y: YouTube changes often and yt-dlp follows."]
+        wrapped = [(ln, k) for k, note in enumerate(notes) for ln in G.wrap(f.small, note, area.w - 32)]
+        foot = len(wrapped) * f.small_line + 8
         rows = pygame.Rect(area.x + 12, y, area.w - 24, area.bottom - y - foot)
         if self.list.items:
             self.list.draw(surf, f, rows, self.draw_row)
-        notes = [f"yt-dlp {self.status['ytdlp']}" + ("" if self.status["js"] else "  ·  no JavaScript runtime: YouTube may refuse"),
-                 "If videos stop playing, press Y: YouTube changes often and yt-dlp follows."]
-        for k, ln in enumerate(notes):
-            G.text(surf, f.small, G.fit(f.small, ln, area.w - 32), (x, area.bottom - foot + 4 + k * f.small_line),
+        for i, (ln, k) in enumerate(wrapped):
+            G.text(surf, f.small, ln, (x, area.bottom - foot + 4 + i * f.small_line),
                    T.DIM if self.status["js"] or k else T.ERROR)
 
     def draw_row(self, surf, f, r, v, sel):
@@ -204,13 +205,12 @@ class VideoPage(Page):
         y += f.line + 6
         sub = ("B goes back." if ok else "The reason is in the last lines." if done
                else "This takes a few minutes. It keeps running if you close the window.")
-        G.text(surf, f.small, G.fit(f.small, sub, area.w - 32), (x, y), T.TEXT if done else T.DIM)
-        y += f.small_line + 10
+        y += max(f.small_line, G.para(surf, f.small, sub, (x, y), area.w - 32, T.TEXT if done else T.DIM)) + 10
         box = pygame.Rect(area.x + 12, y, area.w - 24, area.bottom - y - 6)
         G.box(surf, box, T.PANEL, 6, T.BORDER)
         lines = job.lines if job else []
         fit = max(1, (box.h - 16) // f.small_line)
-        for i, ln in enumerate(lines[-fit:]):
-            colour = T.EMBER if ln.startswith(("rk-tools:", "rk-video:")) else T.TEXT
-            G.text(surf, f.small, G.fit(f.small, ln.replace("rk-tools: ", "").replace("rk-video: ", ""), box.w - 24),
-                   (box.x + 12, box.y + 10 + i * f.small_line), colour)
+        shown = [ln.replace("rk-tools: ", "").replace("rk-video: ", "") for ln in lines]
+        for i, (piece, k) in enumerate(G.tail(f.small, shown, box.w - 24, fit)):
+            colour = T.EMBER if lines[k].startswith(("rk-tools:", "rk-video:")) else T.TEXT
+            G.text(surf, f.small, piece, (box.x + 12, box.y + 10 + i * f.small_line), colour)

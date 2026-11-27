@@ -1055,8 +1055,15 @@ class System:
     def set_ssh(self, on):
         """rk-remote refuses to turn it on while the handheld still has its
         first password: set_password comes first then."""
-        ok, out = run(["/usr/local/sbin/rk-remote", "on" if on else "off"], root=True, timeout=20)
-        return ok, "" if ok else (out.splitlines()[-1].replace("rk-remote: ", "") if out else "")
+        ok, out = run(["/usr/local/sbin/rk-remote", "on" if on else "off"], root=True, timeout=30)
+        if ok:
+            return True, ""
+        # what systemd says about it ('See "systemctl status ssh.service"...') is
+        # in the log for whoever wants it; the screen gets a sentence
+        if "first password" in out:
+            return False, "This handheld still has its first password: choose your own first."
+        return False, ("Remote access could not start. Restart the handheld and try again." if on
+                       else "Remote access could not be turned off.")
 
     def set_password(self, new):
         """Give the handheld its own password in place of the first one."""

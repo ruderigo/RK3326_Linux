@@ -134,7 +134,7 @@ class NetworkPage(Page):
                              "This handheld still has its first password, the one everybody knows. Choose your own: "
                              "it is the one SSH will ask for, and the one updates and installs ask for.",
                              "Choose it", lambda: self.app.push(Keyboard(
-                                 self.app, "Choose a password for this handheld (8 or more)",
+                                 self.app, "Choose a password (8 or more)",
                                  lambda pw: self.new_password(pw, go), secret=True)))
         else:
             go()

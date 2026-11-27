@@ -17,6 +17,15 @@ from ..widgets import Keyboard
 from .base import Page
 
 
+def source_name(source):
+    """Where updates come from, short enough for its row: "official", or the
+    fork's "owner/repo" (rk-update prints the whole address after it)."""
+    kind, _, rest = source.partition(" (")
+    if kind == "fork":
+        return "fork: " + rest.rstrip(")").split("github.com/")[-1]
+    return kind or "official"
+
+
 class OsUpdatePage(Page):
     title = "Update this handheld"
     job = None                      # survives closing the window
@@ -90,7 +99,7 @@ class OsUpdatePage(Page):
             OsUpdatePage.job = (self.app.system.os_update if action == "apply" else self.app.system.os_rollback)(pw)
             OsUpdatePage.action, self.view, self.told = action, "running", False
 
-        prompt = "This handheld's password (SELECT shows it)"
+        prompt = "This handheld's password"
         self.app.push(Keyboard(self.app, prompt, go, secret=True))
 
     def handle(self, action):
@@ -143,7 +152,7 @@ class OsUpdatePage(Page):
                 ("Newest", new + ("  (up to date)" if same else "") if new
                  else "looking…" if self.looking else "could not look it up (Wi-Fi?)",
                  T.OK if same else T.EMBER_BRIGHT if new else T.MUTED),
-                ("Updates from", i.get("source") or "official", T.MUTED),
+                ("Updates from", source_name(i.get("source") or "official"), T.MUTED),
                 ("Channel", i.get("channel") or "—", T.MUTED),
                 ("State schema", i.get("schema") or "—", T.MUTED)]
         for label, value, colour in rows:
@@ -174,13 +183,11 @@ class OsUpdatePage(Page):
                else "That is not this handheld's password. B goes back; SELECT on the keyboard shows it." if why == "password"
                else "It put the old version back — nothing was lost. The reason is below." if done
                else "This takes a few minutes and keeps going if you close the window. The desktop may restart at the end.")
-        G.text(surf, f.small, G.fit(f.small, sub, inner.w - 28), (x, y), T.TEXT if done else T.DIM)
-        y += f.small_line + 10
+        y += max(f.small_line, G.para(surf, f.small, sub, (x, y), inner.w - 28, T.TEXT if done else T.DIM)) + 10
         box = pygame.Rect(inner.x, y, inner.w, inner.bottom - y)
         G.box(surf, box, T.PANEL, 6, T.BORDER)
         lines = job.lines if job else []
         fit = max(1, (box.h - 16) // f.small_line)
-        for k, ln in enumerate(lines[-fit:]):
-            colour = T.EMBER if ln.startswith(("rk-update:", "rk-migrate:")) else T.TEXT
-            G.text(surf, f.small, G.fit(f.small, ln, box.w - 24),
-                   (box.x + 12, box.y + 10 + k * f.small_line), colour)
+        for k, (piece, at) in enumerate(G.tail(f.small, lines, box.w - 24, fit)):
+            colour = T.EMBER if lines[at].startswith(("rk-update:", "rk-migrate:")) else T.TEXT
+            G.text(surf, f.small, piece, (box.x + 12, box.y + 10 + k * f.small_line), colour)

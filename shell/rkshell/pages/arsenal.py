@@ -134,15 +134,18 @@ class ArsenalPage(Page):
         area_rows = pygame.Rect(area.x + 12, top_y, area.w - 24, area.bottom - top_y - 4)
         # measure a running offset for each row
         note_h = f.small_line + 2
-        heights = [(head_h + (note_h if r.get("note") else 0)) if r.get("head") else row_h for r in self.rows]
+        about = {i: G.wrap(f.small, r["about"], area_rows.w - 40)[:3] for i, r in enumerate(self.rows) if not r.get("head")}
+        notes = {i: G.wrap(f.small, r["note"], area_rows.w - 8)[:3] for i, r in enumerate(self.rows) if r.get("head") and r.get("note")}
+        heights = [(head_h + note_h * len(notes.get(i, []))) if r.get("head")
+                   else f.line + f.small_line * max(1, len(about[i])) + 8 for i, r in enumerate(self.rows)]
         offs, acc = [], 0
         for h in heights:
             offs.append(acc); acc += h
         sel_top = offs[self.sel]
         if sel_top - self.top < 0:
             self.top = sel_top
-        elif sel_top + row_h - self.top > area_rows.h:
-            self.top = sel_top + row_h - area_rows.h
+        elif sel_top + heights[self.sel] - self.top > area_rows.h:
+            self.top = sel_top + heights[self.sel] - area_rows.h
         self.top = max(0, min(self.top, max(0, acc - area_rows.h)))
         for i, r in enumerate(self.rows):
             ry = area_rows.y + offs[i] - self.top
@@ -152,10 +155,10 @@ class ArsenalPage(Page):
                 G.text(surf, f.small, r["head"].upper(), (area_rows.x + 2, ry + 6), T.EMBER)
                 if r.get("note"):
                     colour = {"ok": T.OK, "warn": T.ERROR}.get(r.get("note_level"), T.MUTED)
-                    G.text(surf, f.small, G.fit(f.small, r["note"], area_rows.w - 8),
-                           (area_rows.x + 2, ry + 6 + f.small_line), colour)
+                    for k, ln in enumerate(notes[i]):
+                        G.text(surf, f.small, ln, (area_rows.x + 2, ry + 6 + f.small_line * (k + 1)), colour)
             else:
-                rr = pygame.Rect(area_rows.x, ry, area_rows.w, row_h - 3)
+                rr = pygame.Rect(area_rows.x, ry, area_rows.w, heights[i] - 3)
                 sel = i == self.sel
                 if sel:
                     G.box(surf, rr, T.ROW, 6, T.BORDER)
@@ -165,7 +168,8 @@ class ArsenalPage(Page):
                 G.text(surf, f.mono, r["label"], (rr.x + 28, rr.y + 4), T.EMBER_BRIGHT if sel else T.TEXT)
                 G.text(surf, f.small, r["on"] and "installed" or "not yet", (rr.right - 10, rr.y + 6),
                        T.OK if r["on"] else T.DIM, right=True)
-                G.text(surf, f.small, G.fit(f.small, r["about"], rr.w - 40), (rr.x + 28, rr.y + 6 + f.line), T.MUTED)
+                for k, ln in enumerate(about[i]):
+                    G.text(surf, f.small, ln, (rr.x + 28, rr.y + 6 + f.line + k * f.small_line), T.MUTED)
         if self.top > 0:
             G.text(surf, f.small, "▲", (area.right - 14, top_y + 2), T.DIM, right=True)
         if self.top < acc - area_rows.h:
@@ -179,12 +183,12 @@ class ArsenalPage(Page):
         done = inst.done if inst else True
         sub = ("This downloads Metasploit over Wi-Fi; give it a few minutes." if not done
                else ("Done." if inst and inst.ok else "Finished; some tools did not install."))
-        G.text(surf, f.small, G.fit(f.small, sub, area.w - 32), (x, y),
-               T.DIM if not done else (T.OK if inst and inst.ok else T.ERROR))
-        y += f.small_line + 10
+        y += max(f.small_line, G.para(surf, f.small, sub, (x, y), area.w - 32,
+                                      T.DIM if not done else (T.OK if inst and inst.ok else T.ERROR))) + 10
         box = pygame.Rect(area.x + 12, y, area.w - 24, area.bottom - y - 6)
         G.box(surf, box, T.PANEL, 6, T.BORDER)
         lines = inst.lines if inst else []
         fit = (box.h - 16) // f.small_line
-        for i, ln in enumerate(lines[-fit:]):
-            G.text(surf, f.small, G.fit(f.small, ln.replace("rk-tools: ", ""), box.w - 24), (box.x + 12, box.y + 10 + i * f.small_line), T.TEXT)
+        shown = [ln.replace("rk-tools: ", "") for ln in lines]
+        for i, (piece, _) in enumerate(G.tail(f.small, shown, box.w - 24, max(1, fit))):
+            G.text(surf, f.small, piece, (box.x + 12, box.y + 10 + i * f.small_line), T.TEXT)

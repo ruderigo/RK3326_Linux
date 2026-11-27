@@ -252,12 +252,12 @@ class StumpSetupPage(Page):
                else "The new password was not accepted: try a longer or less simple one. B goes back." if why == "newpassword"
                else "The reason is in the last lines. B goes back to the form." if done
                else (job.step if job else ""))
-        G.text(surf, f.small, G.fit(f.small, sub, area.w - 32), (x, y), T.DIM if not done else T.TEXT)
-        y += f.small_line + 10
+        y += max(f.small_line, G.para(surf, f.small, sub, (x, y), area.w - 32, T.DIM if not done else T.TEXT)) + 10
         box = pygame.Rect(area.x + 12, y, area.w - 24, area.bottom - y - 6)
         G.box(surf, box, T.PANEL, 6, T.BORDER)
         lines = job.lines if job else []
         fit = max(1, (box.h - 16) // f.small_line)
-        for i, ln in enumerate(lines[-fit:]):
+        for i, (piece, k) in enumerate(G.tail(f.small, lines, box.w - 24, fit)):
+            ln = lines[k]
             colour = T.EMBER if ln.startswith(">>>") else T.ERROR if ln.startswith("[x]") else T.TEXT
-            G.text(surf, f.small, G.fit(f.small, ln, box.w - 24), (box.x + 12, box.y + 10 + i * f.small_line), colour)
+            G.text(surf, f.small, piece, (box.x + 12, box.y + 10 + i * f.small_line), colour)
