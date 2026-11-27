@@ -330,9 +330,13 @@ class App:
                 x += G.text(surf, f.small, button, (x, y), T.EMBER_BRIGHT) + 6
                 x += G.text(surf, f.small, label, (x, y), T.MUTED) + 18
         if self.toast_text:
+            # a message is read whole: it takes the lines it needs
             w = min(W - 40, f.small.size(self.toast_text)[0] + 32)
-            r = pygame.Rect((W - w) // 2, H // 2 - f.line, w, f.line + 10)
+            lines = G.wrap(f.small, self.toast_text, w - 24)[:6]
+            h = len(lines) * f.small_line + 16
+            r = pygame.Rect((W - w) // 2, H // 2 - h // 2, w, h)
             G.box(surf, r, T.PANEL, 8, T.ERROR if self.toast_error else T.EMBER)
-            G.text(surf, f.small, G.fit(f.small, self.toast_text, w - 24), (r.centerx, r.y + 8),
-                   T.ERROR if self.toast_error else T.TEXT, center=True)
+            for k, ln in enumerate(lines):
+                G.text(surf, f.small, ln, (r.centerx, r.y + 8 + k * f.small_line),
+                       T.ERROR if self.toast_error else T.TEXT, center=True)
         self.dirty = False

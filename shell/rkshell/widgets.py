@@ -106,24 +106,30 @@ class Menu(Screen):
     def draw(self, surf, f, area):
         w = min(area.w - 40, f.base * 24)
         lines = G.wrap(f.small, self.detail, w - 28) if self.detail else []
-        h = f.line + 16 + len(lines) * f.small_line + len(self.items) * (f.line + 8) + 24
+        # the title and each choice take a second line when they need it, not an ellipsis
+        title = G.wrap(f.big, self.title, w - 28)[:2]
+        labels = [G.wrap(f.mono, label, w - 44)[:2] for label, _ in self.items]
+        h = len(title) * f.line + 16 + len(lines) * f.small_line + sum(len(ls) * f.line + 8 for ls in labels) + 24
         r = pygame.Rect(area.centerx - w // 2, area.centery - h // 2, w, h)
         G.box(surf, r, T.PANEL, 8, T.EMBER)
         y = r.y + 12
-        G.text(surf, f.big, G.fit(f.big, self.title, w - 28), (r.x + 14, y), T.EMBER_BRIGHT)
-        y += f.line + 10
+        for k, ln in enumerate(title):
+            G.text(surf, f.big, ln if k == 0 or len(title) < 2 else G.fit(f.big, ln, w - 28), (r.x + 14, y), T.EMBER_BRIGHT)
+            y += f.line
+        y += 10
         for ln in lines:
             G.text(surf, f.small, ln, (r.x + 14, y), T.MUTED)
             y += f.small_line
         y += 8 if lines else 0
-        for i, (label, _) in enumerate(self.items):
-            row = pygame.Rect(r.x + 8, y, w - 16, f.line + 4)
+        for i, ls in enumerate(labels):
+            row = pygame.Rect(r.x + 8, y, w - 16, len(ls) * f.line + 4)
             if i == self.sel:
                 G.box(surf, row, T.ROW, 5, T.BORDER)
-            G.text(surf, f.mono, G.fit(f.mono, label, w - 44), (row.x + 10, row.y + 2),
-                   T.EMBER_BRIGHT if i == self.sel else T.TEXT)
+            for k, ln in enumerate(ls):
+                G.text(surf, f.mono, G.fit(f.mono, ln, w - 44), (row.x + 10, row.y + 2 + k * f.line),
+                       T.EMBER_BRIGHT if i == self.sel else T.TEXT)
             G.spot(row, lambda i=i: setattr(self, "sel", i))
-            y += f.line + 8
+            y += row.h + 4
 
 
 class Keyboard(Screen):
@@ -187,7 +193,9 @@ class Keyboard(Screen):
     def draw(self, surf, f, area):
         r = pygame.Rect(area.x + 16, area.y + 16, area.w - 32, area.h - 32)
         G.box(surf, r, T.PANEL, 8, T.EMBER)
-        G.text(surf, f.big, G.fit(f.big, self.title, r.w - 28), (r.x + 14, r.y + 12), T.EMBER_BRIGHT)
+        # the question is read whole: in smaller letters when the large ones do not fit
+        font = next((ft for ft in (f.big, f.mono, f.small) if ft.size(self.title)[0] <= r.w - 28), f.small)
+        G.text(surf, font, G.fit(font, self.title, r.w - 28), (r.x + 14, r.y + 12), T.EMBER_BRIGHT)
         field = pygame.Rect(r.x + 14, r.y + 22 + f.line, r.w - 28, f.line + 14)
         G.box(surf, field, T.BG, 6, T.BORDER)
         shown = self.value if self.show else "•" * len(self.value)

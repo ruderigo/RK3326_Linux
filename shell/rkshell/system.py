@@ -245,6 +245,17 @@ def stump_answers(form):
     return out
 
 
+def os_release_version(text):
+    """RK_VERSION from the text of /etc/os-release.rk, or ""."""
+    m = re.search(r'^RK_VERSION="?([^"\n]*)"?', text, re.M)
+    return m.group(1).strip() if m else ""
+
+
+def same_version(a, b):
+    """True when two version names are the same release ("v1.3.1" is "1.3.1")."""
+    return bool(a) and bool(b) and a.lstrip("v") == b.lstrip("v")
+
+
 def zone_names(zoneinfo):
     """Time zone names from the system's own table (zone1970.tab: one line a
     zone, the name in the third column), with UTC. Only those whose file is
@@ -491,6 +502,7 @@ class Steps:
                 break
         self.ok, self.done = ok, True
 RK_UPDATE = "/usr/local/sbin/rk-update"
+RK_RESET = "/usr/local/sbin/rk-reset"
 RK_SHARE = "/usr/local/sbin/rk-share"
 
 
@@ -580,8 +592,10 @@ class OsUpdate:
     check, back up, swap, migrate, restart, auto-rollback); this just runs it
     as root through sudo's askpass helper and streams what it says."""
 
-    def __init__(self, password, action="apply"):
+    def __init__(self, password, action="apply", cmd=None):
+        """cmd: another of the system's programs to run as root the same way (rk-reset)."""
         self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        self.cmd = cmd or [RK_UPDATE, action]
         threading.Thread(target=self._run, args=(password, action), daemon=True).start()
 
     def _run(self, password, action):
@@ -593,7 +607,7 @@ class OsUpdate:
                     f.write(text)
             env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
             env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
-            p = subprocess.Popen(["sudo", "-A", RK_UPDATE, action], stdout=subprocess.PIPE,
+            p = subprocess.Popen(["sudo", "-A"] + self.cmd, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
                                  errors="replace", bufsize=1, env=env)
             for raw in p.stdout:
@@ -1041,8 +1055,15 @@ class System:
     def set_ssh(self, on):
         """rk-remote refuses to turn it on while the handheld still has its
         first password: set_password comes first then."""
-        ok, out = run(["/usr/local/sbin/rk-remote", "on" if on else "off"], root=True, timeout=20)
-        return ok, "" if ok else (out.splitlines()[-1].replace("rk-remote: ", "") if out else "")
+        ok, out = run(["/usr/local/sbin/rk-remote", "on" if on else "off"], root=True, timeout=30)
+        if ok:
+            return True, ""
+        # what systemd says about it ('See "systemctl status ssh.service"...') is
+        # in the log for whoever wants it; the screen gets a sentence
+        if "first password" in out:
+            return False, "This handheld still has its first password: choose your own first."
+        return False, ("Remote access could not start. Restart the handheld and try again." if on
+                       else "Remote access could not be turned off.")
 
     def set_password(self, new):
         """Give the handheld its own password in place of the first one."""
@@ -1153,21 +1174,48 @@ class System:
         return Recorder()
 
     def os_status(self):
-        """{"installed","newest","source","channel","schema"} from rk-update status."""
-        ok, out = run([RK_UPDATE, "status"])
+        """{"installed","newest","source","channel","schema"}: what this card
+        has, without asking the network ("newest" comes from os_newest, which
+        can take its time). The installed version is read from its file as
+        well: it is shown whatever becomes of the rest."""
         info = {"installed": "", "newest": "", "source": "", "channel": "", "schema": ""}
-        for line in out.splitlines():
+        ok, out = run([RK_UPDATE, "status", "--local"], timeout=20)
+        for line in out.splitlines() if ok else []:
             k, _, v = line.partition(":")
             k = k.strip()
             if k in info:
                 info[k] = v.strip()
+        if info["installed"] in ("", "unknown"):
+            info["installed"] = self.os_installed()
         return info
+
+    def os_installed(self):
+        """The version on this card, read from its file: no waiting."""
+        return os_release_version(read("/etc/os-release.rk"))
+
+    def os_newest(self):
+        """The newest version there is to update to, or "" when it cannot be
+        looked up (no network, or the source did not answer in time)."""
+        ok, out = run([RK_UPDATE, "check"], timeout=45)
+        tag = out.splitlines()[-1].strip() if ok and out else ""
+        return tag if re.fullmatch(r"v?\d+\.\d+\.\d+", tag) else ""
 
     def os_update(self, password):
         return OsUpdate(password, "apply")
 
     def os_rollback(self, password):
         return OsUpdate(password, "rollback")
+
+    def reset(self, kind, password=None):
+        """Reset this handheld ("light" or "full"): an OsUpdate-like job; the
+        handheld restarts when it ends well. rk-reset runs as root with the
+        handheld's password. A handheld still on its first password has
+        nothing to ask (that password is public, and sudo refuses it until
+        it is changed): rk-reset has a way in for that case alone, which it
+        checks itself."""
+        if password is None:
+            return OsUpdate("", "reset", cmd=[RK_RESET, "unlocked", kind])
+        return OsUpdate(password, "reset", cmd=[RK_RESET, kind])
 
     MOUSE_BIN = "/usr/local/sbin/rk-mouse"
     MOUSE_ON = "/run/rk-mouse/on"
@@ -1578,7 +1626,10 @@ class DemoSystem(System):
         return self.set_sound_output(self._snd["mode"])
 
     def os_status(self):
-        return {"installed": "0.9.0", "newest": "1.0.0", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
+        return {"installed": "0.9.0", "newest": "", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
+
+    def os_newest(self): return "v1.0.0"
+    def os_installed(self): return "0.9.0"
 
     def os_update(self, password):
         job = OsUpdate.__new__(OsUpdate)
@@ -1592,6 +1643,15 @@ class DemoSystem(System):
 
     def os_rollback(self, password):
         return self.os_update(password)
+
+    def reset(self, kind, password=None):
+        job = OsUpdate.__new__(OsUpdate)
+        if password is not None and password != getattr(self, "_password", "a-longer-one"):
+            job.lines, job.done, job.ok, job.reason = ["Sorry, try again."], True, False, "password"
+            return job
+        self.reset_done = kind
+        job.lines, job.done, job.ok, job.reason = [f"rk-reset: {kind} reset", "rk-reset: done."], True, True, ""
+        return job
 
     _mouse_on = True
 

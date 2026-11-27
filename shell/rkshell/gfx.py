@@ -91,6 +91,38 @@ def wrap(font, s, width):
     return out
 
 
+def para(surf, font, s, pos, width, color, max_lines=4):
+    """A sentence of ours, wrapped: it is never cut with an ellipsis. Returns
+    the height it took. (Past max_lines the last line is cut: a guard for a
+    screen far smaller than any we draw for, not a way to write.)"""
+    lines = wrap(font, s, width)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines - 1] + [fit(font, " ".join(lines[max_lines - 1:]), width)]
+    x, y = pos
+    step = font.get_linesize()
+    for ln in lines:
+        text(surf, font, ln, (x, y), color)
+        y += step
+    return step * len(lines)
+
+
+def tail(font, lines, width, rows):
+    """The last `rows` screen lines of a log, long lines wrapped instead of
+    cut: [(text, index of the log line it came from)]. The end of a line is
+    where the reason usually is."""
+    out = []
+    for i, ln in enumerate(lines[-rows:], start=max(0, len(lines) - rows)):
+        for piece in wrap(font, ln, width) or [""]:
+            while font.size(piece)[0] > width and len(piece) > 1:      # one word wider than the box: broken where it fits
+                n = len(piece)
+                while n > 1 and font.size(piece[:n])[0] > width:
+                    n -= 1
+                out.append((piece[:n], i))
+                piece = piece[n:]
+            out.append((piece, i))
+    return out[-rows:]
+
+
 def meter(surf, rect, fraction, color=T.EMBER):
     """A horizontal bar filled to `fraction` (0..1)."""
     box(surf, rect, T.BAR, 4, T.BORDER)

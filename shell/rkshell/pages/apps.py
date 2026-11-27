@@ -163,8 +163,8 @@ class AppsPage(Page):
                 return
             AppsPage.job = start(pw, START_PASSWORD if fresh else None)
             AppsPage.job_name, AppsPage.job_kind, self.view, self.told = name, kind, "running", False
-        self.app.push(Keyboard(self.app, "Choose a password for this handheld (8 or more)" if fresh
-                               else "This handheld's password (SELECT shows it)", go, secret=True))
+        self.app.push(Keyboard(self.app, "Choose a password (8 or more)" if fresh
+                               else "This handheld's password", go, secret=True))
 
     def handle(self, action):
         if self.view == "running":
@@ -247,13 +247,13 @@ class AppsPage(Page):
                else "That is not this handheld's password. B goes back; SELECT on the keyboard shows it." if why == "password"
                else "The new password was not accepted: try a longer or less simple one." if why == "newpassword"
                else "The reason is in the last lines." if done else "This takes a few minutes. It keeps running if you close the window.")
-        G.text(surf, f.small, G.fit(f.small, sub, area.w - 32), (x, y), T.TEXT if done else T.DIM)
-        y += f.small_line + 10
+        y += max(f.small_line, G.para(surf, f.small, sub, (x, y), area.w - 32, T.TEXT if done else T.DIM)) + 10
         box = pygame.Rect(area.x + 12, y, area.w - 24, area.bottom - y - 6)
         G.box(surf, box, T.PANEL, 6, T.BORDER)
         lines = job.lines if job else []
         fit = max(1, (box.h - 16) // f.small_line)
-        for i, ln in enumerate(lines[-fit:]):
+        shown = [ln.replace("rk-apps: ", "") for ln in lines]
+        for i, (piece, k) in enumerate(G.tail(f.small, shown, box.w - 24, fit)):
+            ln = lines[k]
             colour = T.EMBER if ln.startswith(("==", ">>>", "rk-apps:")) else T.ERROR if ln.startswith(("[x]", "ERROR")) else T.TEXT
-            G.text(surf, f.small, G.fit(f.small, ln.replace("rk-apps: ", ""), box.w - 24),
-                   (box.x + 12, box.y + 10 + i * f.small_line), colour)
+            G.text(surf, f.small, piece, (box.x + 12, box.y + 10 + i * f.small_line), colour)

@@ -6,8 +6,19 @@ import pygame
 from .. import gfx as G
 from .osupdate import OsUpdatePage
 from .. import theme as T
-from ..widgets import ListView, Screen, TextView
+from ..widgets import Keyboard, ListView, Menu, Screen, TextView
 from .base import Page
+
+
+RESETS = {
+    "light": ("Light reset?",
+              "Erases the settings: saved Wi-Fi networks, your password (back to the first one), remote access and "
+              "its keys, the time zone, the desktop's settings. Apps and what they hold stay. The handheld restarts."),
+    "full": ("Full reset?",
+             "Erases the settings, and what the apps hold: FireFly's identity and messages, the Stump's setup, apps "
+             "installed from a package, saved scans. This cannot be undone. Games on RKSHARE stay. "
+             "The handheld restarts."),
+}
 
 
 def screen_off_text(minutes):
@@ -81,6 +92,7 @@ class SystemPage(Page):
 
     share_job = None                # asking for the part of the card a computer reads
     share_said, share_at = "", 0.0
+    reset_job = None                # a reset on its way: the handheld restarts when it ends
 
     def __init__(self, app):
         super().__init__(app)
@@ -89,9 +101,54 @@ class SystemPage(Page):
 
     @property
     def live(self):
-        return SystemPage.share_job is not None
+        return SystemPage.share_job is not None or SystemPage.reset_job is not None
+
+    def poll_reset(self):
+        job = SystemPage.reset_job
+        if not job:
+            return
+        said = [ln.split(": ", 1)[-1] for ln in job.lines if ln.startswith("rk-reset: ")]
+        if not job.done:
+            text = "Resetting. Do not switch off. " + (said[-1] if said else "")
+            if text != self.share_said or time.time() - self.share_at >= 1:
+                self.share_said, self.share_at = text, time.time()
+                self.app.toast(text.strip(), 3)
+            return
+        SystemPage.reset_job = None
+        if job.ok:
+            self.app.toast("Reset done. Restarting…", 60)
+        elif job.reason == "password":
+            self.app.toast("That is not this handheld's password. Nothing was reset.", 8, error=True)
+        else:
+            self.app.toast((said or job.lines or ["The reset stopped"])[-1], 8, error=True)
+
+    def ask_reset(self):
+        self.app.push(Menu(self.app, "Reset this handheld", [
+            ("Cancel", None),
+            ("Light: the settings", lambda: self.confirm_reset("light")),
+            ("Full: settings and app data", lambda: self.confirm_reset("full"))],
+            "Light keeps your apps and what they hold. Full also erases what the apps hold. "
+            "Neither touches the games on RKSHARE."))
+
+    def confirm_reset(self, kind):
+        title, detail = RESETS[kind]
+        self.app.confirm(title, detail, "Reset", lambda: self.start_reset(kind))
+
+    def start_reset(self, kind):
+        if self.busy() or SystemPage.reset_job:
+            return
+        s = self.app.system
+        if s.password_expired():            # the first password is public: there is nothing to ask
+            SystemPage.reset_job = s.reset(kind)
+            return
+
+        def go(pw):
+            if pw:
+                SystemPage.reset_job = s.reset(kind, pw)
+        self.app.push(Keyboard(self.app, "This handheld's password", go, secret=True))
 
     def poll(self):
+        self.poll_reset()
         job = SystemPage.share_job
         if not job:
             return
@@ -148,6 +205,7 @@ class SystemPage(Page):
             rows.append({"name": "Card: changed at the next restart", "do": lambda: self.app.confirm(
                 "Restart now?", "A few minutes. Plug the charger in and do not switch off.", "Restart", self.restart)})
         rows += [{"name": "Update this handheld", "do": lambda: self.app.push(OsUpdatePage(self.app))},
+                 {"name": "Reset this handheld", "do": self.ask_reset},
                  {"name": "About this handheld", "do": self.about},
                  {"name": "Restart", "do": lambda: self.app.confirm("Restart?", "The handheld starts again.", "Restart", self.restart)},
                  {"name": "Power off", "do": lambda: self.app.confirm("Power off?", "Press the power button to start it again.",

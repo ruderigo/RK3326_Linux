@@ -50,6 +50,9 @@ jobs:
           python3 tests/test_kmods.py
           python3 tests/test_power.py
           python3 tests/test_region.py
+          python3 tests/test_packages.py
+          python3 tests/test_reset.py
+          python3 tests/test_fit.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320
