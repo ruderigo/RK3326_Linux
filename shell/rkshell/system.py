@@ -245,6 +245,23 @@ def stump_answers(form):
     return out
 
 
+def zone_names(zoneinfo):
+    """Time zone names from the system's own table (zone1970.tab: one line a
+    zone, the name in the third column), with UTC. Only those whose file is
+    there. Without the table: the files themselves, one folder deep."""
+    names = set()
+    for line in read(os.path.join(zoneinfo, "zone1970.tab")).splitlines():
+        cols = line.split("\t")
+        if not line.startswith("#") and len(cols) >= 3:
+            names.add(cols[2].strip())
+    if not names:
+        for path in glob.glob(os.path.join(zoneinfo, "[A-Z]*", "*")):
+            if os.path.isfile(path):
+                names.add(os.path.relpath(path, zoneinfo))
+    names = {n for n in names if "/" in n and os.path.isfile(os.path.join(zoneinfo, n))}
+    return sorted(names) + ["UTC"]
+
+
 def password_expired(user=None):
     """True while the account still has its starting password, which must be
     changed before anything else accepts it (sudo refuses it as it is)."""
@@ -1218,6 +1235,98 @@ class System:
         d = glob.glob("/sys/class/backlight/*")
         return d[0] if d else None
 
+    def backlight_off(self):
+        """The screen's light off, for the screen's sleep. Returns the
+        brightness to give back (set_brightness never goes this low: this is
+        the one place that does, and backlight_restore undoes it)."""
+        d, was = self._backlight(), self.brightness()
+        if not d or was is None:
+            return None
+        if was > 0 and self.setting("brightness_awake") != was:
+            self.set_setting("brightness_awake", was)       # if the desktop is restarted meanwhile
+        try:
+            with open(d + "/brightness", "w") as f:
+                f.write("0")
+        except OSError:
+            return None
+        return was or self.setting("brightness_awake", 50)
+
+    def backlight_restore(self, pct=None):
+        """Light the screen again. Without a value: only if it is dark (the
+        desktop starting after it was stopped asleep)."""
+        if pct is None:
+            if self.brightness() != 0:
+                return
+            pct = self.setting("brightness_awake", 50)
+        self.set_brightness(pct or 50)
+
+    # --------------------------------------------- the desktop's own settings
+    SETTINGS = ("/data/ark/.rk-desktop.json", os.path.expanduser("~/.rk-desktop.json"))
+    SCREEN_OFF = (0, 1, 2, 5, 10, 30)       # minutes; 0 is never
+    ZONEINFO = "/usr/share/zoneinfo"
+
+    def _settings_path(self):
+        """On the data partition, so a reflash keeps them; at home without one."""
+        first = self.SETTINGS[0]
+        return first if os.path.isdir(os.path.dirname(first)) else self.SETTINGS[1]
+
+    def _settings(self):
+        try:
+            with open(self._settings_path()) as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def setting(self, key, default=None):
+        return self.cached("settings", 5, self._settings).get(key, default)
+
+    def set_setting(self, key, value):
+        d = dict(self._settings(), **{key: value})
+        path = self._settings_path()
+        try:
+            with open(path + ".new", "w") as f:
+                json.dump(d, f, indent=2)
+            os.replace(path + ".new", path)
+        except OSError:
+            pass
+        self._cache["settings"] = (time.time(), d)
+
+    def screen_off(self):
+        """Minutes without a button before the screen goes dark; 0 is never."""
+        m = self.setting("screen_off", 5)
+        return m if m in self.SCREEN_OFF else 5
+
+    def set_screen_off(self, minutes):
+        self.set_setting("screen_off", minutes)
+
+    def timezone(self):
+        z = read("/etc/timezone").strip().splitlines()
+        if z and z[0]:
+            return z[0]
+        try:
+            return os.readlink("/etc/localtime").split("/zoneinfo/", 1)[1]
+        except (OSError, IndexError):
+            return "UTC"
+
+    def timezones(self):
+        """Every zone the system has files for, sorted: "Region/City" names and UTC."""
+        return self.cached("timezones", 3600, lambda: zone_names(self.ZONEINFO))
+
+    def set_timezone(self, zone):
+        ok, out = run(["/usr/local/sbin/rk-region", "tz", zone], root=True, timeout=10)
+        if ok:
+            time.tzset()                    # this desktop's own clock, now
+            self.set_setting("timezone", zone)
+        return ok, "" if ok else (out.splitlines()[-1].replace("rk-region: ", "") if out else "Could not set it")
+
+    def restore_timezone(self):
+        """After a reflash the system is back on the image's zone, and the
+        data partition still knows the owner's: put it back."""
+        want = self.setting("timezone")
+        if want and want != self.timezone():
+            self.set_timezone(want)
+
     def brightness(self):
         d = self._backlight()
         try:
@@ -1502,6 +1611,25 @@ class DemoSystem(System):
     def set_mic(self, pct): self._mic = max(0, min(100, pct)); return self._mic
     def brightness(self): return self._bri
     def set_brightness(self, pct): self._bri = max(5, min(100, pct)); return self._bri
+
+    def backlight_off(self):
+        was, self._bri = self._bri, 0
+        return was
+
+    def _settings(self): return getattr(self, "_set", {})
+    def setting(self, key, default=None): return self._settings().get(key, default)
+    def set_setting(self, key, value): self._set = dict(self._settings(), **{key: value})
+    def timezone(self): return self.setting("timezone", "America/Toronto")
+
+    def timezones(self):
+        return ["Africa/Cairo", "Africa/Lagos", "America/Mexico_City", "America/New_York", "America/Toronto",
+                "America/Vancouver", "Asia/Tokyo", "Europe/Madrid", "Europe/Paris", "Pacific/Auckland", "UTC"]
+
+    def set_timezone(self, zone):
+        if zone not in self.timezones():
+            return False, f"no such time zone: {zone}"
+        self.set_setting("timezone", zone)
+        return True, ""
 
     def usb_devices(self):
         return [{"name": "Ralink 802.11 n WLAN", "kind": "Wi-Fi card", "id": "148f:3070", "driver": "rt2800usb"},

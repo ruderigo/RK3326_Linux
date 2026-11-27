@@ -173,6 +173,13 @@ def write_all(system, size, out_dir):
             app.window.about()
             shot("settings-about")
             app.stack.clear()
+            from .pages.system import ZonePicker
+            picker = ZonePicker(app, lambda zone: None)
+            app.push(picker)
+            shot("settings-timezone")
+            picker.open("America")
+            shot("settings-timezone-city")
+            app.stack.clear()
             app.confirm("Power off?", "Press the power button to start it again.", "Power off", lambda: None)
             shot("confirm")
             app.stack.clear()

@@ -6,8 +6,73 @@ import pygame
 from .. import gfx as G
 from .osupdate import OsUpdatePage
 from .. import theme as T
-from ..widgets import ListView, TextView
+from ..widgets import ListView, Screen, TextView
 from .base import Page
+
+
+def screen_off_text(minutes):
+    return "Never" if not minutes else f"{minutes} min"
+
+
+class ZonePicker(Screen):
+    """Choose the time zone: the part of the world first, then the city."""
+    hints = [("A", "choose"), ("B", "back")]
+
+    def __init__(self, app, on_done):
+        super().__init__(app)
+        self.on_done, self.region = on_done, None
+        self.zones = app.system.timezones()
+        self.list = ListView()
+        now = app.system.timezone()
+        self.regions = sorted({z.split("/", 1)[0] for z in self.zones if "/" in z}) + [z for z in self.zones if "/" not in z]
+        self.list.set(self.regions)
+        here = now.split("/", 1)[0]
+        if here in self.regions:
+            self.list.sel = self.regions.index(here)
+        self.now = now
+
+    @property
+    def title(self):
+        return f"Time zone: {self.region}" if self.region else "Time zone"
+
+    def open(self, region):
+        cities = [z for z in self.zones if z.startswith(region + "/")]
+        if not cities:                      # UTC: a zone by itself
+            self.app.pop()
+            return self.on_done(region)
+        self.region = region
+        self.list.set(cities, keep=False)
+        if self.now in cities:
+            self.list.sel = cities.index(self.now)
+
+    def handle(self, action):
+        if self.list.move(action):
+            return
+        if action == "b":
+            if self.region:
+                at, self.region = self.region, None
+                self.list.set(self.regions, keep=False)
+                self.list.sel = self.regions.index(at)
+            else:
+                self.app.pop()
+        elif action == "a" and self.list.current:
+            if self.region:
+                self.app.pop()
+                self.on_done(self.list.current)
+            else:
+                self.open(self.list.current)
+
+    def draw(self, surf, f, area):
+        r = pygame.Rect(area.x + 12, area.y + 12, area.w - 24, area.h - 24)
+        G.box(surf, r, T.PANEL, 8, T.EMBER)
+        G.text(surf, f.big, self.title, (r.x + 14, r.y + 10), T.EMBER_BRIGHT)
+        self.list.draw(surf, f, pygame.Rect(r.x + 8, r.y + 20 + f.line, r.w - 16, r.h - 30 - f.line), self.row)
+
+    def row(self, surf, f, r, it, selected):
+        label = it.split("/", 1)[1].replace("_", " ") if self.region else it
+        G.text(surf, f.mono, G.fit(f.mono, label, r.w - f.base * 8), (r.x + 10, r.y + 5), T.EMBER_BRIGHT if selected else T.TEXT)
+        if it == self.now or (not self.region and self.now.startswith(it + "/")):
+            G.text(surf, f.small, "now", (r.right - 14, r.y + 9), T.OK, right=True)
 
 
 class SystemPage(Page):
@@ -65,6 +130,11 @@ class SystemPage(Page):
             rows.append({"name": "Brightness", "get": s.brightness, "set": s.set_brightness})
         if s.mouse_enabled() is not None:
             rows.append({"name": "Left-stick mouse", "on": s.mouse_enabled, "flip": s.set_mouse})
+        if s.brightness() is not None:
+            # the screen's sleep is its light going off: no light to switch, no row
+            rows.append({"name": "Screen off after", "value": lambda: screen_off_text(s.screen_off()), "step": self.step_screen_off})
+        rows.append({"name": "Time zone", "value": lambda: s.timezone().replace("_", " "),
+                     "do": lambda: self.app.push(ZonePicker(self.app, self.set_zone))})
         share = s.share_state()
         if SystemPage.share_job:
             rows.append({"name": "Preparing the card… wait", "do": lambda: None})
@@ -83,6 +153,15 @@ class SystemPage(Page):
                  {"name": "Power off", "do": lambda: self.app.confirm("Power off?", "Press the power button to start it again.",
                                                                      "Power off", self.power_off)}]
         self.list.set(rows)
+
+    def step_screen_off(self, step):
+        s = self.app.system
+        choices = s.SCREEN_OFF[1:] + s.SCREEN_OFF[:1]           # 1, 2, 5, 10, 30, never
+        s.set_screen_off(choices[(choices.index(s.screen_off()) + step) % len(choices)])
+
+    def set_zone(self, zone):
+        ok, msg = self.app.system.set_timezone(zone)
+        self.app.toast(f"Time zone: {zone.replace('_', ' ')}" if ok else (msg or "Could not set it"), 4, error=not ok)
 
     def busy(self):
         """True, with a word to the owner, while the card is being prepared: a restart now would cut it short."""
@@ -136,6 +215,8 @@ class SystemPage(Page):
             it["set"]((it["get"]() or 0) + (5 if action == "right" else -5))
         elif "flip" in it and action in ("a", "left", "right"):
             it["flip"](not it["on"]())
+        elif "step" in it and action in ("a", "left", "right"):
+            it["step"](-1 if action == "left" else 1)
         elif "do" in it and action == "a":
             it["do"]()
 
@@ -152,3 +233,5 @@ class SystemPage(Page):
             state = it["on"]()
             G.text(surf, f.mono, "On" if state else "Off",
                    (r.right - 14, r.y + 5), T.OK if state else T.MUTED, right=True)
+        elif "value" in it:
+            G.text(surf, f.mono, G.fit(f.mono, it["value"](), r.w // 2), (r.right - 14, r.y + 5), T.MUTED, right=True)

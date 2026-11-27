@@ -1,0 +1,38 @@
+#!/bin/bash
+# rk-region: where this handheld is. For now: its time zone.
+#
+# The image is built with one zone; the desktop's Settings change it here.
+# The handheld has no clock battery: the time comes from the network, and the
+# zone only says how to show it.
+#
+#   rk-region tz            the zone in use (for example America/Toronto)
+#   rk-region tz ZONE       use ZONE: a name under /usr/share/zoneinfo
+#
+# Setting it runs as root (the desktop goes through sudo, see
+# /etc/sudoers.d/rkshell). The name is checked: letters, digits, "_", "+",
+# "-" and "/" only, no "..", and a zone file of that name must exist.
+set -u
+
+ROOT="${RK_ROOT:-}"                         # a prefix for tests; empty in normal use
+ZONES="${RK_ZONEINFO:-/usr/share/zoneinfo}"
+
+current() {
+    local z; z=$(head -n 1 "$ROOT/etc/timezone" 2>/dev/null)
+    [ -n "$z" ] || z=$(readlink "$ROOT/etc/localtime" 2>/dev/null | sed -n 's|.*/zoneinfo/||p')
+    echo "${z:-UTC}"
+}
+
+case "${1:-}" in
+    tz)
+        zone="${2:-}"
+        [ -n "$zone" ] || { current; exit 0; }
+        [ $# -le 2 ] || { echo "rk-region: one zone name" >&2; exit 2; }
+        case "$zone" in
+            *..*|/*|*/|*[!A-Za-z0-9_+/-]*) echo "rk-region: not a zone name: $zone" >&2; exit 2 ;;
+        esac
+        [ -f "$ZONES/$zone" ] || { echo "rk-region: no such time zone: $zone" >&2; exit 1; }
+        ln -sfn "$ZONES/$zone" "$ROOT/etc/localtime" || exit 1
+        echo "$zone" > "$ROOT/etc/timezone" || exit 1
+        echo "rk-region: time zone is $zone" ;;
+    *) echo "usage: rk-region tz [ZONE]" >&2; exit 2 ;;
+esac
