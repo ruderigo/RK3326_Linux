@@ -13,7 +13,7 @@ screen: a minimal Debian 13 (trixie) on the boot chain and kernels of
 gamepad-first desktop and FireFly, the Stump, Ember and the Provisioner built
 in, for teaching and authorised testing on your own equipment.
 
-> **Status: 1.4.0 runs on an R36MAX (type 1 board), tested through 2026-11-27. Seen on that handheld for this release: a newly flashed card starts with remote access (SSH) off, turning it on asks for a password first and SSH then answers; the low-battery service is running; the screen goes dark when idle and comes back on a button; the time zone changes the clock at once; the Update window shows both versions; a light and a full reset, and remote access turned on again after one. Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
+> **Status: 1.4.0 runs on an R36MAX (type 1 board), tested through 2026-11-27. Seen on that handheld for this release: a newly flashed card starts with remote access (SSH) off, turning it on asks for a password first and SSH then answers; the low-battery service is running; the screen goes dark when idle and comes back on a button; the time zone changes the clock at once; the Update window shows both versions; Debian's security updates being applied; a light and a full reset, and remote access turned on again after one. Every other handheld in [`docs/devices.md`](docs/devices.md) is checked by the build only; nobody has started the image on one yet.**
 >
 > *Works on that handheld:* kernel 5.10, the screen, the desktop and its
 > pointer, a USB keyboard, Wi-Fi on an RT3070 dongle, SSH, the data
@@ -26,8 +26,7 @@ in, for teaching and authorised testing on your own equipment.
 > the RT3070, USB Ethernet, a USB mouse, the 4.4 fallback kernel's drivers
 > for them, and RKSHARE under the 4.4 kernel. New in 1.4.0 and not seen
 > yet: the battery warnings at 10% and 5% and the power-off at 3% (the
-> battery has not been run down), Debian's security updates arriving
-> through Settings on a release, and whether a full reset leaves anything
+> battery has not been run down), and whether a full reset leaves anything
 > of the Stump's installer behind.
 >
 > *Not tried at all:* any other handheld, the R36S included.

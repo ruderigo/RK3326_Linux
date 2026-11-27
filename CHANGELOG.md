@@ -57,10 +57,10 @@ updates come with the *next* press of A, not this one.
 
 Seen on an R36MAX on 27 November: SSH off after a flash and the password
 step, the screen's sleep, the time zone, both versions in the Update
-window, both resets. A reset first left SSH unable to start (the card's
+window, Debian's security updates being applied, both resets. A reset first left SSH unable to start (the card's
 keys were removed and nothing made new ones); that was found on the
 handheld and fixed before this release. Not seen yet: the battery warnings
-and the power-off at 3%, and Debian's updates arriving through Settings.
+and the power-off at 3%.
 
 ## 1.3.1 — 2026-11-26
 
