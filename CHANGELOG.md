@@ -4,6 +4,55 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## 1.4.0 — 2026-11-27
+
+What an operating system is expected to have, and this one did not.
+
+- **Remote access (SSH) is off on a new card.** Every card starts with the
+  same password, so a card that answered SSH from its first start could be
+  entered by anybody on the same network before its owner. It is turned on
+  in **Network → Remote access (SSH)**, which first asks you to choose the
+  handheld's password if it still has `ark`. An updated card keeps SSH as
+  it was, unless its password was never changed: then it is turned off
+  until you choose one.
+- **The battery is looked after.** The desktop warns at 10% and at 5%, and
+  the handheld powers off properly at 3%, also while a game or an app has
+  the screen: running out in the middle of a write is how cards get damaged.
+- **The screen goes dark when nobody is using it**: after 5 minutes without
+  a button (**Settings → Screen off after**: 1 to 30 minutes, or never).
+  Any button lights it again. The handheld itself keeps running.
+- **Time zone** in Settings, by part of the world and city. The choice
+  survives a reflash.
+- **Reset this handheld**, in Settings: *light* (saved Wi-Fi networks, the
+  password, remote access and its keys, the time zone, the desktop's
+  settings) or *full* (all of that, and what the apps hold: FireFly's
+  identity, the Stump's setup, apps from a package, saved scans). Neither
+  touches the system, the apps that come with it, or RKSHARE. The table is
+  in the README.
+- **Update this handheld also applies Debian's security updates**, after
+  the system's own update and when the system is already current. It never
+  adds or removes a package, looks at the room and the battery first, and
+  cannot fail the update. A new image is built with the fixes of the day.
+- **The Update window shows the version you have and the one you would
+  get**, and asks "Update to X?" before the password. Both used to say
+  "unknown": opened from Settings, the window never looked them up.
+- **Nothing the system says is cut with "…".** Messages, the lines under a
+  job's heading, job logs, menus, Arsenal's tool descriptions and Video's
+  notes wrap; the keyboard's question drops to smaller letters when it is
+  long. Names from outside (a video's title, a file, a network) are still
+  cut to their row. A failure to start remote access is a sentence now.
+
+To get it: **Settings → Update this handheld**. The update that brings
+this release is run by the updater you already have, so Debian's security
+updates come with the *next* press of A, not this one.
+
+Seen on an R36MAX on 27 November: SSH off after a flash and the password
+step, the screen's sleep, the time zone, both versions in the Update
+window, both resets. A reset first left SSH unable to start (the card's
+keys were removed and nothing made new ones); that was found on the
+handheld and fixed before this release. Not seen yet: the battery warnings
+and the power-off at 3%, and Debian's updates arriving through Settings.
+
 ## 1.3.1 — 2026-11-26
 
 - **An update brings the picture at switch-on.** 1.3.0 had our logo only on
