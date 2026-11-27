@@ -39,7 +39,7 @@ class OsUpdatePage(Page):
             job = OsUpdatePage.job
             return [("B", "back")] if job and job.done else [("B", "hide")]
         same = self.info.get("installed") and self.info.get("installed") == self.info.get("newest")
-        rows = [("A", "up to date" if same else "update now"), ("Y", "undo last update"), ("B", "close")]
+        rows = [("A", "security updates" if same else "update now"), ("Y", "undo last update"), ("B", "close")]
         return rows
 
     def wants_back(self):
@@ -81,11 +81,7 @@ class OsUpdatePage(Page):
             self.app.pop()
             return
         if action == "a":
-            same = self.info.get("installed") and self.info.get("installed") == self.info.get("newest")
-            if same:
-                self.app.toast("Already up to date", 3)
-            else:
-                self.start("apply")
+            self.start("apply")             # up to date: Debian's security updates are still looked for
         elif action == "y":
             self.app.confirm("Undo the last update?", "Puts back the version from before the last update.",
                              "Undo", lambda: self.start("rollback"))
@@ -119,7 +115,8 @@ class OsUpdatePage(Page):
         y += 8
         note = ("An update replaces only the desktop and system files — not the kernel, your apps or your data. "
                 "It checks the new version works, backs up the old one, and undoes itself if the desktop does "
-                "not come back. A is update now; Y puts the last update back.")
+                "not come back. It also applies Debian's security updates, and A does that even when the "
+                "system is up to date. Y puts the last update back.")
         for ln in G.wrap(f.small, note, inner.w - 28):
             G.text(surf, f.small, ln, (x, y), T.DIM)
             y += f.small_line
@@ -138,7 +135,7 @@ class OsUpdatePage(Page):
         sub = ("B goes back." if ok
                else "That is not this handheld's password. B goes back; SELECT on the keyboard shows it." if why == "password"
                else "It put the old version back — nothing was lost. The reason is below." if done
-               else "This takes a few minutes and keeps going if you close the window. The desktop restarts at the end.")
+               else "This takes a few minutes and keeps going if you close the window. The desktop may restart at the end.")
         G.text(surf, f.small, G.fit(f.small, sub, inner.w - 28), (x, y), T.TEXT if done else T.DIM)
         y += f.small_line + 10
         box = pygame.Rect(inner.x, y, inner.w, inner.bottom - y)

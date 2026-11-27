@@ -133,6 +133,9 @@ done
 
 say "Packages"
 in_root apt-get update -q
+# debootstrap installs the release as Debian last refreshed it; what was
+# fixed since (the security and updates suites) goes in now
+in_root env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q
 PKGS=$(grep -vE '^\s*(#|$)' "$HERE/packages.txt" | tr '\n' ' ')
 in_root apt-get install -y -q --no-install-recommends $PKGS
 # optional packages (dongle firmware, conveniences): a missing one must not stop the build

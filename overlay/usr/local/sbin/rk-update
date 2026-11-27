@@ -5,6 +5,8 @@
 # files under /usr/local, /etc/systemd/system, /etc/udev, /usr/lib/rk and
 # /usr/share/rk. It never touches the kernel, the boot chain, /home or /data,
 # so an adopter's identity, apps and settings are untouched by construction.
+# It then applies Debian's own updates to the packages on the card (security
+# fixes): newer versions of what is installed, nothing added or removed.
 # (Kernel and boot changes still need a reflash; /data survives that, and
 # rk-migrate brings the layout forward either way.)
 #
@@ -16,6 +18,7 @@
 #   rk-update status                 installed vs newest, and the schema
 #   rk-update check                  just print the newest available version
 #   rk-update apply [--to TAG]       update (to the newest, or a given tag)
+#   rk-update packages               Debian's security updates only (apply does them too)
 #   rk-update rollback               restore the last backup
 #   rk-update source official
 #   rk-update source fork  OWNER/REPO
@@ -228,6 +231,64 @@ restart_desktop() {
     systemctl is-active --quiet rkshell
 }
 
+# Debian's own updates for the packages on this card: its security fixes.
+# "apt-get upgrade" only: it brings newer versions of what is installed, and
+# never adds or removes a package. The kernel is not a Debian package here,
+# so it is not touched. Nothing in this step can fail an update of the
+# system: when it cannot be done it says why and the rest goes on.
+battery_too_low() {     # true when running on a battery under 25%
+    local d
+    for d in "${RK_POWER_SUPPLY:-/sys/class/power_supply}"/*; do
+        [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+        [ "$(cat "$d/status" 2>/dev/null)" = Discharging ] || return 1
+        local pct; pct=$(cat "$d/capacity" 2>/dev/null)
+        case "$pct" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$pct" -lt 25 ]; return
+    done
+    return 1
+}
+
+packages() {
+    [ -z "$ROOT" ] || [ -n "${RK_PACKAGES_TEST:-}" ] || return 0     # under test: not this machine's packages
+    [ -z "${RK_NO_PACKAGES:-}" ] || return 0
+    need_root
+    online || { say "no network: Debian's security updates were not looked for"; return 1; }
+    local cache n dl opts
+    cache=$(rk_apt_cache)
+    opts="-o Dir::Cache::archives=$cache -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+    export DEBIAN_FRONTEND=noninteractive
+    say "looking for Debian's security updates..."
+    dpkg --configure -a >/dev/null 2>&1 || true                 # an update cut short earlier: finish it first
+    apt-get update -q >/dev/null 2>&1 || { say "the package lists could not be refreshed: Debian's updates were not applied"; return 1; }
+    n=$(apt-get -s $opts upgrade 2>/dev/null | grep -c '^Inst ')
+    if [ "${n:-0}" -eq 0 ]; then
+        say "Debian's packages are up to date"
+        packages_tidy "$cache"; return 0
+    fi
+    if battery_too_low; then
+        say "$n Debian packages have updates, not applied: the battery is under 25%. Plug the charger in and update again."
+        packages_tidy "$cache"; return 1
+    fi
+    # the download, and room to unpack it beside the old files (about three times the download)
+    dl=$(apt-get $opts upgrade -y --print-uris 2>/dev/null | awk '/^'"'"'/ {d += $3} END {printf "%d", (d + 1048575) / 1048576}')
+    say "$n Debian packages to update, ${dl:-0} MB to download"
+    if ! rk_need_space $(( ${dl:-0} + 8 )) "$cache" "Debian's updates (the download)" ||
+       ! rk_need_space $(( ${dl:-0} * 3 + 48 )) /usr "Debian's updates"; then
+        packages_tidy "$cache"; return 1
+    fi
+    if apt-get $opts upgrade -y -q 2>&1 | sed -n 's/^Setting up \([^ ]*\) (\([^)]*\)).*/rk-update:   \1 \2/p'; [ "${PIPESTATUS[0]}" -eq 0 ]; then
+        say "Debian's packages are updated ($n)"
+        packages_tidy "$cache"; return 0
+    fi
+    say "Debian's updates did not all go in; \"sudo apt-get upgrade\" shows why"
+    packages_tidy "$cache"; return 1
+}
+
+packages_tidy() {       # the downloads and the lists take room this system does not have to spare
+    apt-get -o "Dir::Cache::archives=$1" clean >/dev/null 2>&1 || true
+    rm -rf "$ROOT"/var/lib/apt/lists/* 2>/dev/null || true
+}
+
 apply() {
     need_root
     online || die "no network"
@@ -237,7 +298,11 @@ apply() {
     if [ -z "$to" ] && [ "$(conf_get source official)" != url ]; then
         to=$(newest_tag) || true
         [ -n "$to" ] || die "could not find a version to update to"
-        [ "$to" != "$cur" ] && [ "v$to" != "$cur" ] && [ "$to" != "v$cur" ] || { say "already on $cur"; return 0; }
+        if [ "$to" = "$cur" ] || [ "v$to" = "$cur" ] || [ "$to" = "v$cur" ]; then
+            say "already on $cur"
+            packages || true            # the system is current; Debian's packages may not be
+            return 0
+        fi
     fi
     room || die "nothing was changed"
     dest=$(rk_tmpdir rk-update)
@@ -260,6 +325,9 @@ apply() {
     if [ -z "$ROOT" ] && mountpoint -q /boot 2>/dev/null && [ -f /usr/lib/rk/bootlogo.py ]; then
         python3 /usr/lib/rk/bootlogo.py boot /boot >/dev/null 2>&1 || say "the boot logo was not written (continuing)"
     fi
+    # Debian's security updates, before the desktop restarts (it can take a
+    # few minutes, and what it says is read in the window that started this)
+    packages || true
     say "restarting the desktop..."
     if restart_desktop; then
         prune_backups
@@ -304,6 +372,7 @@ case "${1:-status}" in
     ping)     shift; ping "$@" ;;
     apply)    shift; apply "$@" ;;
     rollback) rollback ;;
+    packages) packages ;;
     source)
         need_root
         case "${2:-}" in
@@ -313,5 +382,5 @@ case "${1:-status}" in
             "")       echo "source: $(conf_get source official)" ;;
             *)        die "usage: rk-update source official|fork OWNER/REPO|url URL [SHA256]" ;;
         esac ;;
-    *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|rollback|source ..." >&2; exit 2 ;;
+    *) echo "usage: rk-update status|check|ping [REF]|apply [--to TAG/REF]|packages|rollback|source ..." >&2; exit 2 ;;
 esac; exit      # on one line: nothing is read from this file after the work is done
