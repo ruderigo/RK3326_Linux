@@ -51,3 +51,7 @@ nmap
 # PNG: Games' driver for panels mounted on their side is built with it
 # (librga, which turns the picture, comes in the emulator bundle).
 libpng16-16t64
+libx11-6
+libxext6
+libsm6
+libice6

@@ -224,6 +224,49 @@ def test_no_games_says_where_they_go():
         assert app.launch is None
 
 
+def test_a_game_that_does_not_start_is_said():
+    system, app, page = window()
+    page.sel = page.tiles.index("n64")
+    app.handle("a")
+    app.handle("a")
+    assert app.launch and app.last_run is None
+    app.launch = None
+    app.tick()
+    assert not app.toast_text                                               # still in the game: nothing to say
+    app.last_run = {"code": 1, "secs": 0.4}                                 # RetroArch gave up at once
+    app.tick()
+    assert "did not start" in app.toast_text and "Nintendo 64" in app.toast_text and app.toast_error
+    app.toast_text = ""
+    app.handle("a")
+    app.launch = None
+    app.last_run = {"code": 0, "secs": 600}                                 # ten minutes of play
+    app.tick()
+    assert not app.toast_text
+
+
+def test_the_3d_cores_find_the_graphics_driver():
+    """Both N64 cores and PPSSPP ask for libEGL.so and libGLESv2.so by those
+    names; the image and the migration for cards already flashed make them."""
+    import subprocess
+    repo = os.path.join(HERE, "..", "..")
+    build = open(os.path.join(repo, "build", "build-image.sh")).read()
+    assert 'for n in libEGL.so libGLESv2.so; do ln -sf libmali.so "$GPU/$n"; done' in build
+    with tempfile.TemporaryDirectory() as t:
+        open(f"{t}/libmali.so", "w").write("x")
+        os.symlink("libmali.so", f"{t}/libEGL.so.1")
+        step = os.path.join(repo, "overlay", "usr", "lib", "rk", "migrations", "0006-core-libraries.sh")
+        for _ in range(2):                                                  # a second run changes nothing
+            assert subprocess.run(["bash", step], env=dict(os.environ, RK_GPU_DIR=t)).returncode == 0
+            assert os.readlink(f"{t}/libEGL.so") == "libmali.so" and os.readlink(f"{t}/libGLESv2.so") == "libmali.so"
+    with tempfile.TemporaryDirectory() as t:                                # no driver there: nothing is made
+        subprocess.run(["bash", step], env=dict(os.environ, RK_GPU_DIR=t))
+        assert os.listdir(t) == []
+    pkgs = open(os.path.join(repo, "build", "packages.txt")).read().split()
+    tools = open(os.path.join(repo, "overlay", "usr", "local", "sbin", "rk-tools")).read()
+    for lib in ("libx11-6", "libxext6", "libsm6", "libice6"):               # what PPSSPP's core also asks for
+        assert lib in pkgs and lib in tools
+
+
 def test_no_emulators_is_said():
     system, app, page = window()
     system.games_command = lambda game: None

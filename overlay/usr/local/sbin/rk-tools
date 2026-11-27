@@ -193,7 +193,7 @@ install_exploitdb() {
 
 # Video: the same names as build/packages-media.txt, which a new image
 # installs when it is built.
-MEDIA_PKGS="mpv quickjs libpng16-16t64"
+MEDIA_PKGS="mpv quickjs libpng16-16t64 libx11-6 libxext6 libsm6 libice6"
 
 # Games: the emulator bundle (RetroArch built for this GPU, and its cores),
 # made by build/build-emulators.sh. It is inside every image, and each

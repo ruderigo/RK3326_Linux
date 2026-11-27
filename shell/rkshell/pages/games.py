@@ -38,6 +38,7 @@ class GamesPage(Page):
         self.found = None           # the scan's answer, handed over by its thread
         self.shown_at = 0.0
         self.history = app.system.games_history()
+        self.started = None         # the game just handed to RetroArch
 
     # ----------------------------------------------------------- the library
     def enter(self):
@@ -54,6 +55,14 @@ class GamesPage(Page):
         return self.view == "scanning"
 
     def poll(self):
+        if self.started and self.app.last_run is not None:
+            # back from RetroArch. It ended at once, or badly: the game never
+            # ran, and RetroArch's own words for it went by too fast to read
+            game, run, self.started = self.started, self.app.last_run, None
+            if run["code"] not in (0, None) or run["secs"] < 3:
+                name = L.BY_FOLDER[game["machine"]][2]
+                self.app.toast(f"{game['name']} did not start. The {name} emulator could not run it: "
+                               "the file may be damaged, or of a kind it does not read.", 10, error=True)
         if self.view == "scanning" and self.found is not None and time.time() - self.shown_at >= 0.6:
             self.games, self.found = self.found, None
             self.shelves = L.by_machine(self.games)
@@ -169,6 +178,7 @@ class GamesPage(Page):
             self.app.toast("The emulators are not on this card. Open Video and press Y, on Wi-Fi: it installs them.", 8, error=True)
             return
         self.history.mark(game["path"])
+        self.started, self.app.last_run = game, None
         self.app.launch, self.app.launch_item = cmd, self.app.system.games_entry()
 
     def retroarch_menu(self):

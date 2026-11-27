@@ -62,6 +62,7 @@ class App:
         self.last_tick, self.t0 = 0, time.time()
         self.launch = None          # set to a command: the back end runs it and comes back
         self.launch_item = None     # the dock entry it came from (its "before"/"after" steps)
+        self.last_run = None        # {"code", "secs"} of the app that just ended, for the window that started it
         self.pointer = [surf.get_width() // 2, surf.get_height() // 2]
         self.pointer_until = 0      # shown until then
         self.cursor = G.cursor(max(16, surf.get_height() // 24))
