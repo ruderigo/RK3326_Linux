@@ -61,7 +61,9 @@ in, for teaching and authorised testing on your own equipment.
   the first one is the same on every card, so SSH never opens on it.
 - **Looks after the battery**: a warning at 10% and at 5%, and at 3% it
   powers off properly instead of losing power in the middle of a write,
-  also while a game or an app has the screen.
+  also while a game or an app has the screen. The **screen goes dark** after
+  5 minutes without a button (Settings: 1 to 30 minutes, or never).
+- **Your time zone**, chosen in Settings; the choice survives a reflash.
 - **Updates itself** from Settings, without a reflash and without touching
   your data ([`docs/updates.md`](docs/updates.md)).
 - Makes its own SSH host keys, a data partition and **RKSHARE** at the
@@ -314,6 +316,24 @@ screen, where the warnings cannot show. It waits for three low readings in
 a row, never acts in the first two minutes after a start or while charging,
 and does nothing when the gauge's voltage says the battery is not empty.
 To switch it off: `sudo systemctl disable --now rk-battery`.
+
+**The screen's sleep.** After 5 minutes without a button, the stick or a
+mouse, the desktop switches the screen's light off and stops drawing; the
+handheld itself keeps running (Wi-Fi, SSH, a Stump). Any button lights it
+again, and that press does nothing else. **Settings → Screen off after**
+steps through 1, 2, 5, 10 and 30 minutes and Never. It stays lit while a
+window is working by itself (a scan, an install, an update, the card being
+prepared) and while a game or an app has the screen, and a new message such
+as the battery warning lights it. Only the light is switched, not the
+panel. It is not a suspend: the handheld does not go to sleep.
+
+## Time zone
+
+The image is built with `America/Toronto`. **Settings → Time zone** changes
+it: the part of the world, then the city. The clock itself comes from the
+network (there is no clock battery), the zone says how to show it. The
+choice is kept on the data partition, so a reflashed card takes it back at
+its first start. From a terminal: `sudo rk-region tz Europe/Paris`.
 
 The first start takes about a minute longer than later ones.
 

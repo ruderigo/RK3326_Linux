@@ -345,6 +345,43 @@ class Inputs:
         return out
 
 
+# -------------------------------------------------------------------- sleep
+class ScreenSleep:
+    """The screen goes dark after some minutes without a button, and the
+    desktop stops drawing: the light and the drawing are what the battery
+    pays for while nobody looks. Any button or the stick lights it again,
+    and that press does nothing else. Only the light is switched: the panel
+    itself is left as it is, so there is nothing that could fail to come back.
+
+    It stays lit while a window is working by itself (a scan, an install, the
+    card being prepared) and while an app has the screen: the loop that asks
+    is not running then. A new message (the battery is low) lights it too."""
+
+    def __init__(self, system):
+        self.system, self.asleep, self.back = system, False, None
+        self.last = time.time()
+        system.backlight_restore()          # stopped while asleep: the light comes back with the desktop
+
+    def touch(self):
+        self.last = time.time()
+
+    def due(self, app, now=None):
+        minutes = self.system.screen_off()
+        return bool(minutes) and not self.asleep and not app.live and \
+            (now if now is not None else time.time()) - self.last >= minutes * 60
+
+    def sleep(self):
+        self.back = self.system.backlight_off()
+        self.asleep = self.back is not None     # no light to switch: stay awake
+        return self.asleep
+
+    def wake(self):
+        if self.asleep:
+            self.system.backlight_restore(self.back)
+            self.asleep = False
+        self.touch()
+
+
 # --------------------------------------------------------------------- loop
 def run(system, fps=10):
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -355,6 +392,8 @@ def run(system, fps=10):
     console = Console()
     inputs = Inputs()
     app = App(system, fb.surf)
+    system.restore_timezone()
+    sleeper = ScreenSleep(system)
     held = {}                                   # action -> time of its next repeat
     stop = []
     signal.signal(signal.SIGTERM, lambda *a: stop.append(1))
@@ -371,7 +410,17 @@ def run(system, fps=10):
             pause = min(wait, max(0.0, last_frame + wait - now)) if app.animating else wait
             if app.pointer_on:
                 pause = min(pause, max(0.0, app.pointer_until - now) + 0.01)
-            for code, value in inputs.read(pause):
+            events = inputs.read(0.5 if sleeper.asleep else pause)
+            if sleeper.asleep:
+                # the press that lights the screen does nothing else
+                if any(value for _, value in events) or any(inputs.take_motion()):
+                    sleeper.wake()
+                    held.clear()
+                    app.dirty = True
+                events = []
+            elif events:
+                sleeper.touch()
+            for code, value in events:
                 typing = bool(app.current and app.current.wants_keys)
                 if code in SHIFT:
                     inputs.shift = bool(value)
@@ -409,6 +458,8 @@ def run(system, fps=10):
                     elif action:
                         held.pop(action, None)
             dx, dy, wheel = inputs.take_motion()
+            if dx or dy or wheel:
+                sleeper.touch()
             if dx or dy:
                 app.move_pointer(dx, dy)
             for _ in range(min(abs(wheel), 10)):            # a mouse wheel is up and down
@@ -418,7 +469,12 @@ def run(system, fps=10):
                 if now >= due:
                     app.handle(action)
                     held[action] = now + REPEAT_RATE
+            said = app.toast_text
             app.tick()
+            if sleeper.asleep and app.toast_text and app.toast_text != said:
+                sleeper.wake()                              # something to read: the battery is low
+            elif sleeper.due(app):
+                sleeper.sleep()
             if app.launch:
                 cmd, app.launch = app.launch, None
                 item, app.launch_item = app.launch_item or {}, None
@@ -442,6 +498,9 @@ def run(system, fps=10):
                 inputs.take_motion()                        # the stick was the app's meanwhile
                 app.hide_pointer()
                 app.dirty = True
+                sleeper.touch()                             # the time in the app was not idle time
+            if sleeper.asleep:
+                continue                                    # dark: nothing to draw
             if console.in_front():
                 t = time.time()
                 cursor, at = (app.cursor, tuple(app.pointer)) if app.pointer_on else (None, None)
@@ -453,6 +512,7 @@ def run(system, fps=10):
                 elif (fb.pointer.topleft if fb.pointer else None) != at:
                     fb.move_pointer(cursor, at)
     finally:
+        sleeper.wake()
         console.restore()
         if drawn:
             print(f"rkshell: {drawn} frames, {draw_time / drawn * 1000:.0f} ms each on average", file=sys.stderr)
