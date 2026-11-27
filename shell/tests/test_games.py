@@ -261,7 +261,7 @@ def test_the_3d_cores_find_the_graphics_driver():
     with tempfile.TemporaryDirectory() as t:                                # no driver there: nothing is made
         subprocess.run(["bash", step], env=dict(os.environ, RK_GPU_DIR=t))
         assert os.listdir(t) == []
-    pkgs = open(os.path.join(repo, "build", "packages.txt")).read().split()
+    pkgs = open(os.path.join(repo, "build", "packages-media.txt")).read().split()
     tools = open(os.path.join(repo, "overlay", "usr", "local", "sbin", "rk-tools")).read()
     for lib in ("libx11-6", "libxext6", "libsm6", "libice6"):               # what PPSSPP's core also asks for
         assert lib in pkgs and lib in tools
