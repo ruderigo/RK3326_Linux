@@ -1,0 +1,162 @@
+#!/bin/bash
+# rk-reset: put this handheld back as a new card has it, without a reflash.
+#
+#   rk-reset light     the settings: saved Wi-Fi networks, the password (back
+#                      to the first one, to be changed again), remote access
+#                      (off, its keys forgotten), the time zone, the
+#                      desktop's own settings, where updates come from.
+#                      Apps and what they hold are left alone.
+#   rk-reset full      all of that, and what the apps hold: FireFly's
+#                      identity and messages, the Stump's setup (it asks its
+#                      questions again), apps installed from a package, saved
+#                      scans, files given to apps, the terminal's history.
+#   add --no-restart   do not restart at the end
+#
+#   rk-reset unlocked light|full
+#                      the same, for the desktop on a handheld that still has
+#                      its first password: that password is public and sudo
+#                      refuses it, so there is nothing to ask for. It refuses
+#                      as soon as the handheld has a password of its own.
+#
+# Never touched by either: the system itself and its version, the apps that
+# come with it (FireFly, the Stump's files, Ember, the Provisioner), the
+# heavy tools, the kernel choice, the handheld's name, and everything on
+# RKSHARE (games, saves, BIOS files, app packages).
+#
+# This is not a secure erase: erased files are not written over. To hand a
+# card to somebody else, flash it again.
+#
+# Runs as root. It restarts the handheld at the end: the network, the login
+# and the apps all start again from the new state.
+set -u
+
+ROOT="${RK_ROOT:-}"                         # a prefix for tests; empty in normal use
+ARK="$ROOT/home/ark"
+DATA="$ROOT/data/ark"
+PORTS="$ROOT/roms/ports"
+BIN="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+DEFAULT_ZONE="America/Toronto"              # the image's (build-image.sh)
+
+say() { echo "rk-reset: $*"; }
+die() { echo "rk-reset: $*" >&2; exit 1; }
+
+# A command that acts on the running system (services, accounts). Under test
+# it is written down instead of run.
+live() {
+    if [ -n "$ROOT" ]; then echo "$*" >> "$ROOT/ran"; return 0; fi
+    "$@" >/dev/null 2>&1
+}
+
+# Nothing is removed outside the home folder, the data folder and the Stump's
+# folder under /roms, and never those folders themselves.
+inside() {
+    local p="$1" base
+    for base in "$ARK" "$DATA" "$PORTS"; do
+        case "$p" in "$base"/?*) case "$p" in */..|*/../*) return 1 ;; esac; return 0 ;; esac
+    done
+    return 1
+}
+
+gone() {        # a file or folder, or a link together with what it points to
+    local p="$1" t
+    inside "$p" || return 0
+    if [ -L "$p" ]; then
+        t=$(readlink -f "$p")
+        if [ -n "$t" ] && inside "$t"; then rm -rf -- "$t"; fi
+        rm -f -- "$p"
+    elif [ -e "$p" ]; then
+        rm -rf -- "$p"
+    fi
+}
+
+emptied() {     # the folder stays (and a link to it): what is in it goes
+    local d="$1"
+    [ -L "$d" ] && d=$(readlink -f "$d")
+    [ -n "$d" ] && [ -d "$d" ] && inside "$d" || return 0
+    find "$d" -mindepth 1 -delete 2>/dev/null
+}
+
+light() {
+    say "forgetting the saved Wi-Fi networks"
+    rm -f -- "$ROOT"/etc/NetworkManager/system-connections/* 2>/dev/null
+    rm -f -- "$ROOT/etc/default/crda"
+
+    say "remote access off, its keys forgotten"
+    live "$BIN/rk-remote" off
+    rm -f -- "$ARK/.ssh/authorized_keys" "$ARK/.ssh/known_hosts"
+    rm -f -- "$ROOT"/etc/ssh/ssh_host_*            # this card makes new ones at its next start (rk-firstboot)
+
+    say "the password is the first one again, to be changed"
+    live sh -c 'echo ark:ark | chpasswd' && live chage -d 0 ark ||
+        say "the password could not be put back: it is still yours"
+
+    say "time zone: $DEFAULT_ZONE"
+    RK_ROOT="$ROOT" "$BIN/rk-region" tz "$DEFAULT_ZONE" >/dev/null 2>&1 || say "the time zone was not changed"
+
+    say "the desktop's settings, and where updates come from"
+    rm -f -- "$DATA/.rk-desktop.json" "$ARK/.rk-desktop.json" "$DATA/rk-update.json"
+    rm -rf -- "$ARK/.config/rk-apps" "$ARK/.config/rk-video"
+}
+
+full() {
+    light
+
+    say "stopping the Stump and taking its setup away"
+    [ -f "$ARK/Stump/stop-stump.sh" ] && live runuser -u ark -- sh /home/ark/Stump/stop-stump.sh
+    live systemctl disable --now stump-ark
+    live pkill -u ark -f stump_pc.py
+    live loginctl disable-linger ark
+    rm -f -- "$ROOT/etc/systemd/system/stump-ark.service" "$ROOT/etc/systemd/system/multi-user.target.wants/stump-ark.service"
+    rm -f -- "$ARK/.config/systemd/user/stump.service" "$ARK/.config/systemd/user/default.target.wants/stump.service"
+    gone "$ARK/Stump"
+    gone "$ARK/stump_r36max"
+    if [ -e "$PORTS/stump_r36max" ]; then
+        emptied "$PORTS/stump_r36max"
+        mkdir -p "$PORTS/stump_r36max/drop" "$PORTS/stump_r36max/tf_backup"     # as a new card has it
+        live chown -R ark:ark /roms/ports/stump_r36max/
+    fi
+
+    say "FireFly's identity and messages"
+    emptied "$ARK/.firefly"
+    emptied "$ARK/.reticulum"
+
+    say "apps installed from a package"
+    local rec id
+    for rec in "$DATA"/apps/.packages/*.json; do
+        [ -f "$rec" ] || continue
+        id=$(basename "$rec" .json)
+        say "  $id"
+        live env HOME=/home/ark "$BIN/rk-pkg" remove "$id"
+    done
+    gone "$DATA/apps"
+
+    say "saved scans, files given to apps, the terminal's history"
+    gone "$DATA/scans"
+    gone "$DATA/inbox"
+    gone "$ARK/.bash_history"
+    gone "$ARK/.cache"
+}
+
+if [ "${1:-}" = unlocked ]; then
+    shift
+    RK_SHADOW="${RK_SHADOW:-$ROOT/etc/shadow}" "$BIN/rk-remote" first ||
+        die "this handheld has its own password: the reset asks for it (Settings, or sudo rk-reset)"
+fi
+kind="${1:-}"; restart=1
+[ "${2:-}" = --no-restart ] && restart=0
+case "$kind" in
+    light|full) ;;
+    *) sed -n '2,/^# Runs as root/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
+[ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run it with sudo"
+[ -d "$ARK" ] || die "no home folder at $ARK: nothing was changed"
+
+say "$kind reset"
+"$kind"
+sync
+say "done."
+if [ "$restart" = 1 ] && [ -z "$ROOT" ]; then
+    say "restarting the handheld..."
+    systemctl reboot
+fi
+exit 0

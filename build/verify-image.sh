@@ -112,7 +112,7 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/systemd/system/multi-user.target.wants/rk-mouse.service /usr/local/sbin/rk-mouse \
          /etc/systemd/system/multi-user.target.wants/rk-migrate.service \
          /etc/systemd/system/multi-user.target.wants/rk-battery.service /usr/local/sbin/rk-battery \
-         /usr/local/sbin/rk-remote /usr/lib/rk/migrations/0005-safe-defaults.sh /usr/local/sbin/rk-region /usr/share/zoneinfo/zone1970.tab \
+         /usr/local/sbin/rk-remote /usr/lib/rk/migrations/0005-safe-defaults.sh /usr/local/sbin/rk-region /usr/share/zoneinfo/zone1970.tab /usr/local/sbin/rk-reset \
          /etc/systemd/system/multi-user.target.wants/NetworkManager.service \
          /etc/systemd/system/multi-user.target.wants/rkshell.service \
          /usr/lib/python3/dist-packages/rkshell/__main__.py /usr/lib/python3/dist-packages/rkshell/backends/device.py \

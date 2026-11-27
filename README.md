@@ -64,6 +64,10 @@ in, for teaching and authorised testing on your own equipment.
   also while a game or an app has the screen. The **screen goes dark** after
   5 minutes without a button (Settings: 1 to 30 minutes, or never).
 - **Your time zone**, chosen in Settings; the choice survives a reflash.
+- **Update this handheld** also applies Debian's security updates, shows the
+  version you have and the one you would get, and asks before it starts.
+- **Reset this handheld**, light (the settings) or full (the settings and
+  what the apps hold), without a reflash.
 - **Updates itself** from Settings, without a reflash and without touching
   your data ([`docs/updates.md`](docs/updates.md)).
 - Makes its own SSH host keys, a data partition and **RKSHARE** at the
@@ -326,6 +330,31 @@ window is working by itself (a scan, an install, an update, the card being
 prepared) and while a game or an app has the screen, and a new message such
 as the battery warning lights it. Only the light is switched, not the
 panel. It is not a suspend: the handheld does not go to sleep.
+
+## Reset
+
+**Settings → Reset this handheld** offers two, and asks twice (Cancel comes
+first), then for the handheld's password. The handheld restarts at the end.
+
+| | Light | Full |
+|---|---|---|
+| Saved Wi-Fi networks | erased | erased |
+| The password | back to `ark`, to be changed | same |
+| Remote access (SSH), its keys, the card's own SSH keys | off, forgotten, made anew | same |
+| Time zone, the desktop's settings, where updates come from | back to the image's | same |
+| FireFly's identity and messages | kept | erased: FireFly makes a new identity |
+| The Stump's setup | kept | erased: it asks its questions again |
+| Apps installed from a package | kept | removed (their `.zip` files stay) |
+| Saved scans, files given to apps, the terminal's history | kept | erased |
+| The system, its version, FireFly, Ember, the Provisioner, the heavy tools | kept | kept |
+| Everything on RKSHARE: games, saves, BIOS files, packages | kept | kept |
+
+A handheld still on its first password is not asked for one. From a
+terminal: `sudo rk-reset light` or `sudo rk-reset full`.
+
+It is not a secure erase: erased files are not written over. Before a card
+goes to somebody else, flash it again. After a light reset, a Stump that
+starts by itself may wait until the handheld has a password again.
 
 ## Time zone
 

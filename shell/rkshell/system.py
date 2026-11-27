@@ -502,6 +502,7 @@ class Steps:
                 break
         self.ok, self.done = ok, True
 RK_UPDATE = "/usr/local/sbin/rk-update"
+RK_RESET = "/usr/local/sbin/rk-reset"
 RK_SHARE = "/usr/local/sbin/rk-share"
 
 
@@ -591,8 +592,10 @@ class OsUpdate:
     check, back up, swap, migrate, restart, auto-rollback); this just runs it
     as root through sudo's askpass helper and streams what it says."""
 
-    def __init__(self, password, action="apply"):
+    def __init__(self, password, action="apply", cmd=None):
+        """cmd: another of the system's programs to run as root the same way (rk-reset)."""
         self.lines, self.done, self.ok, self.reason = [], False, False, ""
+        self.cmd = cmd or [RK_UPDATE, action]
         threading.Thread(target=self._run, args=(password, action), daemon=True).start()
 
     def _run(self, password, action):
@@ -604,7 +607,7 @@ class OsUpdate:
                     f.write(text)
             env = {k: v for k, v in os.environ.items() if not k.startswith("SDL_")}
             env.update(SUDO_ASKPASS=helper, RK_ASKPASS_FILE=secret)
-            p = subprocess.Popen(["sudo", "-A", RK_UPDATE, action], stdout=subprocess.PIPE,
+            p = subprocess.Popen(["sudo", "-A"] + self.cmd, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
                                  errors="replace", bufsize=1, env=env)
             for raw in p.stdout:
@@ -1196,6 +1199,17 @@ class System:
     def os_rollback(self, password):
         return OsUpdate(password, "rollback")
 
+    def reset(self, kind, password=None):
+        """Reset this handheld ("light" or "full"): an OsUpdate-like job; the
+        handheld restarts when it ends well. rk-reset runs as root with the
+        handheld's password. A handheld still on its first password has
+        nothing to ask (that password is public, and sudo refuses it until
+        it is changed): rk-reset has a way in for that case alone, which it
+        checks itself."""
+        if password is None:
+            return OsUpdate("", "reset", cmd=[RK_RESET, "unlocked", kind])
+        return OsUpdate(password, "reset", cmd=[RK_RESET, kind])
+
     MOUSE_BIN = "/usr/local/sbin/rk-mouse"
     MOUSE_ON = "/run/rk-mouse/on"
 
@@ -1622,6 +1636,15 @@ class DemoSystem(System):
 
     def os_rollback(self, password):
         return self.os_update(password)
+
+    def reset(self, kind, password=None):
+        job = OsUpdate.__new__(OsUpdate)
+        if password is not None and password != getattr(self, "_password", "a-longer-one"):
+            job.lines, job.done, job.ok, job.reason = ["Sorry, try again."], True, False, "password"
+            return job
+        self.reset_done = kind
+        job.lines, job.done, job.ok, job.reason = [f"rk-reset: {kind} reset", "rk-reset: done."], True, True, ""
+        return job
 
     _mouse_on = True
 

@@ -173,6 +173,13 @@ def write_all(system, size, out_dir):
             app.window.about()
             shot("settings-about")
             app.stack.clear()
+            app.window.ask_reset()
+            shot("settings-reset")
+            app.handle("down")
+            app.handle("down")
+            app.handle("a")
+            shot("settings-reset-full")
+            app.stack.clear()
             from .pages.system import ZonePicker
             picker = ZonePicker(app, lambda zone: None)
             app.push(picker)

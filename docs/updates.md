@@ -47,6 +47,7 @@ From **Settings → Update this handheld**, or the terminal:
 rk-update status                 installed vs newest, and the state schema
 rk-update apply                  update to the newest version
 rk-update apply --to v1.2.0      update to a specific tag
+rk-update packages               Debian's security updates only (apply does them too)
 rk-update rollback               put the last version back
 rk-update source official        updates from ruderigo/RK3326_Linux (default)
 rk-update source fork OWNER/REPO updates from a fork
@@ -110,3 +111,24 @@ against a dead SD card. The same `/data`-backed design is what a future
 `rk-backup` would snapshot so a copy can be kept off the device.
 
 ![Updating the handheld](os-update.png)
+
+## Debian's security updates
+
+The system's own files are one half of an update. The other half is
+Debian's packages (OpenSSH, sudo, curl, the libraries): Debian fixes
+security problems in them as they are found. `rk-update apply`, and so
+**Update this handheld**, applies those fixes after the system's own update,
+and also when the system is already on the newest version.
+
+- It is `apt-get upgrade`: newer versions of what is installed. It never
+  adds or removes a package, and the kernel is not a Debian package here.
+- It looks first: room for the download and for unpacking it, and the
+  battery (not under 25% unless the charger is in).
+- It cannot fail an update. When it cannot be done it says why, and the
+  system's own update stands.
+- The package lists and the downloads are removed afterwards.
+- `rk-update rollback` puts the system's files back; it does not put older
+  Debian packages back.
+
+Nothing runs in the background: the fixes come when you update. A new image
+is built with the fixes there are that day.

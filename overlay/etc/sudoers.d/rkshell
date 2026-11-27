@@ -1,7 +1,9 @@
 # What the desktop may do as root without asking for a password, and nothing
 # else: power, joining Wi-Fi, running a scan (rk-scan builds the nmap command itself), installing the heavy tools and what Video and Games need, remote
-# access, the choice of kernel, and the time zone (rk-region checks the name).
+# access, the choice of kernel, the time zone (rk-region checks the name), and a reset
+# while the handheld still has its first password (rk-reset checks that; with a password of its own, it is asked).
 ark ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/local/sbin/rk-wifi, \
     /usr/local/sbin/rk-scan run, /usr/local/sbin/rk-tools install-heavy, /usr/local/sbin/rk-tools install-media, \
     /usr/local/sbin/rk-remote on, /usr/local/sbin/rk-remote off, \
-    /usr/local/sbin/rk-boot-select, /usr/local/sbin/rk-share request, /usr/local/sbin/rk-region tz *
+    /usr/local/sbin/rk-boot-select, /usr/local/sbin/rk-share request, /usr/local/sbin/rk-region tz *, \
+    /usr/local/sbin/rk-reset unlocked light, /usr/local/sbin/rk-reset unlocked full
