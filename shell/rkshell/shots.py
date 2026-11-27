@@ -155,6 +155,7 @@ def write_all(system, size, out_dir):
             while page.view == "scanning" and time.time() < end:
                 app.tick()
                 time.sleep(0.01)
+            app.toast_text = ""
             shot("games-tiles")
             app.handle("right")
             app.handle("down")

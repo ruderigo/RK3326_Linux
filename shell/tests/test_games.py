@@ -84,6 +84,7 @@ def test_the_real_command_is_retroarch_with_the_machines_core():
         open(f"{t}/cores/parallel_n64_libretro.so", "w").write("x")
         s = S.System()
         s.SETTINGS = (f"{t}/nowhere/x.json", f"{t}/desktop.json")
+        real_options, L.CORE_OPTIONS = L.CORE_OPTIONS, f"{t}/retroarch/rk-core-options.cfg"
         entry = {"name": "Games", "exec": ["/opt/rk-emulators/bin/retroarch", "--appendconfig", "/usr/share/rk/retroarch/rk.cfg"],
                  "ready": True, "before": ["/usr/local/bin/rk-games", "prepare"]}
         s.games_entry = lambda: entry
@@ -97,8 +98,9 @@ def test_the_real_command_is_retroarch_with_the_machines_core():
             assert s.games_command(dict(game, machine="psx")) is None       # that core is not on the card
             entry["ready"] = False
             assert s.games_command(game) is None                            # no emulators at all
+            assert 'parallel-n64-screensize = "640x480"' in open(L.CORE_OPTIONS).read()   # written just before the game
         finally:
-            L.CORES_DIR = real
+            L.CORES_DIR, L.CORE_OPTIONS = real, real_options
 
 
 # ------------------------------------------------------------- the window
@@ -185,9 +187,11 @@ def test_sorting():
     app.handle("x")
     menu = app.stack[-1]
     assert isinstance(menu, Menu) and menu.items[0][0] == "Close"
-    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t.startswith("Sort games"))
+    assert ("Games: by name", menu.items[2][1]) == menu.items[2]              # the row says what it is now
+    menu.sel = 2
     app.handle("a")
     assert system.setting("games_list") == "played" and page.list.items[0]["name"] == "Final Quest VII"
+    assert app.toast_text == "Games: last played"
     system.set_setting("games_tiles", "nonsense")                           # a damaged setting: the first choice
     page.build()
     assert page.tiles[1] == "gba"
@@ -274,16 +278,46 @@ def test_the_3d_cores_find_the_graphics_driver():
         assert lib in pkgs and lib in tools
 
 
+def test_the_n64_picture_is_written_where_retroarch_reads_it():
+    repo = os.path.join(HERE, "..", "..")
+    cfg = open(os.path.join(repo, "overlay", "usr", "share", "rk", "retroarch", "rk.cfg")).read()
+    assert 'global_core_options = "true"' in cfg
+    assert 'core_options_path = "/home/ark/.config/retroarch/rk-core-options.cfg"' in cfg
+    assert L.CORE_OPTIONS.endswith("/.config/retroarch/rk-core-options.cfg")
+    with tempfile.TemporaryDirectory() as t:
+        path = f"{t}/retroarch/rk-core-options.cfg"                        # the folder is not there yet
+        assert L.write_core_options(path, None)                             # nothing chosen: sharp
+        text = open(path).read()
+        assert 'parallel-n64-screensize = "640x480"' in text and 'mupen64plus-43screensize = "640x480"' in text
+        open(path, "a").write('parallel-n64-gfxplugin = "rice"\npcsx_rearmed_frameskip = "1"\n')     # the owner's own, set in RetroArch
+        assert L.write_core_options(path, "fast")
+        lines = open(path).read().splitlines()
+        assert 'parallel-n64-screensize = "320x240"' in lines and 'mupen64plus-43screensize = "320x240"' in lines
+        assert 'parallel-n64-gfxplugin = "rice"' in lines and 'pcsx_rearmed_frameskip = "1"' in lines
+        assert len(lines) == 4                                              # changed in place, nothing twice
+        assert L.write_core_options(path, "nonsense") and 'parallel-n64-screensize = "640x480"' in open(path).read()
+    system, app, page = window()
+    app.handle("x")
+    menu = app.stack[-1]
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 picture: sharp")
+    app.handle("a")
+    assert system.setting("games_n64_picture") == "fast" and app.toast_text == "N64 picture: fast, from the next game"
+    app.handle("x")
+    assert any(t == "N64 picture: fast" for t, _ in app.stack[-1].items)
+
+
 def test_the_other_n64_emulator_is_one_press_away():
     system, app, page = window()
     app.handle("x")
     menu = app.stack[-1]
-    assert "N64 games start with ParaLLEl N64" in menu.detail
-    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 emulator: use Mupen64Plus-Next")
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 emulator: ParaLLEl")
     app.handle("a")
-    assert system.setting("games_core_n64") == "mupen64plus_next" and "Mupen64Plus-Next" in app.toast_text
+    assert system.setting("games_core_n64") == "mupen64plus_next" and app.toast_text == "N64 games now start with Mupen64Plus"
     app.handle("x")
-    assert any(t == "N64 emulator: use ParaLLEl N64" for t, _ in app.stack[-1].items)       # and back
+    menu = app.stack[-1]
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 emulator: Mupen64Plus")
+    app.handle("a")
+    assert system.setting("games_core_n64") == "parallel_n64"                               # and back
 
 
 def test_full_speed_for_the_length_of_a_game():
@@ -315,6 +349,28 @@ def test_full_speed_for_the_length_of_a_game():
         assert [now(r) for r in knobs] == [v[0] for v in knobs.values()]    # each back to what it was
         assert subprocess.run(["bash", perf, "normal"], env=env).returncode == 0   # nothing noted: nothing done
         assert subprocess.run(["bash", perf, "nonsense"], env=env, capture_output=True).returncode == 2
+
+
+def test_the_options_fit_the_smallest_screen():
+    """The longest menu of the desktop: on 480x320 it scrolls instead of running off the screen."""
+    for size in ((720, 720), (640, 480), (480, 320)):
+        system, app, page = window(size)
+        app.handle("x")
+        menu = app.stack[-1]
+        assert len(menu.items) == 7
+        seen = set()
+        for _ in range(len(menu.items) + 1):
+            texts, real_text = [], A.G.text
+            A.G.text = lambda surf, font, s, *a, **k: (texts.append(s), real_text(surf, font, s, *a, **k))[1]
+            try:
+                app.draw()
+            finally:
+                A.G.text = real_text
+            assert pygame.Rect(0, 0, *size).contains(menu.rect), (size, menu.rect)
+            assert menu.items[menu.sel][0] in texts and "Games: options" in texts       # the chosen row is always drawn
+            seen |= {t for t, _ in menu.items if t in texts}
+            app.handle("down")
+        assert seen == {t for t, _ in menu.items}                               # every row can be reached
 
 
 def test_no_emulators_is_said():

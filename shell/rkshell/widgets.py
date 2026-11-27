@@ -109,8 +109,28 @@ class Menu(Screen):
         # the title and each choice take a second line when they need it, not an ellipsis
         title = G.wrap(f.big, self.title, w - 28)[:2]
         labels = [G.wrap(f.mono, label, w - 44)[:2] for label, _ in self.items]
-        h = len(title) * f.line + 16 + len(lines) * f.small_line + sum(len(ls) * f.line + 8 for ls in labels) + 24
-        r = pygame.Rect(area.centerx - w // 2, area.centery - h // 2, w, h)
+        rows_h = [len(ls) * f.line + 8 for ls in labels]
+        fixed = len(title) * f.line + 16 + 24
+        room = area.h - 8
+        # A long menu on a small screen: the explanation gives way first, then
+        # the choices scroll around the chosen one. Nothing is drawn outside.
+        if fixed + len(lines) * f.small_line + sum(rows_h) > room:
+            lines = []
+        first, last = 0, len(labels)
+        if fixed + sum(rows_h) > room:
+            first = last = self.sel
+            used = 0
+            while True:
+                grew = False
+                if last < len(labels) and used + rows_h[last] <= room - fixed:
+                    used += rows_h[last]; last += 1; grew = True
+                if first > 0 and used + rows_h[first - 1] <= room - fixed:
+                    first -= 1; used += rows_h[first]; grew = True
+                if not grew:
+                    break
+            last = max(last, first + 1)
+        h = fixed + len(lines) * f.small_line + sum(rows_h[first:last])
+        r = self.rect = pygame.Rect(area.centerx - w // 2, area.centery - h // 2, w, h)
         G.box(surf, r, T.PANEL, 8, T.EMBER)
         y = r.y + 12
         for k, ln in enumerate(title):
@@ -121,7 +141,13 @@ class Menu(Screen):
             G.text(surf, f.small, ln, (r.x + 14, y), T.MUTED)
             y += f.small_line
         y += 8 if lines else 0
+        if first > 0:
+            G.text(surf, f.small, "▲", (r.right - 14, r.y + 12), T.MUTED, right=True)
+        if last < len(labels):
+            G.text(surf, f.small, "▼", (r.right - 14, r.bottom - f.small_line - 6), T.MUTED, right=True)
         for i, ls in enumerate(labels):
+            if not first <= i < last:
+                continue
             row = pygame.Rect(r.x + 8, y, w - 16, len(ls) * f.line + 4)
             if i == self.sel:
                 G.box(surf, row, T.ROW, 5, T.BORDER)

@@ -21,8 +21,8 @@ from .. import theme as T
 from ..widgets import ListView, Menu
 from .base import Page
 
-TILE_SORTS = [("name", "by name"), ("count", "most games first"), ("played", "last played first")]
-GAME_SORTS = [("name", "by name"), ("played", "last played first")]
+TILE_SORTS = [("name", "by name"), ("count", "most games"), ("played", "last played")]
+GAME_SORTS = [("name", "by name"), ("played", "last played")]
 RECENT = "recent"               # the tile that is not a machine: what was played lately
 
 
@@ -151,38 +151,36 @@ class GamesPage(Page):
             self.open_tile(self.tiles[self.sel])
 
     def options(self):
-        tiles, games = self.setting("games_tiles", TILE_SORTS), self.setting("games_list", GAME_SORTS)
-        nxt_t = TILE_SORTS[([c[0] for c in TILE_SORTS].index(tiles) + 1) % len(TILE_SORTS)]
-        nxt_g = GAME_SORTS[([c[0] for c in GAME_SORTS].index(games) + 1) % len(GAME_SORTS)]
+        """Each row names a setting and what it is now; A moves it to its next
+        choice. The rows are short on purpose: this menu is the longest of the
+        desktop, and it has to fit a 480x320 screen."""
+        s = self.app.system
 
-        def set_tiles():
-            self.app.system.set_setting("games_tiles", nxt_t[0])
-            self.build()
-
-        def set_games():
-            self.app.system.set_setting("games_list", nxt_g[0])
-            if self.view == "list":
-                self.open_tile(self.machine)
-
-        rows = [("Close", None),
-                (f"Sort machines {nxt_t[1]}", set_tiles),
-                (f"Sort games {nxt_g[1]}", set_games)]
-        detail = f"Machines are sorted {dict(TILE_SORTS)[tiles]}, games {dict(GAME_SORTS)[games]}."
-        for folder, cores in L.CHOICES.items():         # a machine with two emulators: change to the other
-            if folder not in self.shelves:
-                continue
-            ids = [c for c, _ in cores]
-            now = self.app.system.setting("games_core_" + folder)
+        def cycle(key, choices, then=None, said=None):
+            ids = [c[0] for c in choices]
+            now = s.setting(key)
             now = now if now in ids else ids[0]
-            other = cores[(ids.index(now) + 1) % len(cores)]
-            short = L.BY_FOLDER[folder][1]
-            rows.append((f"{short} emulator: use {other[1]}",
-                         lambda folder=folder, other=other, short=short: (
-                             self.app.system.set_setting("games_core_" + folder, other[0]),
-                             self.app.toast(f"{short} games now start with {other[1]}", 4))))
-            detail += f" {short} games start with {dict(cores)[now]}: when a game is slow or looks wrong, try the other."
+            nxt = choices[(ids.index(now) + 1) % len(choices)]
+
+            def go():
+                s.set_setting(key, nxt[0])
+                if then:
+                    then()
+                self.app.toast((said or "{}").format(nxt[1]), 4)
+            return dict((c[0], c[1]) for c in choices)[now], go
+
+        tiles, set_tiles = cycle("games_tiles", TILE_SORTS, self.build, "Machines: {}")
+        games, set_games = cycle("games_list", GAME_SORTS,
+                                 lambda: self.view == "list" and self.open_tile(self.machine), "Games: {}")
+        rows = [("Close", None), (f"Machines: {tiles}", set_tiles), (f"Games: {games}", set_games)]
+        if "n64" in self.shelves:
+            core, set_core = cycle("games_core_n64", L.CHOICES["n64"], None, "N64 games now start with {}")
+            picture, set_picture = cycle("games_n64_picture", [p[:2] for p in L.PICTURES], None,
+                                         "N64 picture: {}, from the next game")
+            rows += [(f"N64 emulator: {core}", set_core), (f"N64 picture: {picture}", set_picture)]
         rows += [("Look for new games", self.rescan), ("RetroArch's own menu", self.retroarch_menu)]
-        self.app.push(Menu(self.app, "Games: options", rows, detail))
+        self.app.push(Menu(self.app, "Games: options", rows,
+                           "A changes a row to its next choice. A slow N64 game: try the other emulator, or the fast picture."))
 
     def play(self, game):
         cmd = self.app.system.games_command(game)
