@@ -6,4 +6,5 @@ ark ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/local/sbin/r
     /usr/local/sbin/rk-scan run, /usr/local/sbin/rk-tools install-heavy, /usr/local/sbin/rk-tools install-media, \
     /usr/local/sbin/rk-remote on, /usr/local/sbin/rk-remote off, \
     /usr/local/sbin/rk-boot-select, /usr/local/sbin/rk-share request, /usr/local/sbin/rk-region tz *, \
-    /usr/local/sbin/rk-reset unlocked light, /usr/local/sbin/rk-reset unlocked full
+    /usr/local/sbin/rk-reset unlocked light, /usr/local/sbin/rk-reset unlocked full, \
+    /usr/local/sbin/rk-perf game, /usr/local/sbin/rk-perf normal

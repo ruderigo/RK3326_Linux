@@ -1519,7 +1519,7 @@ class System:
             return None
         if game is None:
             return list(entry["exec"])
-        core = games.core_path(game["machine"])
+        core = games.core_path(game["machine"], self.setting("games_core_" + game["machine"]))
         if not os.path.isfile(core):
             return None
         return list(entry["exec"]) + ["-L", core, game["path"]]

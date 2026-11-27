@@ -164,13 +164,25 @@ class GamesPage(Page):
             if self.view == "list":
                 self.open_tile(self.machine)
 
-        self.app.push(Menu(self.app, "Games: options", [
-            ("Close", None),
-            (f"Sort machines {nxt_t[1]}", set_tiles),
-            (f"Sort games {nxt_g[1]}", set_games),
-            ("Look for new games", self.rescan),
-            ("RetroArch's own menu", self.retroarch_menu)],
-            f"Machines are sorted {dict(TILE_SORTS)[tiles]}, games {dict(GAME_SORTS)[games]}."))
+        rows = [("Close", None),
+                (f"Sort machines {nxt_t[1]}", set_tiles),
+                (f"Sort games {nxt_g[1]}", set_games)]
+        detail = f"Machines are sorted {dict(TILE_SORTS)[tiles]}, games {dict(GAME_SORTS)[games]}."
+        for folder, cores in L.CHOICES.items():         # a machine with two emulators: change to the other
+            if folder not in self.shelves:
+                continue
+            ids = [c for c, _ in cores]
+            now = self.app.system.setting("games_core_" + folder)
+            now = now if now in ids else ids[0]
+            other = cores[(ids.index(now) + 1) % len(cores)]
+            short = L.BY_FOLDER[folder][1]
+            rows.append((f"{short} emulator: use {other[1]}",
+                         lambda folder=folder, other=other, short=short: (
+                             self.app.system.set_setting("games_core_" + folder, other[0]),
+                             self.app.toast(f"{short} games now start with {other[1]}", 4))))
+            detail += f" {short} games start with {dict(cores)[now]}: when a game is slow or looks wrong, try the other."
+        rows += [("Look for new games", self.rescan), ("RetroArch's own menu", self.retroarch_menu)]
+        self.app.push(Menu(self.app, "Games: options", rows, detail))
 
     def play(self, game):
         cmd = self.app.system.games_command(game)

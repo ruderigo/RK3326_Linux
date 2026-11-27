@@ -122,8 +122,12 @@ Games on the dock is the system's own launcher, not RetroArch's menu.
   the top. A machine with no game has no tile. **Recently played** comes
   first once something has been played.
 - **A on a tile** lists its games; **A on a game** starts it, with the
-  emulator for that machine already chosen (the first core of the table: for
-  the Nintendo 64, Mupen64Plus-Next).
+  emulator for that machine already chosen. For the Nintendo 64 that is
+  ParaLLEl N64, the one dArkOS puts first; X has "N64 emulator: use
+  Mupen64Plus-Next" for the games it runs badly.
+- **A game runs at full speed**: for its length the processor, the graphics
+  chip and the memory are held at their fastest (`rk-perf`), as dArkOS does,
+  and put back to saving power when it ends.
 - **X is the options**: sort the machines by name, by number of games or by
   last played; sort the games by name or by last played; look again; and
   **RetroArch's own menu**, for its settings or the other N64 core.

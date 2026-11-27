@@ -13,7 +13,7 @@ import time
 
 # folder, short label for the tile, full name, RetroArch core, file endings
 MACHINES = [
-    ("n64", "N64", "Nintendo 64", "mupen64plus_next", (".z64", ".n64", ".v64", ".zip")),
+    ("n64", "N64", "Nintendo 64", "parallel_n64", (".z64", ".n64", ".v64", ".zip")),
     ("psx", "PS1", "PlayStation", "pcsx_rearmed", (".cue", ".chd", ".pbp", ".m3u", ".iso", ".img", ".bin")),
     ("psp", "PSP", "PlayStation Portable", "ppsspp", (".iso", ".cso", ".pbp")),
     ("snes", "SNES", "Super Nintendo", "snes9x", (".sfc", ".smc", ".zip")),
@@ -27,13 +27,20 @@ MACHINES = [
     ("pcengine", "PCE", "PC Engine", "mednafen_pce_fast", (".pce", ".cue", ".chd", ".zip")),
 ]
 BY_FOLDER = {m[0]: m for m in MACHINES}
+# A machine with a second emulator: neither runs every game well, so the
+# owner can change. The first is the one the launcher uses until told otherwise
+# (for the N64, the one dArkOS itself puts ahead of Mupen64Plus-Next).
+CHOICES = {"n64": [("parallel_n64", "ParaLLEl N64"), ("mupen64plus_next", "Mupen64Plus-Next")]}
 CORES_DIR = "/opt/rk-emulators/cores"
 # a disc is its .cue or .m3u: the tracks and the single discs beside them are not games of their own
 DISC_PARTS = (".bin", ".img", ".iso")
 
 
-def core_path(folder):
-    return os.path.join(CORES_DIR, BY_FOLDER[folder][3] + "_libretro.so")
+def core_path(folder, core=None):
+    """The core file for a machine; `core` is the owner's choice where there is one."""
+    if core not in [c for c, _ in CHOICES.get(folder, [])]:
+        core = BY_FOLDER[folder][3]
+    return os.path.join(CORES_DIR, core + "_libretro.so")
 
 
 def listed_in_m3u(path):

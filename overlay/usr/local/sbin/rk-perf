@@ -1,0 +1,54 @@
+#!/bin/bash
+# rk-perf: full speed for the length of a game.
+#
+# At rest the handheld saves power: the processor, the graphics chip and the
+# memory each slow down when little is asked of them, and speed up again
+# with a delay. An emulator asks for everything in bursts, sixty times a
+# second, and that delay is felt as slow pictures and broken sound. dArkOS
+# starts every game with all three held at full speed, and puts them back
+# afterwards; this does the same.
+#
+#   rk-perf game       hold the processor, the graphics chip and the memory
+#                      at full speed (what they were set to is noted)
+#   rk-perf normal     put them back
+#   rk-perf status     what each is set to now
+#
+# Runs as root (Games goes through sudo, see /etc/sudoers.d/rkshell). Only
+# "governor" files are written, and only with a setting the kernel lists as
+# available. A restart puts everything back too.
+set -u
+
+SYS="${RK_SYS:-/sys}"                       # a stand-in under test
+NOTE="${RK_PERF_NOTE:-/run/rk-perf}"
+
+knobs() {       # every governor file: the processor's, then the devfreq ones (graphics, memory)
+    ls "$SYS"/devices/system/cpu/cpufreq/policy*/scaling_governor "$SYS"/class/devfreq/*/governor 2>/dev/null
+}
+
+offers() {      # does this knob offer that setting?
+    local dir; dir=$(dirname "$1")
+    grep -qw -- "$2" "$dir/scaling_available_governors" "$dir/available_governors" 2>/dev/null
+}
+
+case "${1:-status}" in
+    game)
+        mkdir -p "$NOTE" || exit 1
+        [ -s "$NOTE/was" ] || : > "$NOTE/was"       # a second "game" keeps the first note
+        for k in $(knobs); do
+            now=$(cat "$k" 2>/dev/null) || continue
+            [ "$now" = performance ] && continue
+            offers "$k" performance || continue
+            grep -q "^$k " "$NOTE/was" || echo "$k $now" >> "$NOTE/was"
+            echo performance > "$k" 2>/dev/null || echo "rk-perf: $k was not changed" >&2
+        done ;;
+    normal)
+        [ -f "$NOTE/was" ] || exit 0
+        while read -r k was; do
+            [ -n "$k" ] && [ -w "$k" ] && echo "$was" > "$k" 2>/dev/null
+        done < "$NOTE/was"
+        rm -f "$NOTE/was" ;;
+    status)
+        for k in $(knobs); do echo "${k#"$SYS"/}: $(cat "$k" 2>/dev/null)"; done ;;
+    *) echo "usage: rk-perf game|normal|status" >&2; exit 2 ;;
+esac
+exit 0
