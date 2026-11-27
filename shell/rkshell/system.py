@@ -1488,6 +1488,42 @@ class System:
     def games_installed(self):
         return os.access("/opt/rk-emulators/bin/retroarch", os.X_OK)
 
+    # --------------------------------------------------------------- games
+    def games_folder(self):
+        """Where games are looked for: the roms folder on the part of the
+        card a computer reads, or its stand-in on a card without one."""
+        ok, out = run(["/usr/local/bin/rk-games", "where"])
+        path = out.strip().splitlines()[-1] if ok and out.strip() else "/data/ark/roms"
+        return os.path.realpath(path) if os.path.isdir(path) else path
+
+    def games_scan(self):
+        from . import games
+        return games.scan(self.games_folder())
+
+    def games_history(self):
+        from . import games
+        return games.History(os.path.join(os.path.dirname(self._settings_path()), ".rk-games.json"))
+
+    def games_entry(self):
+        """Games' dock entry (games.json): how RetroArch is started, and what
+        is done just before. The Games window is the one icon; this is its helper."""
+        return next((a for a in self.apps() if a.get("name") == "Games"), None) or {"name": "Games", "mouse": False}
+
+    def games_command(self, game):
+        """What starts this game: RetroArch, the core for its machine, the
+        file. With no game: RetroArch's own menu. None when the emulators or
+        that core are not on the card."""
+        from . import games
+        entry = self.games_entry()
+        if not entry.get("exec") or not entry.get("ready"):
+            return None
+        if game is None:
+            return list(entry["exec"])
+        core = games.core_path(game["machine"])
+        if not os.path.isfile(core):
+            return None
+        return list(entry["exec"]) + ["-L", core, game["path"]]
+
     def video_error(self, since):
         """Why the last play failed, when it did so after `since` (a time); else ""."""
         path = os.path.expanduser("~/.cache/rk-video/last.error")
@@ -1715,6 +1751,29 @@ class DemoSystem(System):
     def video_status(self): return dict(getattr(self, "_video", {"mpv": True, "ytdlp": "2026.11.18", "js": "quickjs"}))
 
     def games_installed(self): return True
+    def games_folder(self): return "/share/roms"
+
+    def games_scan(self):
+        if getattr(self, "_no_games", False):
+            return []
+        lib = {"n64": ["Star Kart 64", "Bolt Racer", "Tetra Legends", "Goldfinch 007"],
+               "psx": ["Crash Lander (Disc 1)", "Final Quest VII", "Metal Cog Solid", "Gran Circuit 2", "Tomb Seeker"],
+               "psp": ["Monster Catcher Freedom", "Lumina"], "snes": ["Super Plumber World", "Chrono Lever", "F-Null"],
+               "gba": ["Advance Skirmish"], "megadrive": ["Hedgehog Dash 2", "Streets of Rain"], "nes": ["Mega Fellow 3"]}
+        return [{"machine": m, "name": n, "path": f"/share/roms/{m}/{n}.rom"} for m in lib for n in sorted(lib[m])]
+
+    def games_history(self):
+        from . import games
+        h = games.History("/nonexistent/.rk-games.json")
+        h.played = dict(getattr(self, "_played", {"/share/roms/n64/Star Kart 64.rom": time.time() - 3600,
+                                                 "/share/roms/psx/Final Quest VII.rom": time.time() - 3 * 86400}))
+        h.mark = lambda path, when=None: h.played.__setitem__(path, when or time.time())
+        return h
+
+    def games_entry(self): return {"name": "Games", "mouse": False, "exec": ["retroarch"], "ready": True}
+
+    def games_command(self, game):
+        return ["retroarch"] + (["-L", f"{game['machine']}_core.so", game["path"]] if game else [])
     def video_error(self, since): return ""
 
     def video_search(self, words):

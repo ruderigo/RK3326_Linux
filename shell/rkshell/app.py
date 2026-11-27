@@ -26,6 +26,7 @@ from . import theme as T
 from .desktop import Dock, Wallpaper
 from .pages.devices import DevicesPage
 from .pages.files import FilesPage
+from .pages.games import GamesPage
 from .pages.network import NetworkPage
 from .pages.scan import ScanPage
 from .pages.stumpsetup import StumpSetupPage
@@ -37,7 +38,7 @@ from .pages.system import SystemPage
 from .pages.terminal import TerminalPage
 from .pages.video import VideoPage
 
-WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, VideoPage, AppsPage, SystemPage]
+WINDOWS = [FilesPage, TerminalPage, ScanPage, ArsenalPage, SurveyPage, NetworkPage, DevicesPage, SoundPage, VideoPage, GamesPage, AppsPage, SystemPage]
 
 
 # setup windows an app entry can name ("setup": "stump"), shown until its "needs" file exists
@@ -68,7 +69,10 @@ class App:
 
     def fill_dock(self):
         items = [{"name": w.title, "icon": w.icon, "ready": True, "window": w} for w in WINDOWS]
-        items += sorted(self.system.apps(), key=lambda a: (a.get("group", ""), a["name"]))
+        # an app entry named like one of the desktop's own windows is that
+        # window's helper (Games' entry says how RetroArch starts): one icon, the window's
+        own = {w.title for w in WINDOWS}
+        items += sorted((a for a in self.system.apps() if a["name"] not in own), key=lambda a: (a.get("group", ""), a["name"]))
         self.dock.set(items)
 
     # --------------------------------------------------------- navigation
