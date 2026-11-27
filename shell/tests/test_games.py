@@ -70,7 +70,10 @@ def test_history_and_words():
     assert L.ago(now - 3 * 86400, now) == "3 days ago" and L.ago(now - 20 * 86400, now) == "7 Nov"
     assert L.ago(now - 400 * 86400, now).endswith("2025")
     assert L.count(1) == "1 game" and L.count(0) == "0 games" and L.count(12) == "12 games"
-    assert L.core_path("n64").endswith("/mupen64plus_next_libretro.so")
+    assert L.core_path("n64").endswith("/parallel_n64_libretro.so")                    # dArkOS's first choice
+    assert L.core_path("n64", "mupen64plus_next").endswith("/mupen64plus_next_libretro.so")
+    assert L.core_path("n64", "nonsense").endswith("/parallel_n64_libretro.so")        # a damaged setting
+    assert L.core_path("psx", "mupen64plus_next").endswith("/pcsx_rearmed_libretro.so")    # no choice there
     assert {m[0] for m in L.MACHINES} == set("psx n64 psp nes snes gb gbc gba megadrive mastersystem gamegear pcengine".split())
 
 
@@ -78,20 +81,26 @@ def test_the_real_command_is_retroarch_with_the_machines_core():
     with tempfile.TemporaryDirectory() as t:
         os.makedirs(f"{t}/cores")
         open(f"{t}/cores/mupen64plus_next_libretro.so", "w").write("x")
+        open(f"{t}/cores/parallel_n64_libretro.so", "w").write("x")
         s = S.System()
+        s.SETTINGS = (f"{t}/nowhere/x.json", f"{t}/desktop.json")
+        real_options, L.CORE_OPTIONS = L.CORE_OPTIONS, f"{t}/retroarch/rk-core-options.cfg"
         entry = {"name": "Games", "exec": ["/opt/rk-emulators/bin/retroarch", "--appendconfig", "/usr/share/rk/retroarch/rk.cfg"],
                  "ready": True, "before": ["/usr/local/bin/rk-games", "prepare"]}
         s.games_entry = lambda: entry
         real, L.CORES_DIR = L.CORES_DIR, f"{t}/cores"
         try:
             game = {"machine": "n64", "name": "Zelda", "path": "/share/roms/n64/Zelda (USA).z64"}
+            assert s.games_command(game) == entry["exec"] + ["-L", f"{t}/cores/parallel_n64_libretro.so", game["path"]]
+            s.set_setting("games_core_n64", "mupen64plus_next")             # the owner chose the other N64 emulator
             assert s.games_command(game) == entry["exec"] + ["-L", f"{t}/cores/mupen64plus_next_libretro.so", game["path"]]
             assert s.games_command(None) == entry["exec"]                   # RetroArch's own menu
             assert s.games_command(dict(game, machine="psx")) is None       # that core is not on the card
             entry["ready"] = False
             assert s.games_command(game) is None                            # no emulators at all
+            assert 'parallel-n64-screensize = "640x480"' in open(L.CORE_OPTIONS).read()   # written just before the game
         finally:
-            L.CORES_DIR = real
+            L.CORES_DIR, L.CORE_OPTIONS = real, real_options
 
 
 # ------------------------------------------------------------- the window
@@ -178,9 +187,11 @@ def test_sorting():
     app.handle("x")
     menu = app.stack[-1]
     assert isinstance(menu, Menu) and menu.items[0][0] == "Close"
-    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t.startswith("Sort games"))
+    assert ("Games: by name", menu.items[2][1]) == menu.items[2]              # the row says what it is now
+    menu.sel = 2
     app.handle("a")
     assert system.setting("games_list") == "played" and page.list.items[0]["name"] == "Final Quest VII"
+    assert app.toast_text == "Games: last played"
     system.set_setting("games_tiles", "nonsense")                           # a damaged setting: the first choice
     page.build()
     assert page.tiles[1] == "gba"
@@ -265,6 +276,101 @@ def test_the_3d_cores_find_the_graphics_driver():
     tools = open(os.path.join(repo, "overlay", "usr", "local", "sbin", "rk-tools")).read()
     for lib in ("libx11-6", "libxext6", "libsm6", "libice6"):               # what PPSSPP's core also asks for
         assert lib in pkgs and lib in tools
+
+
+def test_the_n64_picture_is_written_where_retroarch_reads_it():
+    repo = os.path.join(HERE, "..", "..")
+    cfg = open(os.path.join(repo, "overlay", "usr", "share", "rk", "retroarch", "rk.cfg")).read()
+    assert 'global_core_options = "true"' in cfg
+    assert 'core_options_path = "/home/ark/.config/retroarch/rk-core-options.cfg"' in cfg
+    assert L.CORE_OPTIONS.endswith("/.config/retroarch/rk-core-options.cfg")
+    with tempfile.TemporaryDirectory() as t:
+        path = f"{t}/retroarch/rk-core-options.cfg"                        # the folder is not there yet
+        assert L.write_core_options(path, None)                             # nothing chosen: sharp
+        text = open(path).read()
+        assert 'parallel-n64-screensize = "640x480"' in text and 'mupen64plus-43screensize = "640x480"' in text
+        open(path, "a").write('parallel-n64-gfxplugin = "rice"\npcsx_rearmed_frameskip = "1"\n')     # the owner's own, set in RetroArch
+        assert L.write_core_options(path, "fast")
+        lines = open(path).read().splitlines()
+        assert 'parallel-n64-screensize = "320x240"' in lines and 'mupen64plus-43screensize = "320x240"' in lines
+        assert 'parallel-n64-gfxplugin = "rice"' in lines and 'pcsx_rearmed_frameskip = "1"' in lines
+        assert len(lines) == 4                                              # changed in place, nothing twice
+        assert L.write_core_options(path, "nonsense") and 'parallel-n64-screensize = "640x480"' in open(path).read()
+    system, app, page = window()
+    app.handle("x")
+    menu = app.stack[-1]
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 picture: sharp")
+    app.handle("a")
+    assert system.setting("games_n64_picture") == "fast" and app.toast_text == "N64 picture: fast, from the next game"
+    app.handle("x")
+    assert any(t == "N64 picture: fast" for t, _ in app.stack[-1].items)
+
+
+def test_the_other_n64_emulator_is_one_press_away():
+    system, app, page = window()
+    app.handle("x")
+    menu = app.stack[-1]
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 emulator: ParaLLEl")
+    app.handle("a")
+    assert system.setting("games_core_n64") == "mupen64plus_next" and app.toast_text == "N64 games now start with Mupen64Plus"
+    app.handle("x")
+    menu = app.stack[-1]
+    menu.sel = next(i for i, (t, _) in enumerate(menu.items) if t == "N64 emulator: Mupen64Plus")
+    app.handle("a")
+    assert system.setting("games_core_n64") == "parallel_n64"                               # and back
+
+
+def test_full_speed_for_the_length_of_a_game():
+    import json
+    import subprocess
+    repo = os.path.join(HERE, "..", "..")
+    perf = os.path.join(repo, "overlay", "usr", "local", "sbin", "rk-perf")
+    entry = json.load(open(os.path.join(repo, "overlay", "usr", "share", "rk", "apps", "games.json")))
+    assert entry["before"] == ["/usr/local/bin/rk-games", "prepare"] and entry["after"] == ["/usr/local/bin/rk-games", "done"]
+    games = open(os.path.join(repo, "overlay", "usr", "local", "bin", "rk-games")).read()
+    assert "rk-perf game" in games and "rk-perf normal" in games
+    sudoers = open(os.path.join(repo, "overlay", "etc", "sudoers.d", "rkshell")).read()
+    assert "/usr/local/sbin/rk-perf game, /usr/local/sbin/rk-perf normal" in sudoers
+    with tempfile.TemporaryDirectory() as t:
+        knobs = {"devices/system/cpu/cpufreq/policy0/scaling_governor": ("interactive", "scaling_available_governors", "interactive ondemand performance"),
+                 "class/devfreq/dmc/governor": ("dmc_ondemand", "available_governors", "dmc_ondemand userspace performance"),
+                 "class/devfreq/ff400000.gpu/governor": ("simple_ondemand", "available_governors", "simple_ondemand performance"),
+                 "class/devfreq/odd/governor": ("simple_ondemand", "available_governors", "simple_ondemand powersave")}
+        for rel, (now, listing, offered) in knobs.items():
+            os.makedirs(os.path.dirname(f"{t}/sys/{rel}"), exist_ok=True)
+            open(f"{t}/sys/{rel}", "w").write(now + "\n")
+            open(os.path.join(os.path.dirname(f"{t}/sys/{rel}"), listing), "w").write(offered + "\n")
+        env = dict(os.environ, RK_SYS=f"{t}/sys", RK_PERF_NOTE=f"{t}/note")
+        now = lambda rel: open(f"{t}/sys/{rel}").read().strip()
+        for _ in range(2):                                                  # asked twice: the first note is kept
+            assert subprocess.run(["bash", perf, "game"], env=env).returncode == 0
+        assert [now(r) for r in knobs] == ["performance", "performance", "performance", "simple_ondemand"]    # the last does not offer it
+        assert subprocess.run(["bash", perf, "normal"], env=env).returncode == 0
+        assert [now(r) for r in knobs] == [v[0] for v in knobs.values()]    # each back to what it was
+        assert subprocess.run(["bash", perf, "normal"], env=env).returncode == 0   # nothing noted: nothing done
+        assert subprocess.run(["bash", perf, "nonsense"], env=env, capture_output=True).returncode == 2
+
+
+def test_the_options_fit_the_smallest_screen():
+    """The longest menu of the desktop: on 480x320 it scrolls instead of running off the screen."""
+    for size in ((720, 720), (640, 480), (480, 320)):
+        system, app, page = window(size)
+        app.handle("x")
+        menu = app.stack[-1]
+        assert len(menu.items) == 7
+        seen = set()
+        for _ in range(len(menu.items) + 1):
+            texts, real_text = [], A.G.text
+            A.G.text = lambda surf, font, s, *a, **k: (texts.append(s), real_text(surf, font, s, *a, **k))[1]
+            try:
+                app.draw()
+            finally:
+                A.G.text = real_text
+            assert pygame.Rect(0, 0, *size).contains(menu.rect), (size, menu.rect)
+            assert menu.items[menu.sel][0] in texts and "Games: options" in texts       # the chosen row is always drawn
+            seen |= {t for t, _ in menu.items if t in texts}
+            app.handle("down")
+        assert seen == {t for t, _ in menu.items}                               # every row can be reached
 
 
 def test_no_emulators_is_said():

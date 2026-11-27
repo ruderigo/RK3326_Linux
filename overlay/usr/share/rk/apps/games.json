@@ -12,5 +12,9 @@
   "/usr/local/bin/rk-games",
   "prepare"
  ],
- "mouse": false
+ "mouse": false,
+ "after": [
+  "/usr/local/bin/rk-games",
+  "done"
+ ]
 }
