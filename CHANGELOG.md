@@ -10,8 +10,8 @@ replace is in [`docs/updates.md`](docs/updates.md).
   behind the row of icons is gone: the icons stand on the wallpaper itself.
   Each icon keeps its own tile, and the dock behaves as before.
 
-Drawn in the build at 720x720, 640x480 and 480x320; not seen on a handheld
-before this release was tagged.
+Drawn in the build at 720x720, 640x480 and 480x320; seen on an R36MAX the
+same day, after an update from Settings.
 
 ## 1.4.0 — 2026-11-27
 
@@ -59,8 +59,9 @@ Seen on an R36MAX on 27 November: SSH off after a flash and the password
 step, the screen's sleep, the time zone, both versions in the Update
 window, Debian's security updates being applied, both resets. A reset first left SSH unable to start (the card's
 keys were removed and nothing made new ones); that was found on the
-handheld and fixed before this release. Not seen yet: the battery warnings
-and the power-off at 3%.
+handheld and fixed before this release. The battery warnings at 10% and 5%
+and the power-off at 3% were seen later the same day, on a battery run down
+for it.
 
 ## 1.3.1 — 2026-11-26
 
