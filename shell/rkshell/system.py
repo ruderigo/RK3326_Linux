@@ -245,6 +245,17 @@ def stump_answers(form):
     return out
 
 
+def os_release_version(text):
+    """RK_VERSION from the text of /etc/os-release.rk, or ""."""
+    m = re.search(r'^RK_VERSION="?([^"\n]*)"?', text, re.M)
+    return m.group(1).strip() if m else ""
+
+
+def same_version(a, b):
+    """True when two version names are the same release ("v1.3.1" is "1.3.1")."""
+    return bool(a) and bool(b) and a.lstrip("v") == b.lstrip("v")
+
+
 def zone_names(zoneinfo):
     """Time zone names from the system's own table (zone1970.tab: one line a
     zone, the name in the third column), with UTC. Only those whose file is
@@ -1153,15 +1164,27 @@ class System:
         return Recorder()
 
     def os_status(self):
-        """{"installed","newest","source","channel","schema"} from rk-update status."""
-        ok, out = run([RK_UPDATE, "status"])
+        """{"installed","newest","source","channel","schema"}: what this card
+        has, without asking the network ("newest" comes from os_newest, which
+        can take its time). The installed version is read from its file as
+        well: it is shown whatever becomes of the rest."""
         info = {"installed": "", "newest": "", "source": "", "channel": "", "schema": ""}
-        for line in out.splitlines():
+        ok, out = run([RK_UPDATE, "status", "--local"], timeout=20)
+        for line in out.splitlines() if ok else []:
             k, _, v = line.partition(":")
             k = k.strip()
             if k in info:
                 info[k] = v.strip()
+        if info["installed"] in ("", "unknown"):
+            info["installed"] = os_release_version(read("/etc/os-release.rk"))
         return info
+
+    def os_newest(self):
+        """The newest version there is to update to, or "" when it cannot be
+        looked up (no network, or the source did not answer in time)."""
+        ok, out = run([RK_UPDATE, "check"], timeout=45)
+        tag = out.splitlines()[-1].strip() if ok and out else ""
+        return tag if re.fullmatch(r"v?\d+\.\d+\.\d+", tag) else ""
 
     def os_update(self, password):
         return OsUpdate(password, "apply")
@@ -1578,7 +1601,9 @@ class DemoSystem(System):
         return self.set_sound_output(self._snd["mode"])
 
     def os_status(self):
-        return {"installed": "0.9.0", "newest": "1.0.0", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
+        return {"installed": "0.9.0", "newest": "", "source": "official (github.com/ruderigo/RK3326_Linux)", "channel": "os-update", "schema": "2 of 2"}
+
+    def os_newest(self): return "v1.0.0"
 
     def os_update(self, password):
         job = OsUpdate.__new__(OsUpdate)

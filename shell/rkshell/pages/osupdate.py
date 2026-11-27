@@ -6,10 +6,13 @@ up what it replaces, runs migrations, and rolls back by itself if the desktop
 does not come back. So an update keeps the adopter's identity, apps and
 settings. The handheld's password is asked because it writes system files.
 """
+import threading
+
 import pygame
 
 from .. import gfx as G
 from .. import theme as T
+from ..system import same_version
 from ..widgets import Keyboard
 from .base import Page
 
@@ -24,22 +27,37 @@ class OsUpdatePage(Page):
         self.info = {}
         self.view = "running" if OsUpdatePage.job else "info"
         self.told = False
+        self.looking = False
 
     def enter(self):
         if self.view != "running":
+            # what this card has is shown at once; the newest version is
+            # asked of the network beside it, and fills in when it answers
             self.info = self.app.system.os_status()
+            self.looking = True
+            info = self.info
+
+            def look():
+                info["newest"] = self.app.system.os_newest()
+                if info is self.info:
+                    self.looking = False
+                    self.app.dirty = True
+            threading.Thread(target=look, daemon=True).start()
+
+    @property
+    def same(self):
+        return same_version(self.info.get("installed"), self.info.get("newest"))
 
     @property
     def live(self):
-        return self.view == "running"
+        return self.view == "running" or self.looking
 
     @property
     def hints(self):
         if self.view == "running":
             job = OsUpdatePage.job
             return [("B", "back")] if job and job.done else [("B", "hide")]
-        same = self.info.get("installed") and self.info.get("installed") == self.info.get("newest")
-        rows = [("A", "security updates" if same else "update now"), ("Y", "undo last update"), ("B", "close")]
+        rows = [("A", "security updates" if self.same else "update now"), ("Y", "undo last update"), ("B", "close")]
         return rows
 
     def wants_back(self):
@@ -81,7 +99,19 @@ class OsUpdatePage(Page):
             self.app.pop()
             return
         if action == "a":
-            self.start("apply")             # up to date: Debian's security updates are still looked for
+            # say what is about to happen, from which version to which, before the password is asked
+            have, new = self.info.get("installed") or "unknown", self.info.get("newest")
+            if self.same:
+                title, detail = "Look for security updates?", (
+                    f"This handheld is on {have}, the newest version. Debian's security updates are looked for and applied.")
+            elif new:
+                title, detail = f"Update to {new.lstrip('v')}?", (
+                    f"This handheld is on {have}. It goes to {new.lstrip('v')}, then Debian's security updates are applied.")
+            else:
+                title, detail = "Update this handheld?", (
+                    f"This handheld is on {have}. The newest version could not be looked up"
+                    + (" yet" if self.looking else "") + ": if there is one it is installed, then Debian's security updates.")
+            self.app.confirm(title, detail, "Update", lambda: self.start("apply"))
         elif action == "y":
             self.app.confirm("Undo the last update?", "Puts back the version from before the last update.",
                              "Undo", lambda: self.start("rollback"))
@@ -101,10 +131,11 @@ class OsUpdatePage(Page):
         inner = self.panel(surf, f, area)
         x, y = inner.x + 14, inner.y + 6
         i = self.info
-        same = i.get("installed") and i.get("installed") == i.get("newest")
+        same, new = self.same, (i.get("newest") or "").lstrip("v")
         rows = [("Installed", i.get("installed") or "unknown", T.TEXT),
-                ("Newest", (i.get("newest") or "unknown") + ("  (up to date)" if same else ""),
-                 T.OK if same else T.EMBER_BRIGHT if i.get("newest") not in ("", "unknown") else T.MUTED),
+                ("Newest", new + ("  (up to date)" if same else "") if new
+                 else "looking…" if self.looking else "could not look it up (Wi-Fi?)",
+                 T.OK if same else T.EMBER_BRIGHT if new else T.MUTED),
                 ("Updates from", i.get("source") or "official", T.MUTED),
                 ("Channel", i.get("channel") or "—", T.MUTED),
                 ("State schema", i.get("schema") or "—", T.MUTED)]

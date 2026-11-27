@@ -15,7 +15,7 @@
 # are backed up first; migrations run after; the desktop is restarted and, if
 # it does not come back, the backup is restored automatically.
 #
-#   rk-update status                 installed vs newest, and the schema
+#   rk-update status [--local]       installed vs newest, and the schema (--local: without asking the network)
 #   rk-update check                  just print the newest available version
 #   rk-update apply [--to TAG]       update (to the newest, or a given tag)
 #   rk-update packages               Debian's security updates only (apply does them too)
@@ -353,7 +353,9 @@ status() {
     cur=$(installed_version); src=$(conf_get source official)
     echo "installed : ${cur:-unknown}"
     echo "source    : $src ($(repo_url))"
-    if [ "$src" = url ]; then
+    if [ "${1:-}" = --local ]; then
+        :                   # what is on this card only: no waiting on the network
+    elif [ "$src" = url ]; then
         echo "newest    : (from $(conf_get url ?))"
     elif online; then
         new=$(newest_tag); echo "newest    : ${new:-unknown}"
@@ -367,7 +369,7 @@ status() {
 [ -n "${RK_UPDATE_SOURCE:-}" ] && return 0
 
 case "${1:-status}" in
-    status)   status ;;
+    status)   status "${2:-}" ;;
     check)    online && newest_tag || die "offline" ;;
     ping)     shift; ping "$@" ;;
     apply)    shift; apply "$@" ;;
