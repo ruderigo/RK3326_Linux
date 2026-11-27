@@ -340,7 +340,7 @@ first), then for the handheld's password. The handheld restarts at the end.
 |---|---|---|
 | Saved Wi-Fi networks | erased | erased |
 | The password | back to `ark`, to be changed | same |
-| Remote access (SSH), its keys, the card's own SSH keys | off, forgotten, made anew | same |
+| Remote access (SSH), its keys, the card's own SSH keys | off, forgotten, replaced | same |
 | Time zone, the desktop's settings, where updates come from | back to the image's | same |
 | FireFly's identity and messages | kept | erased: FireFly makes a new identity |
 | The Stump's setup | kept | erased: it asks its questions again |

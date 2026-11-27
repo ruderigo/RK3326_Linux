@@ -30,6 +30,8 @@ case "${1:-status}" in
             echo "rk-remote: this handheld still has its first password; choose your own first" >&2
             exit 3
         fi
+        # SSH does not start without the card's own keys: make them if they are gone
+        [ -n "${RK_SHADOW:-}" ] || [ -f /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -A >/dev/null 2>&1
         "$SYSTEMCTL" enable --now ssh ;;
     off)    "$SYSTEMCTL" disable --now ssh ;;
     *)      echo "usage: rk-remote status|on|off|first" >&2; exit 2 ;;

@@ -80,6 +80,11 @@ def test_light_takes_the_settings_and_nothing_else():
         assert [rel for rel in APP_DATA + KEPT if not there(t, rel)] == []     # every app's data, and the rest
         asked = ran(t)
         assert "rk-remote off" in asked and "echo ark:ark | chpasswd" in asked and "chage -d 0 ark" in asked
+        # the card's SSH keys are replaced at once: nothing else makes them after the very first start,
+        # and without them remote access cannot be turned on again
+        assert "ssh-keygen -A" in asked
+        assert "ConditionPathExists=!/var/lib/rk/firstboot-done" in open(os.path.join(
+            HERE, "..", "..", "overlay", "etc", "systemd", "system", "rk-firstboot.service")).read()
         assert "rk-pkg" not in asked and "stump" not in asked
         assert open(f"{t}/etc/timezone").read().strip() == "America/Toronto"
         assert os.readlink(f"{t}/etc/localtime").endswith("America/Toronto")

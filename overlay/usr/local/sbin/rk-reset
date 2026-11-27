@@ -84,7 +84,10 @@ light() {
     say "remote access off, its keys forgotten"
     live "$BIN/rk-remote" off
     rm -f -- "$ARK/.ssh/authorized_keys" "$ARK/.ssh/known_hosts"
-    rm -f -- "$ROOT"/etc/ssh/ssh_host_*            # this card makes new ones at its next start (rk-firstboot)
+    # new keys for this card, made now: rk-firstboot makes them only at a
+    # card's very first start, and SSH does not start without them
+    rm -f -- "$ROOT"/etc/ssh/ssh_host_*
+    live ssh-keygen -A
 
     say "the password is the first one again, to be changed"
     live sh -c 'echo ark:ark | chpasswd' && live chage -d 0 ark ||
