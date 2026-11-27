@@ -1,0 +1,36 @@
+#!/bin/bash
+# rk-remote: remote access (SSH), on or off.
+#
+# A new card has it off: the image's first password is public ("ark"), so a
+# card that answered SSH from its first start could be entered, and given a
+# password, by anybody on the same network before its owner. It is turned on
+# from the desktop (Network, "Remote access"), and only once the handheld has
+# a password of its own: this refuses while the first one is still there.
+#
+#   rk-remote status     on | off
+#   rk-remote on         start SSH now and at every start
+#   rk-remote off        stop it
+#   rk-remote first      exit 0 while ark still has the first password
+#
+# Runs as root (the desktop goes through sudo, see /etc/sudoers.d/rkshell).
+set -u
+
+SHADOW="${RK_SHADOW:-/etc/shadow}"          # a stand-in file under test
+SYSTEMCTL="${RK_SYSTEMCTL:-systemctl}"
+
+# The image sets the day of ark's last password change to 0 ("chage -d 0"):
+# every login then asks for a new one. Any change puts a real day there.
+first_password() { [ "$(awk -F: '$1 == "ark" {print $3}' "$SHADOW" 2>/dev/null)" = 0 ]; }
+
+case "${1:-status}" in
+    status) "$SYSTEMCTL" is-active --quiet ssh && echo on || echo off ;;
+    first)  first_password ;;
+    on)
+        if first_password; then
+            echo "rk-remote: this handheld still has its first password; choose your own first" >&2
+            exit 3
+        fi
+        "$SYSTEMCTL" enable --now ssh ;;
+    off)    "$SYSTEMCTL" disable --now ssh ;;
+    *)      echo "usage: rk-remote status|on|off|first" >&2; exit 2 ;;
+esac

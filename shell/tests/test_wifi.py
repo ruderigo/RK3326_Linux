@@ -100,6 +100,7 @@ def test_cable():
     pygame.display.set_mode((1, 1))
 
     class Cabled(S.DemoSystem):
+        _ssh = True                 # remote access turned on by its owner (a new card has it off)
         def wifi(self): return None
         def wired(self): return {"device": "eth0", "state": "connected", "ssid": "", "address": "10.0.0.42"}
 

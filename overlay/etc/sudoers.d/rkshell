@@ -3,5 +3,5 @@
 # access, and the choice of kernel.
 ark ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/local/sbin/rk-wifi, \
     /usr/local/sbin/rk-scan run, /usr/local/sbin/rk-tools install-heavy, /usr/local/sbin/rk-tools install-media, \
-    /usr/bin/systemctl enable --now ssh, /usr/bin/systemctl disable --now ssh, \
+    /usr/local/sbin/rk-remote on, /usr/local/sbin/rk-remote off, \
     /usr/local/sbin/rk-boot-select, /usr/local/sbin/rk-share request
