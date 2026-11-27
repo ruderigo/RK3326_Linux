@@ -4,6 +4,15 @@ What changed in each release, newest first. A handheld takes a new release
 from **Settings → Update this handheld**; what an update can and cannot
 replace is in [`docs/updates.md`](docs/updates.md).
 
+## 1.4.1 — 2026-11-27
+
+- **The dock has no plate behind it.** The rounded rectangle that sat
+  behind the row of icons is gone: the icons stand on the wallpaper itself.
+  Each icon keeps its own tile, and the dock behaves as before.
+
+Drawn in the build at 720x720, 640x480 and 480x320; not seen on a handheld
+before this release was tagged.
+
 ## 1.4.0 — 2026-11-27
 
 What an operating system is expected to have, and this one did not.

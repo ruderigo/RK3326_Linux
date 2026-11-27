@@ -230,7 +230,7 @@ class Dock:
 
     def __init__(self):
         self.items, self.sel, self.pos = [], 0, 0.0        # pos follows sel smoothly
-        self.last, self.shelves = time.time(), {}
+        self.last = time.time()
         self.hover = False          # the pointer is choosing
         self.scrolling = False      # ...and is at an edge, bringing more icons in
         self.px, self.size = 0, (720, 720)
@@ -372,16 +372,7 @@ class Dock:
         x0 = int(x0)
         self.drawn = []
         floor = H - W // 28
-        shelf = pygame.Rect(max(10, x0 - 14), floor - base - 10, min(W - 20, total + 28), base + 20)
-        shelf.w -= shelf.w % 8                              # a few widths only: each is drawn once and kept
-        veil = self.shelves.get(shelf.size)
-        if veil is None:
-            if len(self.shelves) > 60:
-                self.shelves.clear()
-            veil = self.shelves[shelf.size] = pygame.Surface(shelf.size, pygame.SRCALPHA)
-            pygame.draw.rect(veil, (*T.BAR, 170), veil.get_rect(), border_radius=22)
-            pygame.draw.rect(veil, (*T.BORDER, 255), veil.get_rect(), width=1, border_radius=22)
-        surf.blit(veil, shelf.topleft)
+        # no plate behind the row: the icons stand on the wallpaper itself
         x = x0
         for i, (it, s) in enumerate(zip(self.items, sizes)):
             self.drawn.append((x, s))
