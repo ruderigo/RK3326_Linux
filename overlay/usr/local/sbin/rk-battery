@@ -1,0 +1,80 @@
+#!/bin/bash
+# rk-battery: switch the handheld off properly before the battery does it.
+#
+# A battery that runs out cuts the power in the middle of whatever was being
+# written, and that is how a card's file system gets damaged. The desktop
+# warns at 10% and 5%, but it is not on the screen while a game or an app
+# runs, so the power-off is here, in a service of its own.
+#
+# It powers off when the battery is at 3% or less and discharging, and only
+# when it is sure:
+#   - three readings in a row, 30 seconds apart (one odd reading is nothing);
+#   - not in the first two minutes after the start (a gauge can say 0 until
+#     it has measured, and the owner needs time to plug the charger in);
+#   - not when the gauge also gives a voltage that says the cell is far from
+#     empty (a gauge that lost its count reads 0% on a full battery);
+#   - never while charging, and never on a board with no battery gauge.
+#
+#   rk-battery            the service: watch, and power off when it is time
+#   rk-battery once       one reading: "none", "ok N", "low N" or "doubt N"
+#
+# To switch it off:  sudo systemctl disable --now rk-battery
+set -u
+
+SUPPLY="${RK_POWER_SUPPLY:-/sys/class/power_supply}"   # a stand-in folder under test
+OFF_AT=3                # percent
+SURE_ABOVE=3600000      # microvolts: a cell above this is not empty, whatever the percentage says
+EVERY="${RK_BATTERY_EVERY:-30}"      # seconds between readings
+READINGS=3
+QUIET="${RK_BATTERY_QUIET:-120}"     # seconds after the start
+
+log() { echo "rk-battery: $*"; }
+
+battery() {     # the folder of the first battery, or nothing
+    local d
+    for d in "$SUPPLY"/*; do
+        [ "$(cat "$d/type" 2>/dev/null)" = Battery ] && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+reading() {     # none | ok N | low N | doubt N
+    local d pct status volts
+    d=$(battery) || { echo none; return; }
+    pct=$(cat "$d/capacity" 2>/dev/null)
+    status=$(cat "$d/status" 2>/dev/null)
+    case "$pct" in ''|*[!0-9]*) echo none; return ;; esac
+    if [ "$status" != Discharging ] || [ "$pct" -gt "$OFF_AT" ]; then
+        echo "ok $pct"; return
+    fi
+    volts=$(cat "$d/voltage_now" 2>/dev/null)
+    case "$volts" in ''|*[!0-9]*) volts=0 ;; esac
+    if [ "$volts" -gt "$SURE_ABOVE" ]; then echo "doubt $pct"; else echo "low $pct"; fi
+}
+
+case "${1:-watch}" in
+    once) reading ;;
+    watch)
+        count=0 doubted=
+        while :; do
+            r=$(reading)
+            case "$r" in
+                low*)
+                    count=$((count + 1))
+                    up=$(cut -d. -f1 /proc/uptime 2>/dev/null)
+                    if [ "$count" -ge "$READINGS" ] && [ "${up:-0}" -ge "$QUIET" ]; then
+                        log "battery at ${r#low }%, not charging: powering off"
+                        sync
+                        systemctl poweroff
+                        exit 0
+                    fi ;;
+                doubt*)
+                    count=0
+                    [ -n "$doubted" ] || log "the gauge says ${r#doubt }% but the voltage says otherwise: not powering off"
+                    doubted=1 ;;
+                *)  count=0 ;;
+            esac
+            sleep "$EVERY"
+        done ;;
+    *) echo "usage: rk-battery [once]" >&2; exit 2 ;;
+esac

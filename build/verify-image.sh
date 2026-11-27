@@ -111,7 +111,8 @@ for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/s
          /etc/systemd/system/multi-user.target.wants/rk-audiod.service /usr/local/sbin/rk-audiod \
          /etc/systemd/system/multi-user.target.wants/rk-mouse.service /usr/local/sbin/rk-mouse \
          /etc/systemd/system/multi-user.target.wants/rk-migrate.service \
-         /etc/systemd/system/multi-user.target.wants/ssh.service \
+         /etc/systemd/system/multi-user.target.wants/rk-battery.service /usr/local/sbin/rk-battery \
+         /usr/local/sbin/rk-remote /usr/lib/rk/migrations/0005-safe-defaults.sh \
          /etc/systemd/system/multi-user.target.wants/NetworkManager.service \
          /etc/systemd/system/multi-user.target.wants/rkshell.service \
          /usr/lib/python3/dist-packages/rkshell/__main__.py /usr/lib/python3/dist-packages/rkshell/backends/device.py \
@@ -134,10 +135,13 @@ done
 filecat /usr/share/gamecontrollerdb.txt | grep -q "GO-Super Gamepad" || fail "the controller database has no entry for the built-in pad"
 ok "system files, both kernels' modules and enabled services are present"
 for p in /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_rsa_key /usr/sbin/policy-rc.d \
-         /etc/systemd/system/getty.target.wants/getty@tty1.service; do
+         /etc/systemd/system/getty.target.wants/getty@tty1.service \
+         /etc/systemd/system/multi-user.target.wants/ssh.service /etc/systemd/system/sockets.target.wants/ssh.socket; do
     has "$p" && fail "must not be in the image: $p"
 done
-ok "no SSH host keys in the image (each card makes its own)"
+ok "no SSH host keys in the image (each card makes its own), and SSH is off until the owner turns it on"
+filecat /etc/sudoers.d/rkshell | grep -q 'systemctl enable --now ssh' &&
+    fail "the desktop can still turn SSH on without rk-remote's password check"
 [ "$(debugfs -R "stat /etc/sudoers.d/rkshell" "$T/root.img" 2>/dev/null | sed -n 's/.*Mode: *\([0-7]*\).*/\1/p')" = 0440 ] ||
     fail "/etc/sudoers.d/rkshell is not mode 0440: sudo would ignore it"
 # the desktop must start while ark's password is still the first one, due for a change

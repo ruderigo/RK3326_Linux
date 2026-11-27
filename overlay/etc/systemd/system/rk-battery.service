@@ -1,0 +1,11 @@
+[Unit]
+Description=Power off properly when the battery is nearly empty
+Documentation=https://github.com/ruderigo/RK3326_Linux
+
+[Service]
+ExecStart=/usr/local/sbin/rk-battery
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

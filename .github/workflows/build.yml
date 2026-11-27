@@ -48,6 +48,7 @@ jobs:
           python3 tests/test_rotate.py
           python3 tests/test_preflight.py
           python3 tests/test_kmods.py
+          python3 tests/test_power.py
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-640x480 --size 640x480
           SDL_VIDEODRIVER=dummy python3 -m rkshell --demo --shots ../screens-480x320 --size 480x320

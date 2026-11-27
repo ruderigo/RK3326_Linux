@@ -54,8 +54,14 @@ in, for teaching and authorised testing on your own equipment.
 - **Survey**: every Wi-Fi access point in range, with its channel, signal
   and security, and how crowded each channel is.
 - Joins the Wi-Fi network you put in `wifi.txt`, or one you pick in the
-  Network window, and answers **SSH**. A **network cable** on a USB adapter
-  or hub connects by itself.
+  Network window. A **network cable** on a USB adapter or hub connects by
+  itself.
+- **Remote access (SSH) is off on a new card.** You turn it on in the
+  Network window, and the handheld asks you to choose its password first:
+  the first one is the same on every card, so SSH never opens on it.
+- **Looks after the battery**: a warning at 10% and at 5%, and at 3% it
+  powers off properly instead of losing power in the middle of a write,
+  also while a game or an app has the screen.
 - **Updates itself** from Settings, without a reflash and without touching
   your data ([`docs/updates.md`](docs/updates.md)).
 - Makes its own SSH host keys, a data partition and **RKSHARE** at the
@@ -264,7 +270,8 @@ the same as someone having held it. Reports are welcome.
    (After the first start there is a second one, **RKSHARE**, for your
    games and app packages.)
 4. Open `wifi.txt` on it, fill in `SSID` and `PASSWORD`, save, eject.
-   Optional: add a file named `authorized_keys` with your SSH public key.
+   Optional: add a file named `authorized_keys` with your SSH public key
+   (used once you have turned remote access on, see [Log in](#log-in)).
    From a Mac's Terminal, the same in one line (double quotes, so that a
    name like `Bob's Wi-Fi` works), then a look at the result:
 
@@ -276,13 +283,37 @@ the same as someone having held it. Reports are welcome.
 
 ## Log in
 
+The desktop needs no login: it runs as `ark`. Logging in from a computer
+(SSH) is **off** on a new card, because every card starts with the same
+password, `ark`. To turn it on, on the handheld: **Network → Remote access
+(SSH)**, press A. The first time, you choose the handheld's own password
+(8 characters or more) on the on-screen keyboard; then SSH starts, and the
+window shows the line to type:
+
 ```sh
 ssh ark@r36max.local
 ```
 
-The first password is `ark`. You are asked to change it at the first
-login, then to log in again. `sudo` asks for that password. The desktop
-itself needs no login: it runs as `ark`.
+That password is the one `sudo` asks for, and the one updates and installs
+ask for on the handheld. A key in `authorized_keys` on BOOT works from then
+on too. The same row turns SSH off again.
+
+A card updated from an older version keeps SSH as it was if its password
+was already changed; if it still had the first password, the update turns
+SSH off until you choose one. With a USB keyboard, the text login on the
+handheld (Ctrl+Alt+F2) still takes `ark` once and makes you change it.
+
+## Battery
+
+The bar at the top shows the charge. Running on the battery, the desktop
+warns at 10% and again at 5%, and the handheld powers off by itself at 3%:
+a battery that runs out cuts the power in the middle of whatever was being
+written, and that is how cards get damaged. The power-off is a service of
+its own (`rk-battery`), so it also works while a game or an app has the
+screen, where the warnings cannot show. It waits for three low readings in
+a row, never acts in the first two minutes after a start or while charging,
+and does nothing when the gauge's voltage says the battery is not empty.
+To switch it off: `sudo systemctl disable --now rk-battery`.
 
 The first start takes about a minute longer than later ones.
 

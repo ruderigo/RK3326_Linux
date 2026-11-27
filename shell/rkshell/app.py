@@ -45,6 +45,7 @@ SETUPS = {"stump": StumpSetupPage}
 
 POINTER_REST = 3.0          # seconds without moving before the pointer goes away
 DPAD = ("up", "down", "left", "right")
+BATTERY_LOW, BATTERY_LAST, BATTERY_OFF = 10, 5, 3   # percent: two warnings, then rk-battery powers off
 
 
 class App:
@@ -102,6 +103,23 @@ class App:
                 self.toast(text, 8, error=True)
                 seen.add(key)
         self._health_seen = seen & set(now)
+
+    def check_battery(self):
+        """Say so at 10% and again at 5%, once each while the battery runs
+        down (and again only after it has been charged in between). The
+        power-off at 3% is rk-battery's: it works while an app has the screen."""
+        bat = self.system.battery()
+        if not bat or bat["percent"] < 0:
+            return
+        pct, seen = bat["percent"], getattr(self, "_battery_seen", 0)
+        if bat["status"] != "Discharging" or pct > BATTERY_LOW + 2:
+            self._battery_seen = 0
+            return
+        level = 2 if pct <= BATTERY_LAST else 1 if pct <= BATTERY_LOW else 0
+        if level > seen:
+            self._battery_seen = level
+            self.toast(f"Battery at {pct}%: it powers off at {BATTERY_OFF}%. Plug in the charger." if level == 2
+                       else f"Battery at {pct}%: plug in the charger", 10, error=True)
 
     def confirm(self, title, detail, label, on_yes):
         """Cancel comes first, so a double press of A never confirms."""
@@ -211,6 +229,7 @@ class App:
                 self.fill_dock()        # an app installed or removed shows up on the dock
             self.dirty = True           # the clock, the battery
             self.check_health()
+            self.check_battery()
         if self.toast_text and now > self.toast_until:
             self.toast_text = ""
             self.dirty = True
@@ -242,7 +261,7 @@ class App:
             bits.append(("Wi-Fi off-line", T.DIM))
         if bat and bat["percent"] >= 0:
             charging = bat["status"] in ("Charging", "Full")
-            low = bat["percent"] < 15 and not charging
+            low = bat["percent"] <= BATTERY_LOW and not charging
             bits.append((f"{'+' if charging else ''}{bat['percent']}%", T.ERROR if low else T.TEXT))
         bits.append((time.strftime("%H:%M"), T.TEXT))
         x = W - 14

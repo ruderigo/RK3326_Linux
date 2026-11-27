@@ -5,6 +5,7 @@ import pygame
 
 from .. import gfx as G
 from .. import theme as T
+from ..system import START_PASSWORD
 from ..widgets import Keyboard, ListView, Screen
 from .base import Page
 
@@ -106,7 +107,7 @@ class NetworkPage(Page):
                 rows.append(("Ethernet", "No cable, or nothing at the other end.", None))
         ssh = s.cached("ssh", 5, s.ssh_enabled)
         addr = next((d["address"] for d in (wifi, cable) if d and d.get("address")), f"{s.hostname()}.local")
-        rows.append(("Remote access (SSH)", f"On  ·  ssh ark@{addr}" if ssh else "Off", self.toggle_ssh))
+        rows.append(("Remote access (SSH)", f"On  ·  ssh ark@{addr}" if ssh else "Off. Press A to turn it on.", self.toggle_ssh))
         self.list.set(rows)
 
     def tick(self):
@@ -127,8 +128,30 @@ class NetworkPage(Page):
         if on:
             self.app.confirm("Turn remote access off?", "Nobody can log in over the network until you turn it on again here.",
                              "Turn off", go)
+        elif s.password_expired():
+            # the first password is public: SSH does not open on it
+            self.app.confirm("Choose a password first",
+                             "This handheld still has its first password, the one everybody knows. Choose your own: "
+                             "it is the one SSH will ask for, and the one updates and installs ask for.",
+                             "Choose it", lambda: self.app.push(Keyboard(
+                                 self.app, "Choose a password for this handheld (8 or more)",
+                                 lambda pw: self.new_password(pw, go), secret=True)))
         else:
             go()
+
+    def new_password(self, pw, then):
+        if len(pw) < 8 or pw == START_PASSWORD:
+            self.app.toast("The new password: 8 characters or more", 4, error=True)
+            return
+        self.app.toast("Setting the password…", 20)
+
+        def job():
+            ok, _ = self.app.system.set_password(pw)
+            if ok:
+                then()
+            else:
+                self.app.toast("The new password was not accepted: try a longer or less simple one.", 6, error=True)
+        threading.Thread(target=job, daemon=True).start()
 
     def handle(self, action):
         if self.list.move(action):

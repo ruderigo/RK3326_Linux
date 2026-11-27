@@ -329,8 +329,13 @@ rm -f "$ROOTFS"/etc/ssh/ssh_host_*
 : > "$ROOTFS/etc/machine-id"
 rm -f "$ROOTFS/var/lib/dbus/machine-id"
 
-in_root systemctl enable rk-share.service rk-share-adopt.service rk-firstboot.service rk-bootcfg.service rk-audio.service rk-audiod.service rk-mouse.service rk-migrate.service ssh.service NetworkManager.service \
+in_root systemctl enable rk-share.service rk-share-adopt.service rk-firstboot.service rk-bootcfg.service rk-audio.service rk-audiod.service rk-mouse.service rk-migrate.service rk-battery.service NetworkManager.service \
     avahi-daemon.service systemd-timesyncd.service rkshell.service
+# Remote access is off on a new card: the first password is public, so SSH
+# opens only once the owner has chosen one (Network, "Remote access";
+# rk-remote). The package turned it on when it was installed.
+in_root systemctl disable ssh.service >/dev/null 2>&1 || true
+rm -f "$ROOTFS/etc/systemd/system/multi-user.target.wants/ssh.service" "$ROOTFS/etc/systemd/system/sockets.target.wants/ssh.socket"
 # the desktop has the first console; a text login is on the others (Ctrl+Alt+F2)
 in_root systemctl disable getty@tty1.service 2>/dev/null || true
 rm -f "$ROOTFS/etc/systemd/system/getty.target.wants/getty@tty1.service"

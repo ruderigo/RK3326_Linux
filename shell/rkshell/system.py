@@ -1022,7 +1022,14 @@ class System:
         return run(["systemctl", "is-active", "--quiet", "ssh"])[0]
 
     def set_ssh(self, on):
-        return run(["systemctl", "enable" if on else "disable", "--now", "ssh"], root=True, timeout=20)
+        """rk-remote refuses to turn it on while the handheld still has its
+        first password: set_password comes first then."""
+        ok, out = run(["/usr/local/sbin/rk-remote", "on" if on else "off"], root=True, timeout=20)
+        return ok, "" if ok else (out.splitlines()[-1].replace("rk-remote: ", "") if out else "")
+
+    def set_password(self, new):
+        """Give the handheld its own password in place of the first one."""
+        return change_password(START_PASSWORD, new)
 
     # --------------------------------------------------------------- tools
     def survey(self, rescan=True):
@@ -1431,8 +1438,17 @@ class DemoSystem(System):
                 {"ssid": "Guest", "signal": 41, "secure": True, "active": False}]
 
     def wifi_join(self, ssid, password): return True, f"Connected to {ssid}"
-    def ssh_enabled(self): return True
-    def set_ssh(self, on): return True, ""
+    def ssh_enabled(self): return getattr(self, "_ssh", False)
+
+    def set_ssh(self, on):
+        if on and self.password_expired():
+            return False, "this handheld still has its first password; choose your own first"
+        self._ssh = on
+        return True, ""
+
+    def set_password(self, new):
+        self._own_password = True
+        return True, ""
     _vol, _bri = 60, 80
     def volume(self): return self._vol
     def set_volume(self, pct): self._vol = max(0, min(100, pct)); return self._vol
@@ -1529,7 +1545,7 @@ class DemoSystem(System):
                      "rk-tools: done.", "rk-video: fetching yt-dlp from its releases..."]
         return job
 
-    def password_expired(self): return True
+    def password_expired(self): return not getattr(self, "_own_password", False)
 
     def app_versions(self):
         job = AppVersions.__new__(AppVersions)

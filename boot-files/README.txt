@@ -4,7 +4,8 @@ Before the first start
   1. Open wifi.txt, fill in SSID and PASSWORD, save.
      Open it again to check that your two lines are there: a text editor
      that saves in another format leaves the file as it was.
-  2. Optional: put your SSH public key(s) in a file named authorized_keys here.
+  2. Optional: put your SSH public key(s) in a file named authorized_keys here
+     (used once remote access is turned on, see "Log in over SSH").
   3. Eject the card, put it in the handheld, switch on.
 
 First start
@@ -19,6 +20,9 @@ Games and apps
   handheld: Settings, "Show the card on a computer".
 
 Log in over SSH
+  It is off on a new card. On the handheld: Network, "Remote access (SSH)",
+  press A. The first time you choose the handheld's own password there
+  (8 characters or more); SSH starts after that. Then, from your computer:
   ssh ark@HOSTNAME.local        (HOSTNAME is in hostname.txt on this partition)
   If SSH says the host identification has changed (the same name was used
   by another card), run:  ssh-keygen -R HOSTNAME.local
@@ -26,7 +30,7 @@ Log in over SSH
   the handheld did not join. With a USB keyboard, log in on the handheld:
     nmcli dev wifi list
     sudo nmcli dev wifi connect "Network name" password "the password"
-  The first password is: ark    You are asked to change it at the first login.
+  At that text login the first password is: ark    You are asked to change it.
 
 If it does not start (black screen, or it stops)
   This card starts the 5.10 kernel. The older 4.4 kernel is in the folder
