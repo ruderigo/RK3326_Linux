@@ -111,8 +111,35 @@ partition existed. **Settings → Show the card on a computer** makes it
 minutes: plug the charger in and do not switch off. From a terminal:
 `sudo rk-share request`, `rk-share status`.
 
-In RetroArch: **Load Content**, pick the file, then the core when asked.
-**SELECT+START leaves. SELECT+X opens the menu** (save states, options).
+### The Games window
+
+Games on the dock is the system's own launcher, not RetroArch's menu.
+
+- **Opening it looks for games**: everything in `roms/<folder>` for the
+  machines in the table above, folders inside them included. A game copied
+  onto the card is there the next time Games opens. Nothing is configured.
+- **One tile per machine that has games**, with how many, and the total at
+  the top. A machine with no game has no tile. **Recently played** comes
+  first once something has been played.
+- **A on a tile** lists its games; **A on a game** starts it, with the
+  emulator for that machine already chosen (the first core of the table: for
+  the Nintendo 64, Mupen64Plus-Next).
+- **X is the options**: sort the machines by name, by number of games or by
+  last played; sort the games by name or by last played; look again; and
+  **RetroArch's own menu**, for its settings or the other N64 core.
+- **In a game, SELECT+START comes back to Games. SELECT+X opens RetroArch's
+  menu** (save states, options).
+
+What is not shown as a game: hidden files (a Mac leaves `._name` copies on
+the card), the tracks of a disc whose `.cue` is there, and the discs a
+`.m3u` lists (the `.m3u` is the game). When each game was last played is
+kept in `/data/ark/.rk-games.json`. There is no box art.
+
+File endings looked for: N64 `.z64 .n64 .v64`, PlayStation `.cue .chd .pbp
+.m3u .iso .img .bin`, PSP `.iso .cso .pbp`, SNES `.sfc .smc`, NES `.nes
+.fds`, Game Boy `.gb .gbc`, GBA `.gba`, Mega Drive `.md .gen .smd .bin`,
+Master System `.sms`, Game Gear `.gg`, PC Engine `.pce .cue .chd`, and
+`.zip` for the cartridge machines.
 
 The handheld's own settings are in `/usr/share/rk/retroarch/rk.cfg` and are
 applied over yours at every start (the picture, the pad, sound, the folders,

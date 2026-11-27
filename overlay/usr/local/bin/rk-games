@@ -31,8 +31,9 @@ Your games go here, one folder per machine:
 bios    files some machines need to start (yours to supply)
 saves   what games save;  states  save states made from RetroArch's menu
 
-In Games: Load Content, pick the file, then the core when asked.
-SELECT+START leaves. SELECT+X opens the menu.
+Open Games on the handheld: it finds them and shows them by machine.
+A starts a game. In a game, SELECT+START comes back, SELECT+X opens
+RetroArch's menu.
 TXT
         ;;
     where) echo "$ROMS" ;;

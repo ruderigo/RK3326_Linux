@@ -14,3 +14,8 @@ quickjs
 
 # what the emulator bundle's RetroArch loads besides its own librga (in packages.txt for new images)
 libpng16-16t64
+# PPSSPP's core is linked against these (it opens no window with them)
+libx11-6
+libxext6
+libsm6
+libice6

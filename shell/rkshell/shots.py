@@ -148,6 +148,32 @@ def write_all(system, size, out_dir):
             shot("apps-updating")
             AppsPage.job = None
             app.window.view = "list"
+        if item["name"] == "Games":
+            page = app.window                       # the first picture is "Looking for games…"
+            page.shown_at = 0
+            end = time.time() + 2
+            while page.view == "scanning" and time.time() < end:
+                app.tick()
+                time.sleep(0.01)
+            shot("games-tiles")
+            app.handle("right")
+            app.handle("down")
+            app.handle("a")
+            app.handle("down")
+            shot("games-list")
+            app.handle("x")
+            shot("games-options")
+            app.stack.clear()
+            app.handle("b")
+            app.system._no_games = True
+            page.rescan()
+            page.shown_at = 0
+            end = time.time() + 2
+            while page.view == "scanning" and time.time() < end:
+                app.tick()
+                time.sleep(0.01)
+            shot("games-empty")
+            app.system._no_games = False
         if item["name"] == "Video":
             from .pages.video import VideoPage
             VideoPage.words = "handheld linux"

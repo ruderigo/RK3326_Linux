@@ -485,10 +485,12 @@ def run(system, fps=10):
                 no_mouse = item.get("mouse") is False and system.mouse_enabled()
                 if no_mouse:
                     system.set_mouse(False)
+                began, code = time.time(), None
                 try:
-                    run_app(cmd, app_env(), inputs, system)
+                    code = run_app(cmd, app_env(), inputs, system)
                 except OSError as e:
                     app.toast(str(e), 5, error=True)
+                app.last_run = {"code": code, "secs": time.time() - began}     # for the window that started it
                 if no_mouse:
                     system.set_mouse(True)
                 run_step(item.get("after"))
