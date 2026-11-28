@@ -98,7 +98,11 @@ for bad in orphan_file metadata_csum_seed; do
 done
 ok "ext4 features: $FEAT"
 has() { debugfs -R "stat $1" "$T/root.img" 2>/dev/null | grep -q '^Inode:'; }
-filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null; }
+# "|| true": with pipefail, "filecat X | grep -q Y" failed whenever grep found
+# its line and left before debugfs had written the rest of the file (the
+# writer is then stopped by the closed pipe, and the whole check read as
+# "not found"). Whether the text is there is grep's answer alone.
+filecat() { debugfs -R "cat $1" "$T/root.img" 2>/dev/null || true; }
 KVER=$([ "$KERNEL" = 5.10 ] && echo 5.10.252-arkos4clone || echo 4.4.189)
 for p in /usr/lib/systemd/systemd /usr/sbin/sshd /usr/sbin/NetworkManager /usr/sbin/sfdisk /usr/sbin/mkfs.ext4 \
          /usr/local/sbin/rk-firstboot /usr/local/sbin/rk-bootcfg /usr/local/sbin/rk-boot-select /usr/local/sbin/rk-data-partition /usr/local/sbin/rk-share /usr/lib/rk/bootlogo.py /usr/share/rk/boot-logo/logo.jpg /usr/share/rk/boot-logo/turns.txt /usr/lib/rk/migrations/0004-boot-logo.sh /usr/local/bin/rk-paths /usr/sbin/mkfs.exfat /usr/sbin/resize2fs /share /etc/systemd/system/sysinit.target.wants/rk-share.service /usr/local/sbin/rk-wifi /usr/local/sbin/rk-scan /usr/local/sbin/rk-tools /usr/local/sbin/rk-apps /usr/local/sbin/rk-pkg /usr/local/sbin/rk-update /usr/local/sbin/rk-migrate \
