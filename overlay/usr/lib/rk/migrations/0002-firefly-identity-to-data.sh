@@ -22,7 +22,16 @@ if [ -L "$src" ]; then
     exit 0                              # already done on a past run
 fi
 if [ -e "$dst" ]; then
-    [ -e "$src" ] && rm -rf "$src"      # the adopter's copy on /data wins
+    # The adopter's copy on /data wins. If the home folder holds an identity
+    # too (FireFly made a new one after a reflash that did not link this
+    # folder), it is not deleted: it is kept beside the other on /data.
+    if [ -e "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+        aside="$DATA/.firefly.set-aside-$(date +%Y%m%d)"
+        [ -e "$aside" ] && aside="$aside-$$"
+        mv "$src" "$aside" && chown -R ark:ark "$aside" 2>/dev/null
+        echo "rk-migrate 0002: $src held another identity; it is kept in $aside"
+    fi
+    [ -e "$src" ] && rm -rf "$src"
 elif [ -e "$src" ]; then
     mv "$src" "$dst"
 else

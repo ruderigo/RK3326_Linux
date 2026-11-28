@@ -4,9 +4,20 @@
 #
 # The point is that adopters never do a manual migration and never lose
 # anything to a reflash. Each step under /usr/lib/rk/migrations is idempotent
-# and safe to re-run; the schema number reached is recorded on /data (so it
-# survives a reflash, because it describes /data's own layout). A step only
-# runs when its number is above the recorded one.
+# and safe to re-run.
+#
+# How far a card has come is recorded twice, because a step changes two
+# places that do not live and die together:
+#   - on /data (.rk-schema): the layout of the data partition, which a
+#     reflash keeps;
+#   - on the system partition (/var/lib/rk/schema): what THIS system has had
+#     done to it, which a reflash starts over. rk-firstboot writes 0 there.
+# A step runs when its number is above the LOWER of the two. So on a card
+# flashed again with its data kept, every step runs again on the new system:
+# the links from the home folder to the data partition are made again, and
+# FireFly finds its identity where it left it. (With only the /data record,
+# a reflash kept the data and then never linked to it: the identity was
+# there, and FireFly started a new one beside it.)
 #
 #   rk-migrate run       apply every pending step, record progress as it goes
 #   rk-migrate status    recorded schema, highest available, and what is pending
@@ -19,9 +30,33 @@ set -u
 
 MIG_DIR="${RK_MIG_DIR:-/usr/lib/rk/migrations}"
 SCHEMA="${RK_SCHEMA:-/data/ark/.rk-schema}"
+# under test the system's record sits beside the stand-in data record
+SYSTEM="${RK_SYSTEM_SCHEMA:-${RK_SCHEMA:+$RK_SCHEMA.system}}"
+SYSTEM="${SYSTEM:-/var/lib/rk/schema}"
+ARK="${RK_ARK:-/home/ark}"
+DATA="${RK_DATA:-/data/ark}"
 log() { echo "rk-migrate: $*"; }
 
-current() { local v; v=$(cat "$SCHEMA" 2>/dev/null); echo "${v:-0}"; }
+number() { case "$1" in ''|*[!0-9]*) echo 0 ;; *) echo "$1" ;; esac; }
+
+data_at() { number "$(cat "$SCHEMA" 2>/dev/null)"; }
+
+# What this system partition has had done to it. No record at all is a card
+# from before the record existed: its system saw every step the data record
+# names, unless it was flashed again meanwhile with an image that did not
+# write the record. That shows: the data partition holds FireFly's folder
+# and the home folder does not link to it. Then nothing was done here.
+system_at() {
+    if [ -f "$SYSTEM" ]; then
+        number "$(cat "$SYSTEM" 2>/dev/null)"
+    elif [ -d "$DATA/.firefly" ] && [ ! -L "$ARK/.firefly" ]; then
+        echo 0
+    else
+        data_at
+    fi
+}
+
+current() { local d s; d=$(data_at); s=$(system_at); [ "$s" -lt "$d" ] && echo "$s" || echo "$d"; }
 
 steps() { ls "$MIG_DIR"/[0-9]*.sh 2>/dev/null | sort; }
 
@@ -29,16 +64,23 @@ number_of() { basename "$1" | sed 's/^0*\([0-9][0-9]*\).*/\1/'; }
 
 available() { local n=0 s; for s in $(steps); do n=$(number_of "$s"); done; echo "$n"; }
 
-record() {
-    mkdir -p "$(dirname "$SCHEMA")"
-    echo "$1" > "$SCHEMA"
-    chown ark:ark "$SCHEMA" 2>/dev/null || true
-    chmod 644 "$SCHEMA" 2>/dev/null || true
+record() {      # a step is done: on the data partition (never backwards) and on this system
+    mkdir -p "$(dirname "$SCHEMA")" "$(dirname "$SYSTEM")"
+    if [ "$1" -gt "$(data_at)" ]; then
+        echo "$1" > "$SCHEMA"
+        chown ark:ark "$SCHEMA" 2>/dev/null || true
+        chmod 644 "$SCHEMA" 2>/dev/null || true
+    fi
+    echo "$1" > "$SYSTEM"
 }
 
 run() {
     local upto="${1:-999999}" cur s n ran=0
     cur=$(current)
+    [ "$(system_at)" -lt "$(data_at)" ] &&
+        log "this system is new to a card that has been used: its steps are done again (your data is kept)"
+    # a card from before the system's record existed, with nothing to redo: start the record
+    [ -f "$SYSTEM" ] || [ "$cur" -lt "$(data_at)" ] || { mkdir -p "$(dirname "$SYSTEM")" && echo "$cur" > "$SYSTEM"; }
     for s in $(steps); do
         n=$(number_of "$s")
         [ "$n" -gt "$cur" ] || continue
@@ -69,7 +111,7 @@ case "${1:-run}" in
             exit "$rc" ;;
     to)     run "${2:?usage: rk-migrate to N}" ;;
     status)
-        echo "schema recorded : $(current)"
+        echo "schema recorded : $(current)  (data partition $(data_at), this system $(system_at))"
         echo "schema available: $(available)"
         cur=$(current); pending=
         for s in $(steps); do n=$(number_of "$s"); [ "$n" -gt "$cur" ] && pending="$pending $n"; done
