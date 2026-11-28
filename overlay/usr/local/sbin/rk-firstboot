@@ -72,5 +72,9 @@ else
     log "could not find the card's device from $root"
 fi
 
+# This system partition is new: none of rk-migrate's steps has been done on
+# it, whatever the data partition's own record says (a card flashed again
+# keeps its data). rk-migrate runs next and does them.
+mkdir -p /var/lib/rk && echo 0 > /var/lib/rk/schema
 mkdir -p /var/lib/rk && date -u +%FT%TZ > /var/lib/rk/firstboot-done
 exit 0

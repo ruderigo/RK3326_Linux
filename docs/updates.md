@@ -75,13 +75,30 @@ from a source means trusting it — stick to sources you control.
 ## Migrations — so the layout can change without stranding anyone
 
 You can't promise the state layout never changes. What you *can* promise is
-that every change ships with a migration that runs itself. `rk-migrate` keeps
-a **state-schema number** on `/data` (so it survives a reflash, because it
-describes `/data`'s own layout) and runs the numbered steps in
-`/usr/lib/rk/migrations/` that are newer than the card's recorded number. Each
-step is idempotent and safe to re-run; the number is advanced only after a
-step succeeds. It runs at every boot (a no-op once the card is current) and
-after every `rk-update`.
+that every change ships with a migration that runs itself. `rk-migrate` runs
+the numbered steps in `/usr/lib/rk/migrations/` that the card has not had
+yet. Each step is idempotent and safe to re-run; the number is advanced only
+after a step succeeds. It runs at every boot (a no-op once the card is
+current) and after every `rk-update`.
+
+How far a card has come is recorded in **two** places, because a step
+changes two places that do not live and die together:
+
+- `/data/ark/.rk-schema`: the layout of the data partition. A reflash keeps
+  it.
+- `/var/lib/rk/schema`, on the system partition: what *this system* has had
+  done to it. A reflash starts it over (`rk-firstboot` writes 0).
+
+A step runs when its number is above the **lower** of the two. So a card
+flashed again with its data kept gets every step again on the new system,
+and the links from the home folder to `/data` are made again.
+
+Until 1.4.1 there was only the record on `/data`. After a reflash it said
+"done", the links were never made again, and FireFly started a new identity
+in the home folder while the owner's sat unused on `/data`. A card left in
+that state is repaired at its next start or update: the identity on `/data`
+is linked again, and the one made in between is kept beside it, in
+`/data/ark/.firefly.set-aside-<date>`, not deleted.
 
 So moving something is never a manual migration for the adopter — it's a
 numbered step that runs on their next update or boot.
