@@ -1,8 +1,9 @@
 #!/bin/bash
 # Games on the dock: RetroArch, with the owner's own game files.
 #
-#   rk-games prepare    make the folders games are looked for in (run by the
-#                       dock just before RetroArch starts)
+#   rk-games prepare    make the folders games are looked for in, and hold the
+#                       handheld at full speed (run just before RetroArch starts)
+#   rk-games done       back to saving power (run when RetroArch ends)
 #   rk-games where      print the games folder
 #
 # No game and no BIOS file comes with the system. Copy your own into the
@@ -35,7 +36,10 @@ Open Games on the handheld: it finds them and shows them by machine.
 A starts a game. In a game, SELECT+START comes back, SELECT+X opens
 RetroArch's menu.
 TXT
+        # an emulator needs the processor, the graphics chip and the memory at full speed
+        sudo -n /usr/local/sbin/rk-perf game 2>/dev/null || true
         ;;
+    done) sudo -n /usr/local/sbin/rk-perf normal 2>/dev/null || true ;;
     where) echo "$ROMS" ;;
-    *) echo "usage: rk-games prepare | where" >&2; exit 2 ;;
+    *) echo "usage: rk-games prepare | done | where" >&2; exit 2 ;;
 esac

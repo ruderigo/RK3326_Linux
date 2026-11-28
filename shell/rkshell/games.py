@@ -13,7 +13,7 @@ import time
 
 # folder, short label for the tile, full name, RetroArch core, file endings
 MACHINES = [
-    ("n64", "N64", "Nintendo 64", "mupen64plus_next", (".z64", ".n64", ".v64", ".zip")),
+    ("n64", "N64", "Nintendo 64", "parallel_n64", (".z64", ".n64", ".v64", ".zip")),
     ("psx", "PS1", "PlayStation", "pcsx_rearmed", (".cue", ".chd", ".pbp", ".m3u", ".iso", ".img", ".bin")),
     ("psp", "PSP", "PlayStation Portable", "ppsspp", (".iso", ".cso", ".pbp")),
     ("snes", "SNES", "Super Nintendo", "snes9x", (".sfc", ".smc", ".zip")),
@@ -27,13 +27,57 @@ MACHINES = [
     ("pcengine", "PCE", "PC Engine", "mednafen_pce_fast", (".pce", ".cue", ".chd", ".zip")),
 ]
 BY_FOLDER = {m[0]: m for m in MACHINES}
+# A machine with a second emulator: neither runs every game well, so the
+# owner can change. The first is the one the launcher uses until told otherwise
+# (for the N64, the one dArkOS itself puts ahead of Mupen64Plus-Next).
+CHOICES = {"n64": [("parallel_n64", "ParaLLEl"), ("mupen64plus_next", "Mupen64Plus")]}
 CORES_DIR = "/opt/rk-emulators/cores"
 # a disc is its .cue or .m3u: the tracks and the single discs beside them are not games of their own
 DISC_PARTS = (".bin", ".img", ".iso")
 
 
-def core_path(folder):
-    return os.path.join(CORES_DIR, BY_FOLDER[folder][3] + "_libretro.so")
+# The N64 picture: how many dots the emulator draws before the screen
+# stretches them. Both N64 cores start at 320x240, which is fast and blocky;
+# 640x480 is four times the dots: sharper, and more work for the handheld.
+PICTURES = [("sharp", "sharp", "640x480"), ("fast", "fast", "320x240")]
+PICTURE_KEYS = ("parallel-n64-screensize", "mupen64plus-43screensize")
+CORE_OPTIONS = os.path.expanduser("~/.config/retroarch/rk-core-options.cfg")
+
+
+def write_core_options(path, picture):
+    """Put the chosen N64 picture in RetroArch's core options file (rk.cfg
+    names it), keeping every other line as it is: what the owner changed in
+    RetroArch's own Core Options menu stays."""
+    size = next((p[2] for p in PICTURES if p[0] == picture), PICTURES[0][2])
+    want = {k: size for k in PICTURE_KEYS}
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    out, seen = [], set()
+    for ln in lines:
+        key = ln.split("=", 1)[0].strip()
+        if key in want:
+            seen.add(key)
+            ln = f'{key} = "{want[key]}"'
+        out.append(ln)
+    out += [f'{k} = "{v}"' for k, v in want.items() if k not in seen]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".new", "w") as f:
+            f.write("\n".join(out) + "\n")
+        os.replace(path + ".new", path)
+        return True
+    except OSError:
+        return False
+
+
+def core_path(folder, core=None):
+    """The core file for a machine; `core` is the owner's choice where there is one."""
+    if core not in [c for c, _ in CHOICES.get(folder, [])]:
+        core = BY_FOLDER[folder][3]
+    return os.path.join(CORES_DIR, core + "_libretro.so")
 
 
 def listed_in_m3u(path):

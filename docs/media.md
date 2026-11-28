@@ -122,11 +122,21 @@ Games on the dock is the system's own launcher, not RetroArch's menu.
   the top. A machine with no game has no tile. **Recently played** comes
   first once something has been played.
 - **A on a tile** lists its games; **A on a game** starts it, with the
-  emulator for that machine already chosen (the first core of the table: for
-  the Nintendo 64, Mupen64Plus-Next).
-- **X is the options**: sort the machines by name, by number of games or by
-  last played; sort the games by name or by last played; look again; and
-  **RetroArch's own menu**, for its settings or the other N64 core.
+  emulator for that machine already chosen. For the Nintendo 64 that is
+  ParaLLEl N64, the one dArkOS puts first; in X, the row "N64 emulator"
+  changes to Mupen64Plus-Next for the games it runs badly.
+- **The N64 picture** is drawn at 640x480 ("sharp"). In X, the row "N64
+  picture" changes it to "fast" (320x240), which is blockier and lighter on
+  the handheld, for the games that stutter. The choice is written to RetroArch's core options
+  file (`~/.config/retroarch/rk-core-options.cfg`) before each game; what
+  you change in RetroArch's own Core Options is kept in the same file.
+- **A game runs at full speed**: for its length the processor, the graphics
+  chip and the memory are held at their fastest (`rk-perf`), as dArkOS does,
+  and put back to saving power when it ends.
+- **X is the options**: each row names a setting and what it is now, and A
+  moves it to its next choice. Machines by name, most games or last played;
+  games by name or last played; the N64 emulator and picture; look again;
+  and **RetroArch's own menu**, for its settings.
 - **In a game, SELECT+START comes back to Games. SELECT+X opens RetroArch's
   menu** (save states, options).
 

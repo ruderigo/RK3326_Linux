@@ -1512,14 +1512,16 @@ class System:
     def games_command(self, game):
         """What starts this game: RetroArch, the core for its machine, the
         file. With no game: RetroArch's own menu. None when the emulators or
-        that core are not on the card."""
+        that core are not on the card. The owner's choice of N64 picture is
+        written where RetroArch reads it, just before."""
         from . import games
         entry = self.games_entry()
         if not entry.get("exec") or not entry.get("ready"):
             return None
+        games.write_core_options(games.CORE_OPTIONS, self.setting("games_n64_picture"))
         if game is None:
             return list(entry["exec"])
-        core = games.core_path(game["machine"])
+        core = games.core_path(game["machine"], self.setting("games_core_" + game["machine"]))
         if not os.path.isfile(core):
             return None
         return list(entry["exec"]) + ["-L", core, game["path"]]
