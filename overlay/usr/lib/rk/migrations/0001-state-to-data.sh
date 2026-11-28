@@ -23,6 +23,25 @@ NAMES=".reticulum firefly R36MAX-Stump stump_r36max Stump ports"
 
 [ -d "$DATA" ] || { mkdir -p "$DATA"; chown ark:ark "$DATA"; }
 
+# The copy on the system partition gives way to the one on /data. An app's
+# code is the image's own and is dropped. A settings folder (its name starts
+# with a dot) may have been written by the owner since a reflash that did not
+# link it: that one is kept beside the other, never deleted.
+set_aside_or_drop() {
+    local src="$1" name aside
+    name=$(basename "$src")
+    case "$name" in
+        .*) if [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+                aside="$DATA/$name.set-aside-$(date +%Y%m%d)"
+                [ -e "$aside" ] && aside="$aside-$$"
+                mv "$src" "$aside" && chown -R ark:ark "$aside" 2>/dev/null
+                echo "rk-migrate 0001: $src held other files; they are kept in $aside"
+                return 0
+            fi ;;
+    esac
+    rm -rf "$src"
+}
+
 move_one() {           # $1 = source path, $2 = destination on /data
     local src="$1" dst="$2"
     if [ -L "$src" ]; then
@@ -31,7 +50,7 @@ move_one() {           # $1 = source path, $2 = destination on /data
     if [ -e "$dst" ]; then
         # the adopter's copy is already on /data (e.g. kept across a reflash);
         # drop the image's default and point at theirs
-        [ -e "$src" ] && rm -rf "$src"
+        [ -e "$src" ] && set_aside_or_drop "$src"
     elif [ -e "$src" ]; then
         mv "$src" "$dst"
     else

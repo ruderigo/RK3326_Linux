@@ -97,6 +97,91 @@ def test_schema_runner_records_and_noops():
 
 
 
+def lived_on_card(t):
+    """A card after its first start: the steps done, the state on /data, the
+    home folder linked to it, both records at the newest step."""
+    env = fake_card(t)
+    schema = f"{t}/data/ark/.rk-schema"
+    env.update(RK_MIG_DIR=MIG_DIR, RK_SCHEMA=schema)
+    assert run(["bash", MIGRATE, "run"], env).returncode == 0
+    assert os.path.islink(env["RK_ARK"] + "/.firefly") and open(schema + ".system").read() == open(schema).read()
+    return env, schema
+
+
+def reflash(env, schema, firstboot_writes_the_record=True):
+    """Flashed again: /data is kept, the system partition (the home folder
+    and the system's own record with it) is the image's again."""
+    import shutil
+    shutil.rmtree(env["RK_ARK"])
+    os.makedirs(env["RK_ARK"] + "/firefly")                     # the image's own copy of the app
+    open(env["RK_ARK"] + "/firefly/identity", "w").write("BAKED-DEFAULT")
+    os.remove(schema + ".system")
+    if firstboot_writes_the_record:
+        open(schema + ".system", "w").write("0\n")              # rk-firstboot, on a new system
+
+
+def test_a_reflash_links_the_home_folder_to_the_kept_data_again():
+    """The bug this guards: the record of the steps lived only on /data, so
+    after a reflash it said "done" and the links were never made again.
+    FireFly then started a new identity beside the one on /data."""
+    newest = str(max(int(n[:4]) for n in os.listdir(MIG_DIR) if n[:4].isdigit()))
+    with tempfile.TemporaryDirectory() as t:
+        env, schema = lived_on_card(t)
+        reflash(env, schema)
+        assert open(schema).read().strip() == newest            # /data still says every step is done
+        out = run(["bash", MIGRATE, "status"], env).stdout
+        assert "pending         : none" not in out and "this system 0" in out
+        p = run(["bash", MIGRATE, "run"], env)
+        assert p.returncode == 0 and "its steps are done again" in p.stdout
+        for name, inside, text in ((".firefly", "identity", "FIREFLY-ID-9"), (".reticulum", "config", "mesh"),
+                                   ("firefly", "identity", "IDENTITY-123")):
+            assert os.path.islink(f"{env['RK_ARK']}/{name}"), name
+            assert open(f"{env['RK_ARK']}/{name}/{inside}").read() == text      # the owner's, not the image's
+        assert open(schema).read().strip() == newest and open(schema + ".system").read().strip() == newest
+        assert "already current" in run(["bash", MIGRATE, "run"], env).stdout
+
+
+def test_an_identity_made_since_an_unlinked_reflash_is_kept_aside():
+    """A card flashed again with an image from before this fix: no record on
+    the system, the old identity on /data, a new one in the home folder."""
+    with tempfile.TemporaryDirectory() as t:
+        env, schema = lived_on_card(t)
+        reflash(env, schema, firstboot_writes_the_record=False)
+        os.makedirs(env["RK_ARK"] + "/.firefly")
+        open(env["RK_ARK"] + "/.firefly/identity", "w").write("NEW-SINCE-REFLASH")
+        os.makedirs(env["RK_ARK"] + "/.reticulum")
+        open(env["RK_ARK"] + "/.reticulum/config", "w").write("new config")
+        p = run(["bash", MIGRATE, "run"], env)
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert open(env["RK_ARK"] + "/.firefly/identity").read() == "FIREFLY-ID-9"      # the address they had
+        kept = [n for n in os.listdir(env["RK_DATA"]) if n.startswith(".firefly.set-aside-")]
+        assert len(kept) == 1 and open(f"{env['RK_DATA']}/{kept[0]}/identity").read() == "NEW-SINCE-REFLASH"
+        kept = [n for n in os.listdir(env["RK_DATA"]) if n.startswith(".reticulum.set-aside-")]
+        assert len(kept) == 1 and open(f"{env['RK_DATA']}/{kept[0]}/config").read() == "new config"
+        assert "kept in" in p.stdout
+
+
+def test_an_updated_card_does_nothing_again():
+    """A card that was never flashed again, from before the system's record:
+    its links are right, so nothing is redone and the record is started."""
+    with tempfile.TemporaryDirectory() as t:
+        env, schema = lived_on_card(t)
+        os.remove(schema + ".system")
+        before = os.readlink(env["RK_ARK"] + "/.firefly")
+        p = run(["bash", MIGRATE, "run"], env)
+        assert p.returncode == 0 and "already current" in p.stdout and "done again" not in p.stdout
+        assert os.readlink(env["RK_ARK"] + "/.firefly") == before
+        assert open(schema + ".system").read().strip() == open(schema).read().strip()
+
+
+def test_first_start_says_the_system_is_new():
+    text = open(os.path.join(OVERLAY, "usr", "local", "sbin", "rk-firstboot")).read()
+    assert "echo 0 > /var/lib/rk/schema" in text
+    assert text.index("echo 0 > /var/lib/rk/schema") < text.index("firstboot-done")
+    unit = open(os.path.join(OVERLAY, "etc", "systemd", "system", "rk-migrate.service")).read()
+    assert "After=rk-firstboot.service" in unit                 # the steps run after it
+
+
 RK_UPDATE = os.path.join(OVERLAY, "usr", "local", "sbin", "rk-update")
 
 
